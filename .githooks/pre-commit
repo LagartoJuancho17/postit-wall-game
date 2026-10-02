@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+if [ -x .venv/bin/python ]; then
+  PY=.venv/bin/python
+else
+  PY=python3.12
+fi
+PYTHONPATH=. "$PY" -m unittest discover -s . -p 'test_*.py' -q
