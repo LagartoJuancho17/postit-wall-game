@@ -26,9 +26,19 @@ versión relee los post-its **entre intentos**.
    ```
 
    Por defecto se abre en la segunda pantalla (índice `1`) si existe y usa
-   la webcam `0`. Para elegirlas: `./.venv/bin/python main.py --display 1
-   --camera 0`. macOS puede pedir acceso a la cámara para la aplicación desde
-   la que ejecutes el comando.
+   la webcam `0`. En este Mac, AVFoundation enumera la cámara FaceTime como
+   `0` y la Logitech HD Pro Webcam C920 como `1`. Para usar la C920, abrí
+   **Terminal** y ejecutá:
+
+   ```sh
+   cd /Users/tobiasarraiza/Documents/Codex/2026-10-02/bien/outputs/postit-wall-game
+   ./.venv/bin/python main.py --camera 1
+   ```
+
+   Cuando macOS solicite acceso a la cámara para Terminal, elegí **Permitir**.
+   Si no aparece el aviso, revisá Ajustes del Sistema → Privacidad y seguridad
+   → Cámara y activá Terminal si figura allí. El permiso corresponde a la
+   aplicación que inicia Python.
 
 ## Calibración y partida
 
