@@ -11,3 +11,7 @@ fi
 "$PY" -m services.vision.eval
 "$PY" -m services.physics.evals.scenarios
 "$PY" -m services.runtime.eval
+"$PY" -m services.web.backend.eval
+"$PY" -m tests.eval_web_flow
+node --test services/web/tests/*.test.mjs
+node services/web/evals/flows.mjs

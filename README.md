@@ -3,7 +3,52 @@
 La webcam lee un tablero físico y el proyector dibuja una pelota encima. Un
 post-it amarillo es el inicio, uno naranja es la llegada, los verdes son
 rebotes y **cuatro** fucsia o violetas marcan las esquinas del campo. Esta
-versión relee los post-its **entre intentos**.
+versión relee los post-its **entre intentos**. La interfaz web muestra la
+cámara y los controles en la pantalla principal; `J` abre otra ventana para
+proyectar sobre la pared.
+
+## Iniciar la interfaz web
+
+Con Python 3.12 y `uv` instalados, ejecutá desde esta carpeta:
+
+```sh
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+./.venv/bin/python web.py
+```
+
+Se abrirá Chrome en `http://127.0.0.1:8765/`. Elegí la Logitech C920 en el
+selector de cámaras y permití el acceso a la cámara para esa página si Chrome
+lo solicita. El navegador muestra la imagen en la pantalla principal. El
+servidor Python solo recibe fotogramas cuando se calibra o se releen los
+post-its, de modo que no necesita permiso de cámara de macOS.
+
+Pulsá `J` o el botón **Abrir proyector**. Mové la nueva ventana a la pantalla
+del proyector y activá su pantalla completa desde el botón de esa ventana.
+Mantené esa pantalla en su tamaño definitivo antes de calibrar: un cambio de
+tamaño invalida la alineación. Los controles de la partida permanecen en la
+ventana principal. Si Chrome bloquea la ventana emergente, permití las
+ventanas emergentes para `127.0.0.1` y volvé a pulsar `J`.
+
+Con la cámara y la proyección listas:
+
+1. Pulsá `S` para escanear los post-its. La ventana del proyector se pone
+   negra antes de tomar la imagen.
+2. Pulsá `C` para calibrar. En la ventana del proyector, llevá la cruz al
+   centro de cada post-it fucsia y confirmá las cuatro esquinas en el orden
+   indicado. Revisá que los contornos proyectados coincidan con los papeles.
+3. Ajustá la dirección desde el control principal y lanzá con `Espacio`.
+   Tras ganar o perder, `R` inicia otro intento con el mismo tablero. Si
+   moviste post-its, pulsá `S` para releerlos antes del siguiente intento.
+
+Si se cierra la ventana del proyector durante un intento, la pelota queda en
+pausa. Reabrila con `J` y pulsá **Continuar intento** (o `Espacio`). Con el
+intento en pausa también podés releer los post-its, recalibrar o empezar otro
+intento con `R`.
+
+La vista de cámara sigue en directo durante la partida; la detección de los
+post-its ocurre solo al escanear. Si movés la cámara, la pared o el proyector,
+repetí la calibración.
 
 ## Montaje
 
@@ -16,31 +61,31 @@ versión relee los post-its **entre intentos**.
 3. Fijá webcam y proyector. Usá iluminación ambiente estable y configurá el
    proyector como pantalla extendida de macOS. Si se mueve cualquiera de los
    dos, pulsá `C` para recalibrar.
-4. El ordenador debe tener Python 3.12 y `uv`. En esta máquina ambos están
-   disponibles. Desde esta carpeta:
 
-   ```sh
-   uv venv --python 3.12 .venv
-   uv pip install --python .venv/bin/python -r requirements.txt
-   ./.venv/bin/python main.py
-   ```
+## Modo clásico de pantalla completa
 
-   Por defecto se abre en la segunda pantalla (índice `1`) si existe y usa
-   la webcam `0`. En este Mac, AVFoundation enumera la cámara FaceTime como
-   `0` y la Logitech HD Pro Webcam C920 como `1`. Para usar la C920, abrí
-   **Terminal** y ejecutá:
+La aplicación original de Pygame sigue disponible. Desde esta carpeta:
 
-   ```sh
-   cd /Users/tobiasarraiza/Documents/Codex/2026-10-02/bien/outputs/postit-wall-game
-   ./.venv/bin/python main.py --camera 1
-   ```
+```sh
+./.venv/bin/python main.py
+```
 
-   Cuando macOS solicite acceso a la cámara para Terminal, elegí **Permitir**.
-   Si no aparece el aviso, revisá Ajustes del Sistema → Privacidad y seguridad
-   → Cámara y activá Terminal si figura allí. El permiso corresponde a la
-   aplicación que inicia Python.
+Por defecto se abre en la segunda pantalla (índice `1`) si existe y usa
+la webcam `0`. En este Mac, AVFoundation enumera la cámara FaceTime como
+`0` y la Logitech HD Pro Webcam C920 como `1`. Para usar la C920, abrí
+**Terminal** y ejecutá:
 
-## Calibración y partida
+```sh
+cd /Users/tobiasarraiza/Documents/Codex/2026-10-02/bien/outputs/postit-wall-game
+./.venv/bin/python main.py --camera 1
+```
+
+Cuando macOS solicite acceso a la cámara para Terminal, elegí **Permitir**.
+Si no aparece el aviso, revisá Ajustes del Sistema → Privacidad y seguridad
+→ Cámara y activá Terminal si figura allí. El permiso corresponde a la
+aplicación que inicia Python.
+
+## Calibración y partida en el modo clásico
 
 - `A` calibra automáticamente: el proyector muestra puntos blancos de
   coordenadas conocidas, la webcam los localiza y se calcula una homografía.
@@ -67,7 +112,8 @@ distorsión puede necesitar corrección óptica antes de mapear puntos.
 
 ## Pruebas y evidencia
 
-Las pruebas son sintéticas y se ejecutan sin hardware:
+Las pruebas son sintéticas y se ejecutan sin hardware. Requieren Node.js
+además de Python para validar la interfaz del navegador:
 
 ```sh
 ./scripts/verify.sh
@@ -81,7 +127,17 @@ El script ejecuta estas pruebas y evaluaciones:
 ./.venv/bin/python -m services.vision.eval
 ./.venv/bin/python -m services.physics.evals.scenarios
 ./.venv/bin/python -m services.runtime.eval
+./.venv/bin/python -m services.web.backend.eval
+./.venv/bin/python -m tests.eval_web_flow
+node --test services/web/tests/*.test.mjs
+node services/web/evals/flows.mjs
 ```
+
+`services/web/evals/flows.mjs` comprueba que cada botón del panel coincida
+con lo que el backend acepta en cada fase del juego. Si cambiás reglas del
+backend o la forma de `/api/state`, regenerá la matriz que usa:
+`./.venv/bin/python -m services.web.contract.matrix`. Una prueba falla
+mientras la matriz guardada no coincida con el backend.
 
 La prueba física que falta hacer en la pared es revisar la cuadrícula sobre
 papeles reales y confirmar que el error máximo mostrado en la calibración
@@ -96,7 +152,12 @@ errores de alineación, cantidad de rebotes y tiempo de llegada.
 - `services/calibration/`: puntos proyectados y homografía cámara → proyector.
 - `services/physics/`: pelota y colisiones en píxeles del proyector.
 - `services/runtime/`: captura de cámara, pantalla, controles y registro.
+- `services/web/backend/`: servidor local, estado del juego y rutas HTTP.
+- `services/web/ui/`: panel de control y ventana de proyección del navegador.
+- `services/web/contract/`: matriz de estados del backend que leen las
+  pruebas y la evaluación del navegador.
 - `main.py`: entrada del programa.
+- `web.py`: entrada de la interfaz web.
 
 Cada servicio tiene sus propias pruebas, evaluación y explicación. El hook de
 Git ejecuta las pruebas locales antes de cada commit; si clonás el proyecto,

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#000000">
+    <title>Post-it Wall · Proyección</title>
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body class="projector-page">
+    <canvas id="projector-canvas" aria-label="Proyección del juego"></canvas>
+    <div class="projector-topline">
+      <span id="projector-state">Preparando proyección</span>
+      <button id="fullscreen-button" class="projector-control" type="button">Pantalla completa</button>
+    </div>
+    <div id="calibration-dock" class="calibration-dock" hidden>
+      <div>
+        <strong id="calibration-label">Alineá la cruz</strong>
+        <span>Arrastrá la cruz hasta el centro del post-it fucsia. Flechas: mover · Shift: preciso.</span>
+      </div>
+      <button id="confirm-target" class="projector-control primary" type="button">Confirmar esquina <kbd>Enter</kbd></button>
+    </div>
+    <div id="projector-toast" class="projector-toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/projector.js"></script>
+  </body>
+</html>

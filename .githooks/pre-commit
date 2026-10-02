@@ -6,3 +6,4 @@ else
   PY=python3.12
 fi
 PYTHONPATH=. "$PY" -m unittest discover -s . -p 'test_*.py' -q
+node --test services/web/tests/*.test.mjs
