@@ -21,13 +21,13 @@ export function boardCounts(state) {
 
 const ATTEMPT_VIEWS = {
   none: { label: "Sin tablero", hint: "Escaneá y calibrá antes de lanzar." },
-  ready: { label: "Listo", hint: "Ajustá la dirección y lanzá desde el amarillo." },
+  ready: { label: "Listo", hint: "Ajustá la dirección y lanzá desde el post-it de inicio." },
   running: { label: "En juego", hint: "La pelota está en movimiento." },
   paused: {
     label: "En pausa",
     hint: "Intento pausado. Con la proyección abierta podés continuarlo, releer los post-its o empezar otro.",
   },
-  won: { label: "Llegada", hint: "Llegaste al naranja. Podés iniciar otro intento." },
+  won: { label: "Llegada", hint: "Tocaste la llegada. Podés iniciar otro intento." },
   lost: { label: "Fuera", hint: "La pelota salió del campo. Podés reintentar." },
 };
 
@@ -65,9 +65,9 @@ export const SETUP_STAGES = ["camera", "projector", "scan", "play"];
 const SETUP_GUIDES = {
   camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 debajo del video.",
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
-  scan: "Siguiente: escaneá con S. Tienen que verse 4 fucsias, 1 amarillo y 1 naranja; los verdes son opcionales.",
+  scan: "Siguiente: escaneá con S. Tienen que verse 4 esquinas, 1 inicio y 1 llegada (los rebotes son opcionales): mirá las luces debajo del video.",
   calibrate: "Siguiente: calibrá las 4 esquinas con C.",
-  align: "En la ventana del proyector, llevá la cruz al centro de cada fucsia y confirmá con Enter.",
+  align: "En la ventana del proyector, llevá la cruz al centro de cada post-it de esquina y confirmá con Enter.",
   play: "La proyección se apaga un instante al escanear.",
 };
 const STAGE_OF = { camera: "camera", projector: "projector", scan: "scan", calibrate: "scan", align: "scan", play: "play" };
@@ -97,6 +97,65 @@ export function statusText(notice, state, guide) {
   return notice?.message
     || (guide?.blocking ? guide.message : state?.message)
     || "Activá la cámara y abrí la proyección para comenzar.";
+}
+
+/** Post-it roles in panel order, and how many a playable wall needs. */
+export const PALETTE_ROLES = ["start", "goal", "bumper", "marker"];
+export const ROLE_LABELS = { start: "inicio", goal: "llegada", bumper: "rebotes", marker: "esquinas" };
+const NEEDED = { start: 1, goal: 1, bumper: null, marker: 4 };
+
+/**
+ * Detection light per role from a /api/preview response: "on" when the
+ * camera sees what the scan needs (any bumper counts), "warn" when it sees
+ * some but the wrong number, "off" when it sees none, "" before any preview.
+ */
+export function roleLights(preview) {
+  return Object.fromEntries(PALETTE_ROLES.map((role) => {
+    const count = preview?.roles?.[role]?.count;
+    if (!Number.isInteger(count)) return [role, { state: "", count: null, text: "—" }];
+    const needed = NEEDED[role];
+    const state = count === 0 ? "off" : needed === null || count === needed ? "on" : "warn";
+    return [role, { state, count, text: needed === null ? String(count) : `${count}/${needed}` }];
+  }));
+}
+
+/** Where a frame lands inside a box with object-fit: contain. */
+export function containTransform(boxWidth, boxHeight, frameWidth, frameHeight) {
+  const scale = Math.min(boxWidth / frameWidth, boxHeight / frameHeight);
+  return {
+    scale,
+    offsetX: (boxWidth - frameWidth * scale) / 2,
+    offsetY: (boxHeight - frameHeight * scale) / 2,
+  };
+}
+
+/** Frame pixel under a click on the camera stage; null on the letterbox bars. */
+export function framePointFromClick(clientX, clientY, rect, frameWidth, frameHeight) {
+  if (!(frameWidth > 0 && frameHeight > 0 && rect?.width > 0 && rect?.height > 0)) return null;
+  const { scale, offsetX, offsetY } = containTransform(rect.width, rect.height, frameWidth, frameHeight);
+  const x = (clientX - rect.left - offsetX) / scale;
+  const y = (clientY - rect.top - offsetY) / scale;
+  return x >= 0 && y >= 0 && x < frameWidth && y < frameHeight ? { x, y } : null;
+}
+
+/** Top-left corner of a size×size patch around a point, kept inside the frame. */
+export function patchOrigin(point, frameWidth, frameHeight, size = 5) {
+  const half = Math.floor(size / 2);
+  const clamp = (value, top) => Math.max(0, Math.min(top - size, Math.round(value) - half));
+  return { x: clamp(point.x, frameWidth), y: clamp(point.y, frameHeight) };
+}
+
+/** Mean color of RGBA pixels as #rrggbb: what the eyedropper reads. */
+export function averageHex(rgba) {
+  const pixels = rgba?.length / 4;
+  if (!Number.isInteger(pixels) || pixels < 1) throw new TypeError("Se esperaban píxeles RGBA.");
+  const sum = [0, 0, 0];
+  for (let index = 0; index < rgba.length; index += 4) {
+    sum[0] += rgba[index];
+    sum[1] += rgba[index + 1];
+    sum[2] += rgba[index + 2];
+  }
+  return `#${sum.map((total) => Math.round(total / pixels).toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function isTypingTarget(target) {

@@ -150,6 +150,32 @@ class WebHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(updated["game"]["status"], "ready")
         self.assertEqual(updated["game"]["attempts"], 1)
 
+    def test_preview_route_checks_client_type_and_size_then_reports_roles(self) -> None:
+        headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}
+        self.assertEqual(self.request("POST", "/api/preview", self.jpeg(),
+                                      {"Content-Type": "image/jpeg"})[0], 403)
+        self.assertEqual(self.request("POST", "/api/preview", self.jpeg(), {
+            "Content-Type": "application/json", "X-Postit-Client": "1"})[0], 415)
+        self.assertEqual(self.request("POST", "/api/preview",
+                                      b"x" * (8 * 1024 * 1024 + 1), headers)[0], 413)
+        status, preview = self.request("POST", "/api/preview", self.jpeg(), headers)
+        self.assertEqual(status, 200)
+        self.assertEqual({role: data["count"] for role, data in preview["roles"].items()},
+                         {"start": 1, "goal": 1, "bumper": 1, "marker": 4})
+        self.assertEqual(self.request("GET", "/api/state")[1]["phase"], "waiting_camera")
+
+    def test_palette_actions_over_http(self) -> None:
+        status, state = self.action("palette_set", role="goal", hex="#2ec4b6")
+        self.assertEqual(status, 200)
+        self.assertTrue(state["palette"]["roles"]["goal"]["custom"])
+        status, refused = self.action("palette_set", role="goal", hex="nope")
+        self.assertEqual(status, 400)
+        self.assertIn("#rrggbb", refused["error"])
+        self.assertTrue(refused["state"]["palette"]["roles"]["goal"]["custom"])
+        status, state = self.action("palette_reset")
+        self.assertEqual(status, 200)
+        self.assertFalse(state["palette"]["custom"])
+
     def test_camera_or_projector_change_invalidates_old_mapping(self) -> None:
         headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}
         self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)

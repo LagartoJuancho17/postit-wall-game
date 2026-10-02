@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import unittest
 
-from services.web.contract.matrix import MATRIX_PATH, build_matrix, shape
+from services.web.contract.matrix import (MATRIX_PATH, PREVIEWS_PATH, build_matrix,
+                                          build_previews, shape)
 
 REGENERATE = "Regenerá con: ./.venv/bin/python -m services.web.contract.matrix"
 # Fields the UI branches on. Values must match exactly, not just their type.
@@ -62,6 +63,36 @@ class StateMatrixContractTests(unittest.TestCase):
                          p["state"]["game"]["paused"], p["state"]["projection"]["open"])
                   for name, p in self.live.items()}
         self.assertEqual(actual, expected)
+
+    def test_committed_preview_samples_match_the_backend(self) -> None:
+        live = build_previews()["samples"]
+        committed = json.loads(PREVIEWS_PATH.read_text(encoding="utf-8"))["samples"]
+        self.assertEqual(sorted(committed), sorted(live), REGENERATE)
+        for name, sample in live.items():
+            with self.subTest(sample=name):
+                old = committed[name]
+                self.assertEqual(shape(old), shape(sample), REGENERATE)
+                self.assertEqual(old["palette"], sample["palette"], REGENERATE)
+                self.assertEqual({r: d["count"] for r, d in old["preview"]["roles"].items()},
+                                 {r: d["count"] for r, d in sample["preview"]["roles"].items()},
+                                 REGENERATE)
+                self.assertEqual(old["scan_ok"], sample["scan_ok"], REGENERATE)
+
+    def test_preview_samples_cover_ok_missing_and_misread_walls(self) -> None:
+        samples = build_previews()["samples"]
+        counts = {name: {r: d["count"] for r, d in s["preview"]["roles"].items()}
+                  for name, s in samples.items()}
+        full = {"start": 1, "goal": 1, "bumper": 1, "marker": 4}
+        self.assertEqual({name: s["scan_ok"] for name, s in samples.items()},
+                         {"full_wall": True, "missing_start": False, "extra_corner": False,
+                          "recolored_default_colors": False, "recolored_picked_colors": True})
+        self.assertEqual(counts["extra_corner"], {**full, "marker": 5})
+        full = {"start": 1, "goal": 1, "bumper": 1, "marker": 4}
+        self.assertEqual(counts["full_wall"], full)
+        self.assertEqual(counts["missing_start"], {**full, "start": 0})
+        self.assertEqual(counts["recolored_default_colors"],
+                         {"start": 1, "goal": 0, "bumper": 0, "marker": 5})
+        self.assertEqual(counts["recolored_picked_colors"], full)
 
     def test_shape_ignores_values_but_not_types_or_keys(self) -> None:
         self.assertEqual(shape({"a": 1.5, "b": [{"x": 1}]}), shape({"b": [{"x": 9}], "a": 2}))

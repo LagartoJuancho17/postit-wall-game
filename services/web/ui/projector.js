@@ -165,7 +165,7 @@ function draw() {
   if (mode === "black") return;
   if (calibrating) {
     const index = state?.projection?.target?.index ?? state?.calibration?.index ?? 1;
-    calibrationLabel.textContent = `Esquina ${index}/4 · ${state.projection.target.label || "post-it fucsia"}`;
+    calibrationLabel.textContent = `Esquina ${index}/4 · ${state.projection.target.label || "post-it de esquina"}`;
     drawTarget(localTarget || state.projection.target);
   } else if (mode === "game") {
     drawGame(state?.game, state?.board);

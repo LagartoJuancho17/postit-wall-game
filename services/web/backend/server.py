@@ -23,10 +23,12 @@ from urllib.parse import urlsplit
 import cv2
 import numpy as np
 
-from contracts import Board, Point, Polygon, quadrilateral_center
+from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon, quadrilateral_center
 from services.calibration import estimate_homography, transform_board
 from services.physics import GameState, GameStatus, launch, ready_state, step
-from services.vision import detect_board
+from services.vision import (DEFAULT_PALETTE, EXPECTED_NOTES, build_palette, detect_board,
+                             find_notes)
+from services.vision.palette import normalize_hex
 
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -85,6 +87,17 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
     raise RequestError("La captura JPEG no contiene una imagen válida.")
 
 
+def _decode_jpeg(data: bytes) -> np.ndarray:
+    _jpeg_dimensions(data)
+    try:
+        frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    except cv2.error as exc:
+        raise RequestError("No se pudo decodificar la imagen de la cámara.") from exc
+    if frame is None:
+        raise RequestError("No se pudo decodificar la imagen de la cámara.")
+    return frame
+
+
 def _point_json(point: Point) -> dict[str, float]:
     return {"x": round(point.x, 3), "y": round(point.y, 3)}
 
@@ -130,10 +143,14 @@ class GameController:
     """Serialized game transitions; safe for concurrent panel and popup polls."""
 
     def __init__(self, *, log_path: Path | None = None,
-                 clock: Any = time.monotonic):
+                 clock: Any = time.monotonic, palette_path: Path | None = None):
         self._lock = RLock()
         self._clock = clock
         self.log_path = log_path
+        self.palette_path = palette_path
+        self.palette_choices: dict[str, str | None] = {role: None for role in ROLES}
+        self.palette = DEFAULT_PALETTE
+        self._load_palette()
         self.camera_board: Board | None = None
         self.board: Board | None = None
         self.matrix = None
@@ -167,6 +184,43 @@ class GameController:
         self.message = message
         self.revision += 1
 
+    def _load_palette(self) -> None:
+        """Restore the operator's colors; a damaged file falls back to defaults."""
+        if self.palette_path is None or not self.palette_path.exists():
+            return
+        try:
+            saved = json.loads(self.palette_path.read_text(encoding="utf-8"))["choices"]
+            choices = {role: (normalize_hex(saved[role]) if saved.get(role) is not None else None)
+                       for role in ROLES}
+            if set(saved) - set(ROLES):
+                raise ValueError("unknown role")
+            palette = build_palette(choices)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            self._log("palette_ignored", path=str(self.palette_path), reason=str(exc))
+            return
+        self.palette_choices, self.palette = choices, palette
+
+    def _save_palette(self) -> None:
+        if self.palette_path is None:
+            return
+        try:
+            self.palette_path.parent.mkdir(parents=True, exist_ok=True)
+            partial = self.palette_path.with_suffix(".tmp")
+            partial.write_text(json.dumps({"version": 1, "choices": self.palette_choices},
+                                          ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            partial.replace(self.palette_path)
+        except OSError as exc:
+            # The colors still apply now; only surviving a restart is lost.
+            self._log("palette_not_saved", path=str(self.palette_path), reason=str(exc))
+
+    def _palette_json(self) -> dict[str, Any]:
+        rules = self.palette.to_json()
+        return {
+            "custom": any(choice is not None for choice in self.palette_choices.values()),
+            "roles": {role: {**rules[role], "custom": self.palette_choices[role] is not None}
+                      for role in ROLES},
+        }
+
     def _phase(self) -> str:
         if self._calibration_target is not None:
             return "calibrating"
@@ -193,11 +247,12 @@ class GameController:
                        "height": self.frame_height},
             "camera_board": _board_json(self.camera_board),
             "board": _board_json(self.board),
+            "palette": self._palette_json(),
             "calibration": {
                 "status": ("collecting" if self._calibration_target is not None else
                            "ready" if self.matrix is not None else "none"),
                 "index": len(self._calibration_targets), "total": 4,
-                "detail": ("Alineá la cruz con cada post-it fucsia."
+                "detail": ("Alineá la cruz con cada post-it de esquina."
                            if self._calibration_target is not None else
                            "Manual: comprobá la alineación de los contornos."
                            if self.matrix is not None else "Sin calibrar"),
@@ -317,7 +372,7 @@ class GameController:
                 self._calibration_targets = []
                 self._new_target()
                 self.projection_mode = "calibration"
-                self._changed("Alineá la cruz 1/4 con el post-it fucsia superior izquierdo.")
+                self._changed("Alineá la cruz 1/4 con el post-it de esquina superior izquierdo.")
                 self._log("calibration_started", mode="manual")
             elif action == "calibration_move":
                 self._calibration_target = self._projector_point(payload)
@@ -354,7 +409,7 @@ class GameController:
                     self._calibration_targets = targets
                     self._new_target()
                     self._changed(f"Alineá la cruz {len(targets)+1}/4 con el post-it "
-                                  f"fucsia {_MARKER_LABELS[len(targets)]}.")
+                                  f"de esquina {_MARKER_LABELS[len(targets)]}.")
             elif action in ("aim", "aim_left", "aim_right"):
                 if self.game is None or self.game.status != GameStatus.READY:
                     raise RequestError("La dirección solo se cambia antes del lanzamiento.",
@@ -397,6 +452,31 @@ class GameController:
                 self.paused = True
                 self._last_tick = None
                 self._changed("Intento pausado.")
+            elif action == "palette_set":
+                role = payload.get("role")
+                if role not in ROLES:
+                    raise RequestError("Rol de post-it desconocido.")
+                try:
+                    choices = {**self.palette_choices, role: normalize_hex(payload.get("hex"))}
+                    palette = build_palette(choices, changed=role)
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                self.palette_choices, self.palette = choices, palette
+                self._save_palette()
+                rule = palette.rule(role)
+                self._changed(f"Color de {ROLE_LABELS[role]} actualizado."
+                              + (" Escaneá otra vez para aplicarlo al tablero."
+                                 if self.camera_board is not None else ""))
+                self._log("palette_changed", role=role, hex=rule.hex,
+                          hue_low=rule.hue_low, hue_high=rule.hue_high)
+            elif action == "palette_reset":
+                self.palette_choices = {role: None for role in ROLES}
+                self.palette = DEFAULT_PALETTE
+                self._save_palette()
+                self._changed("Colores originales restaurados."
+                              + (" Escaneá otra vez para aplicarlos al tablero."
+                                 if self.camera_board is not None else ""))
+                self._log("palette_reset")
             elif action == "resume":
                 if (not self.projector_open or self.game is None or
                         self.game.status != GameStatus.RUNNING or not self.paused):
@@ -410,14 +490,30 @@ class GameController:
                 raise RequestError(f"Acción desconocida: {action}")
             return self._snapshot_unlocked()
 
-    def scan_jpeg(self, data: bytes) -> dict[str, Any]:
-        _jpeg_dimensions(data)
+    def preview_jpeg(self, data: bytes) -> dict[str, Any]:
+        """Live detection for the camera panel; never changes the game.
+
+        Uses the scan's detector and the current palette, but no count is
+        required, so a partial wall still shows what is visible.
+        """
+        frame = _decode_jpeg(data)
+        with self._lock:
+            palette = self.palette
         try:
-            frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
-        except cv2.error as exc:
-            raise RequestError("No se pudo decodificar la imagen de la cámara.") from exc
-        if frame is None:
-            raise RequestError("No se pudo decodificar la imagen de la cámara.")
+            notes = find_notes(frame, palette)
+        except ValueError as exc:
+            raise RequestError(str(exc)) from exc
+        height, width = frame.shape[:2]
+        return {
+            "width": width,
+            "height": height,
+            "roles": {role: {"count": len(notes[role]), "expected": EXPECTED_NOTES[role],
+                             "notes": [_polygon_json(polygon) for polygon in notes[role]]}
+                      for role in ROLES},
+        }
+
+    def scan_jpeg(self, data: bytes) -> dict[str, Any]:
+        frame = _decode_jpeg(data)
         with self._lock:
             if not self.projector_open:
                 raise RequestError("Abrí la ventana del proyector con J antes de escanear.",
@@ -429,7 +525,7 @@ class GameController:
                 raise RequestError("Terminá o pausá el intento antes de escanear.",
                                    HTTPStatus.CONFLICT)
             try:
-                camera_board = detect_board(frame)
+                camera_board = detect_board(frame, self.palette)
                 board = (_prepare_projector_board(camera_board, self.matrix,
                                                   self.projector_width, self.projector_height)
                          if self.matrix is not None else None)
@@ -492,8 +588,9 @@ def create_server(port: int = 0, controller: GameController | None = None,
     """Return a loopback HTTP server; ``bind=False`` supports socket-free tests."""
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be between 0 and 65535")
+    runs = Path(__file__).resolve().parents[3] / "runs"
     controller = controller or GameController(
-        log_path=Path(__file__).resolve().parents[3] / "runs" / "web-events.jsonl"
+        log_path=runs / "web-events.jsonl", palette_path=runs / "palette.json"
     )
     static_dir = static_dir or Path(__file__).resolve().parents[1] / "ui"
 
@@ -598,7 +695,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
             try:
                 self._check_write_headers()
                 path = urlsplit(self.path).path
-                if path not in ("/api/action", "/api/frame"):
+                if path not in ("/api/action", "/api/frame", "/api/preview"):
                     raise RequestError("Ruta desconocida.", HTTPStatus.NOT_FOUND)
                 content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
                 expected = "application/json" if path == "/api/action" else "image/jpeg"
@@ -608,6 +705,8 @@ def create_server(port: int = 0, controller: GameController | None = None,
                 body = self._read_body()
                 if path == "/api/frame":
                     result = controller.scan_jpeg(body)
+                elif path == "/api/preview":
+                    result = controller.preview_jpeg(body)
                 else:
                     try:
                         payload = json.loads(body)

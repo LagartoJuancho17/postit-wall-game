@@ -8,8 +8,8 @@ recibe una foto JPEG solo al escanear.
 | --- | --- |
 | `backend/` | Servidor HTTP en `127.0.0.1`, estado del juego y contrato HTTP. Ver `backend/README.md`. |
 | `ui/` | `index.html` + `app.js` (panel), `projector.html` + `projector.js` (ventana del proyector) y `ui-core.mjs`, la lógica pura que ambos comparten. |
-| `contract/` | `state-matrix.json`: snapshot real de `/api/state` en cada fase y qué acciones acepta el backend allí. |
-| `tests/` | Pruebas rápidas: `*.test.mjs` (Node) y `test_contract_matrix.py`. |
+| `contract/` | `state-matrix.json`: snapshot real de `/api/state` en cada fase y qué acciones acepta el backend allí. `preview-samples.json`: respuestas reales de `/api/preview`, con la paleta que las produjo y si un escaneo de esa misma foto funciona. |
+| `tests/` | Pruebas rápidas: `*.test.mjs` (Node), `test_contract_matrix.py` y `test_palette_api.py`. |
 | `evals/` | `flows.mjs`: acuerdo entre los botones del panel y el backend. |
 
 ## Matriz de estados
@@ -30,7 +30,9 @@ lugar de estados inventados.
 guardada ya no coincide con el backend: aceptación de acciones, claves y tipos
 del snapshot, y los valores de los que depende el panel (`phase`,
 `game.status`, `game.paused`, `projection.open`, `projection.mode`,
-`calibration.status`). Las coordenadas pueden variar sin que falle.
+`calibration.status`). Las coordenadas pueden variar sin que falle. El mismo
+comando regenera `preview-samples.json`; el test compara su forma, la paleta,
+las cuentas por rol y si el escaneo funciona.
 
 ## Evaluación de flujos
 
@@ -57,6 +59,48 @@ deshabilitados, el panel tiene que nombrar lo que los destraba: la cámara,
 nunca puede mandar a un botón deshabilitado, y el mensaje del backend no
 puede tapar un bloqueo que solo ve el navegador. Informa `dead_states` y
 `unguided_states`.
+
+El caso **lights** usa las cinco muestras de `preview-samples.json`:
+
+- pared completa;
+- sin inicio;
+- con una esquina de más;
+- pared recoloreada con los colores por defecto;
+- la misma pared con colores tomados de la foto.
+
+En cada muestra, las luces de inicio, llegada y esquinas tienen que estar
+todas encendidas exactamente cuando el escaneo de esa foto funciona. La
+muestra con una esquina de más es la que exige la luz ámbar: sin ella, el
+panel diría "listo" y el escaneo fallaría.
+
+## Colores y detección en vivo
+
+Debajo del video, cada rol (inicio, llegada, rebotes, esquinas) tiene:
+
+- una luz;
+- un selector de color (`<input type="color">`);
+- la cuenta de lo detectado;
+- un gotero.
+
+El gotero promedia 7×7 píxeles del cuadro de video en el punto tocado.
+`framePointFromClick()` descarta las bandas negras de `object-fit: contain`.
+Ambos caminos envían `palette_set`, y un rechazo se muestra junto a los
+controles durante 8 segundos.
+
+Cada 250 ms, con una sola foto en vuelo, el panel envía el video a
+`POST /api/preview`. Pausa ese envío durante el escaneo y con la pestaña
+oculta. `roleLights()` convierte la respuesta en luces:
+
+- encendida si la cuenta es la necesaria (cualquier cantidad de rebotes);
+- ámbar si la cuenta es incorrecta;
+- apagada si no ve ninguno.
+
+Sobre la imagen, cada post-it detectado recibe un halo del color de su rol.
+
+Si el servidor no tiene esta función (un `web.py` iniciado antes de este
+cambio), `/api/preview` responde 404 y el estado no trae `palette`. En ese
+caso el panel desactiva los selectores y muestra "Reiniciá web.py…"; el resto
+sigue funcionando.
 
 ## Guía del siguiente paso
 

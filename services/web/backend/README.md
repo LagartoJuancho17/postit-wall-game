@@ -1,9 +1,10 @@
 # Backend web local
 
 El navegador es dueño de la webcam (`getUserMedia`) y del lienzo del
-proyector. Python recibe una foto JPEG solo cuando se relee el tablero **entre
-intentos**. Esto permite que macOS use el permiso de cámara de Chrome, que ya
-está habilitado, y evita que el proceso de Python abra la cámara.
+proyector. Python recibe fotos JPEG en dos casos: al releer el tablero **entre
+intentos** y, para la detección en vivo del panel, unas cuatro veces por
+segundo. Nunca abre la cámara, así que macOS usa el permiso de cámara de
+Chrome, que ya está habilitado.
 
 El servidor escucha únicamente en `127.0.0.1`. `create_server(port=0)` devuelve
 un `ThreadingHTTPServer` sin iniciar; `serve(port=8765)` lo inicia hasta que se
@@ -19,6 +20,7 @@ bind=False)` crea el handler sin llamar a `bind`.
 | `GET /api/state` | Estado actual, geometría en píxeles de cámara y proyector. |
 | `GET /api/tick` | Avance por reloj monotónico de la física a pasos de 1/120 s. |
 | `POST /api/frame` | Bytes `image/jpeg` de una captura oscura; primera lectura o relectura. |
+| `POST /api/preview` | Bytes `image/jpeg` del video en vivo; devuelve lo detectado por rol sin cambiar el juego. |
 | `POST /api/action` | Objeto JSON con una acción de la tabla siguiente. |
 
 Las escrituras requieren `X-Postit-Client: 1`. Si se envía `Origin`, debe ser
@@ -40,6 +42,8 @@ un límite de 12 megapíxeles, comprobado **antes** de decodificarlo.
 | `launch` | ninguno | Inicia un intento. |
 | `reset` | ninguno | Crea una pelota nueva sin releer papeles. |
 | `pause`, `resume` | ninguno | Pausa o reanuda el intento. |
+| `palette_set` | `role` (`start`, `goal`, `bumper`, `marker`), `hex` (`#rrggbb`) | Cambia el color de ese rol; responde 400 con el motivo si es casi gris, muy oscuro o parecido a otro rol. |
+| `palette_reset` | ninguno | Vuelve a los colores por defecto. |
 
 Antes de `/api/frame`, la interfaz envía `projection_black`, espera la
 confirmación de que la ventana pintó negro y deja 150 ms para que el proyector
@@ -51,7 +55,20 @@ preparan una pelota nueva. Si se mueve la webcam o el proyector, hay que
 calibrar otra vez. Una captura fallida conserva el tablero anterior.
 
 `GET /api/state` incluye `phase`, `message`, `camera` (dimensiones de la última
-captura), `camera_board`, `board`, `calibration`, `game` y `projection`. Cada
+captura), `camera_board`, `board`, `palette`, `calibration`, `game` y
+`projection`. `palette` es `{"custom": bool, "roles": {rol: {"hex",
+"hue_low", "hue_high", "min_saturation", "min_value", "custom"}}}`: el color
+de muestra de cada rol y la regla que aplica el detector. El escaneo usa esa
+paleta; cambiarla no altera un tablero ya leído hasta el próximo escaneo. Los
+colores elegidos se guardan en `runs/palette.json` (local, fuera de git). Al
+iniciar se recuperan; si el archivo está dañado, se ignora, se usan los
+colores por defecto y se registra `palette_ignored`.
+
+`POST /api/preview` responde `{"width", "height", "roles": {rol: {"count",
+"expected", "notes": [polígono, ...]}}}` en píxeles de esa foto. `expected`
+vale 1 para inicio y llegada, 4 para esquinas y `null` para los rebotes
+opcionales. Usa el mismo detector y la misma paleta que el escaneo, pero no
+exige cantidades ni toca el estado del juego. Cada
 polígono se codifica como `{ "points": [{ "x": ..., "y": ... }, ...] }`.
 `projection.target` incluye `x`, `y`, `index` (1 a 4) y `label` durante la
 calibración. `width` y `height` son los píxeles CSS lógicos de
@@ -65,9 +82,17 @@ más de 250 ms pausa ese intervalo, como hace el modo Pygame.
 ## Evidencia
 
 `runs/web-events.jsonl` guarda eventos de tamaño del proyector, capturas,
-calibración y resultado de intentos. La evaluación sintética comprueba error
-de mapeo menor de 1 px, victoria, relectura de un rebote movido y pérdida de
-calibración al redimensionar:
+calibración, cambios de color (`palette_changed`, `palette_reset`) y
+resultado de intentos. La evaluación sintética comprueba varias cosas:
+
+- error de mapeo menor de 1 px;
+- victoria;
+- relectura de un rebote movido;
+- pérdida de calibración al redimensionar;
+- una pared pintada con otros colores (`recolored_wall`). Con los colores por
+  defecto se lee mal y el escaneo se rechaza. Tras tomar cada color de la
+  foto, la vista previa ve 1/1/1/4, el escaneo funciona y el intento termina
+  en victoria.
 
 ```sh
 ./.venv/bin/python -m services.web.backend.eval

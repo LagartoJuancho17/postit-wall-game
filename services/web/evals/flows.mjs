@@ -14,14 +14,17 @@
  *   unblocks it (camera, J for the projector, or the cross in the projector
  *   window), never points at a disabled button, and the backend message
  *   cannot hide a browser-side blocker.
+ * - lights: on real /api/preview responses, the start, goal and corner
+ *   lights are all "on" exactly when a scan of the same frame succeeds.
  */
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { controlsFor, setupGuide, statusText } from "../ui/ui-core.mjs";
+import { controlsFor, roleLights, setupGuide, statusText } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
+const previews = JSON.parse(readFileSync(new URL("../contract/preview-samples.json", import.meta.url), "utf8"));
 const CONTROLS = ["scan", "calibrate", "launch", "aim", "reset", "resume"];
 const NEEDS_CAMERA = ["scan", "calibrate", "launch"];
 const JOURNEY = [
@@ -113,6 +116,17 @@ function guidanceCase() {
   return { case: "guidance", passed: unguided.length === 0, combos: seen.size, dead_states: deadStates, unguided };
 }
 
+function lightsCase() {
+  const wrong = Object.entries(previews.samples)
+    .map(([name, sample]) => {
+      const lights = roleLights(sample.preview);
+      const ready = ["start", "goal", "marker"].every((role) => lights[role].state === "on");
+      return { sample: name, lights_ready: ready, scan_ok: sample.scan_ok };
+    })
+    .filter((row) => row.lights_ready !== row.scan_ok);
+  return { case: "lights", passed: wrong.length === 0, samples: Object.keys(previews.samples).length, wrong };
+}
+
 export function runEval() {
   const guidance = guidanceCase();
   const cases = [
@@ -120,6 +134,7 @@ export function runEval() {
     journeyCase(),
     reopenCase(),
     guidance,
+    lightsCase(),
   ];
   const passed = cases.filter((c) => c.passed).length;
   return {

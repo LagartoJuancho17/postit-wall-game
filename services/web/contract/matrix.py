@@ -7,6 +7,9 @@ actions the backend accepts there. The JS tests and eval read the resulting
 ``state-matrix.json`` instead of re-implementing backend rules, so the two
 sides can disagree only where a test or eval shows it.
 
+It also records real ``/api/preview`` responses (``preview-samples.json``)
+so the panel's detection lights are tested against what the backend sends.
+
 Regenerate after changing backend behavior or the snapshot shape::
 
     ./.venv/bin/python -m services.web.contract.matrix
@@ -19,11 +22,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import cv2
+
 from contracts import quadrilateral_center
-from services.web.backend.eval import _frame
+from services.web.backend.eval import FRAME_HUES, _color, _frame, _image, sampled_hex
 from services.web.backend.server import GameController, RequestError
 
 MATRIX_PATH = Path(__file__).with_name("state-matrix.json")
+PREVIEWS_PATH = Path(__file__).with_name("preview-samples.json")
+RECOLORED = {"start": 105, "goal": 176, "bumper": 28, "marker": 140}
 PROJECTOR = (1280, 800)
 # Each UI control, expressed as the backend calls the browser makes for it.
 CONTROLS = ("scan", "calibrate", "launch", "aim", "reset", "resume")
@@ -162,6 +169,54 @@ def build_matrix() -> dict[str, Any]:
     return {"version": 1, "projector": list(PROJECTOR), "phases": phases}
 
 
+def _jpeg(image) -> bytes:
+    okay, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 96])
+    assert okay
+    return encoded.tobytes()
+
+
+def _controller(choices: dict[str, str]) -> GameController:
+    game = GameController(log_path=None)
+    for role, hex_color in choices.items():
+        game.action({"action": "palette_set", "role": role, "hex": hex_color})
+    return game
+
+
+def _scan_ok(choices: dict[str, str], frame: bytes) -> bool:
+    game = _controller(choices)
+    game.action({"action": "projection_open", "width": PROJECTOR[0], "height": PROJECTOR[1]})
+    try:
+        game.scan_jpeg(frame)
+    except RequestError:
+        return False
+    return True
+
+
+def build_previews() -> dict[str, Any]:
+    """Real preview responses, the palette behind each, and whether a scan of
+    the same frame succeeds, so the lights can be checked as a predictor."""
+    no_start = _image(430)
+    no_start[315:386, 145:216] = 220
+    extra_corner = _image(430)
+    cv2.rectangle(extra_corner, (458, 578), (502, 622), _color(FRAME_HUES["marker"]), -1)
+    recolored = _frame(430, RECOLORED)
+    picked = {role: sampled_hex(recolored, role) for role in ("marker", "start", "goal", "bumper")}
+    samples = {
+        "full_wall": ({}, _frame(430)),
+        "missing_start": ({}, _jpeg(no_start)),
+        "extra_corner": ({}, _jpeg(extra_corner)),
+        "recolored_default_colors": ({}, recolored),
+        "recolored_picked_colors": (picked, recolored),
+    }
+    result = {}
+    for name, (choices, frame) in samples.items():
+        game = _controller(choices)
+        result[name] = {"palette": game.snapshot()["palette"],
+                        "preview": game.preview_jpeg(frame),
+                        "scan_ok": _scan_ok(choices, frame)}
+    return {"version": 1, "samples": result}
+
+
 def shape(value: Any) -> Any:
     """Keys and JSON types only, so geometry values may drift without noise."""
     if isinstance(value, dict):
@@ -178,10 +233,10 @@ def shape(value: Any) -> Any:
 
 
 def main() -> None:
-    MATRIX_PATH.write_text(
-        json.dumps(build_matrix(), ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-        encoding="utf-8")
-    print(f"wrote {MATRIX_PATH}")
+    for path, content in ((MATRIX_PATH, build_matrix()), (PREVIEWS_PATH, build_previews())):
+        path.write_text(json.dumps(content, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+                        encoding="utf-8")
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":

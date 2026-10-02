@@ -12,7 +12,7 @@
    "state": {
     "board": null,
     "calibration": {
-     "detail": "Alineá la cruz con cada post-it fucsia.",
+     "detail": "Alineá la cruz con cada post-it de esquina.",
      "error_px": null,
      "index": 0,
      "status": "collecting",
@@ -198,7 +198,44 @@
      "position": null,
      "status": "none"
     },
-    "message": "Alineá la cruz 1/4 con el post-it fucsia superior izquierdo.",
+    "message": "Alineá la cruz 1/4 con el post-it de esquina superior izquierdo.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "calibrating",
     "projection": {
      "height": 800,
@@ -582,6 +619,43 @@
      "status": "lost"
     },
     "message": "La pelota salió del campo.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "lost",
     "projection": {
      "height": 800,
@@ -960,6 +1034,43 @@
      "status": "running"
     },
     "message": "Ventana del proyector cerrada. La partida quedó pausada.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "paused",
     "projection": {
      "height": 800,
@@ -1338,6 +1449,43 @@
      "status": "running"
     },
     "message": "Ventana del proyector abierta.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "paused",
     "projection": {
      "height": 800,
@@ -1383,6 +1531,43 @@
      "status": "none"
     },
     "message": "Abrí la cámara en el navegador y luego la ventana del proyector con J.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "waiting_camera",
     "projection": {
      "height": 0,
@@ -1761,6 +1946,43 @@
      "status": "ready"
     },
     "message": "Calibración lista. Revisá los contornos sobre la pared.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "ready",
     "projection": {
      "height": 800,
@@ -2139,6 +2361,43 @@
      "status": "ready"
     },
     "message": "Ventana del proyector cerrada. La partida quedó pausada.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "ready",
     "projection": {
      "height": 800,
@@ -2517,6 +2776,43 @@
      "status": "running"
     },
     "message": "Pelota lanzada.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "running",
     "projection": {
      "height": 800,
@@ -2727,6 +3023,43 @@
      "status": "none"
     },
     "message": "Tablero leído. Iniciá la calibración.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "scanned",
     "projection": {
      "height": 800,
@@ -2772,6 +3105,43 @@
      "status": "none"
     },
     "message": "Cambió el tamaño del proyector. Escaneá y calibrá otra vez.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "waiting_camera",
     "projection": {
      "height": 800,
@@ -3150,6 +3520,43 @@
      "status": "won"
     },
     "message": "¡Llegaste!",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
     "phase": "won",
     "projection": {
      "height": 800,

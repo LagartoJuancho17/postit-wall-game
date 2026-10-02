@@ -1,12 +1,19 @@
 import {
   attemptView,
+  averageHex,
   boardCounts,
   cameraName,
+  containTransform,
   controlsFor,
+  framePointFromClick,
   isProjectorShortcut,
   isTypingTarget,
   normalizeAngle,
+  PALETTE_ROLES,
+  patchOrigin,
   preferredCamera,
+  ROLE_LABELS,
+  roleLights,
   SETUP_STAGES,
   setupGuide,
   statusText,
@@ -19,6 +26,12 @@ const overlay = $("camera-overlay");
 const channel = new BroadcastChannel("postit-wall");
 const PROJECTOR_URL = "/projector";
 const SETTLE_MS = 180;
+const PREVIEW_EVERY_MS = 250;
+const PREVIEW_MAX_AGE_MS = 1500;
+const SAMPLE_SIZE = 7;
+const PALETTE_ERROR_MS = 8000;
+const PALETTE_NOTE = "Tocá el gotero y después el post-it en la imagen, o elegí el color en el cuadrado. La luz se enciende cuando la cámara lo detecta.";
+const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
 
 let stream = null;
 let popup = null;
@@ -30,6 +43,13 @@ let polling = false;
 let localNotice = null;
 let requestId = 0;
 const pendingBlackouts = new Map();
+let preview = null;
+let previewBusy = false;
+let previewTimer = null;
+let previewSupported = true;
+let pickRole = null;
+let paletteError = null;
+let sampleCanvas = null;
 
 function notice(message, tone = "info") {
   localNotice = { message, tone };
@@ -202,7 +222,7 @@ function waitForBlackout() {
   });
 }
 
-function jpegFromVideo() {
+function jpegFromVideo(quality = .94) {
   return new Promise((resolve, reject) => {
     if (!stream || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) {
       reject(new Error("La cámara aún no entrega imágenes. Esperá un momento y reintentá."));
@@ -215,8 +235,74 @@ function jpegFromVideo() {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
       else reject(new Error("No se pudo capturar una imagen de la cámara."));
-    }, "image/jpeg", .94);
+    }, "image/jpeg", quality);
   });
+}
+
+function schedulePreview(delay = PREVIEW_EVERY_MS) {
+  if (previewTimer || !previewSupported) return;
+  previewTimer = setTimeout(previewTick, delay);
+}
+
+function freshPreview() {
+  return preview && performance.now() - preview.at < PREVIEW_MAX_AGE_MS ? preview : null;
+}
+
+// Live detection: the scan's own detector and palette, run on the backend.
+async function previewTick() {
+  previewTimer = null;
+  if (previewBusy || scanBusy || document.hidden || !stream || !video.videoWidth) {
+    schedulePreview();
+    return;
+  }
+  previewBusy = true;
+  try {
+    const response = await fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
+      body: await jpegFromVideo(.8),
+    });
+    if (response.status === 404) {
+      previewSupported = false; // server started before live detection existed
+      preview = null;
+    } else {
+      preview = { ...(await responseJSON(response)), at: performance.now() };
+    }
+  } catch {
+    preview = null; // best effort; the scan itself still reports real errors
+  } finally {
+    previewBusy = false;
+    render();
+    schedulePreview();
+  }
+}
+
+function sampleHex(point) {
+  sampleCanvas ||= document.createElement("canvas");
+  sampleCanvas.width = video.videoWidth;
+  sampleCanvas.height = video.videoHeight;
+  const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0);
+  const origin = patchOrigin(point, video.videoWidth, video.videoHeight, SAMPLE_SIZE);
+  return averageHex(ctx.getImageData(origin.x, origin.y, SAMPLE_SIZE, SAMPLE_SIZE).data);
+}
+
+async function setColor(role, hex) {
+  paletteError = null;
+  try {
+    applyState(await action("palette_set", { role, hex }));
+  } catch (error) {
+    paletteError = { message: error.message, at: performance.now() };
+    const current = state?.palette?.roles?.[role]?.hex;
+    if (current) $(`color-${role}`).value = current;
+    render();
+  }
+}
+
+function togglePick(role) {
+  paletteError = null;
+  pickRole = pickRole === role ? null : role;
+  render();
 }
 
 async function scanBoard() {
@@ -283,23 +369,21 @@ function drawCameraOverlay() {
   const ctx = overlay.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  const board = state?.camera_board;
-  const frameWidth = state?.camera?.width || video.videoWidth;
-  const frameHeight = state?.camera?.height || video.videoHeight;
-  if (!board || !frameWidth || !frameHeight) return;
-  const scale = Math.min(width / frameWidth, height / frameHeight);
-  const offsetX = (width - frameWidth * scale) / 2;
-  const offsetY = (height - frameHeight * scale) / 2;
-  const polygon = (shape, color) => {
-    if (!shape?.points?.length) return;
+  const colors = Object.fromEntries(PALETTE_ROLES.map((role) =>
+    [role, state?.palette?.roles?.[role]?.hex || FALLBACK_COLORS[role]]));
+  const trace = (fit, shape) => {
     ctx.beginPath();
     shape.points.forEach((point, index) => {
-      const x = offsetX + point.x * scale;
-      const y = offsetY + point.y * scale;
+      const x = fit.offsetX + point.x * fit.scale;
+      const y = fit.offsetY + point.y * fit.scale;
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.closePath();
+  };
+  const outline = (fit, shape, color) => {
+    if (!shape?.points?.length) return;
+    trace(fit, shape);
     ctx.lineWidth = 2.6;
     ctx.strokeStyle = color;
     ctx.shadowColor = "#00130e";
@@ -307,11 +391,80 @@ function drawCameraOverlay() {
     ctx.stroke();
     ctx.shadowBlur = 0;
   };
-  polygon(board.playfield, "#70dce0");
-  polygon(board.start, "#ffdf53");
-  polygon(board.goal, "#ffa659");
-  board.bumpers?.forEach((shape) => polygon(shape, "#77ec8f"));
-  board.markers?.forEach((shape) => polygon(shape, "#ff77d3"));
+  // A detected note lights up: a halo in its role color, a white rim on top.
+  const glow = (fit, shape, color) => {
+    if (!shape?.points?.length) return;
+    ctx.save();
+    trace(fit, shape);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 18;
+    ctx.globalAlpha = .3;
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const board = state?.camera_board;
+  const frameWidth = state?.camera?.width || video.videoWidth;
+  const frameHeight = state?.camera?.height || video.videoHeight;
+  if (board && frameWidth && frameHeight) {
+    const fit = containTransform(width, height, frameWidth, frameHeight);
+    outline(fit, board.playfield, "#70dce0");
+    outline(fit, board.start, colors.start);
+    outline(fit, board.goal, colors.goal);
+    board.bumpers?.forEach((shape) => outline(fit, shape, colors.bumper));
+    board.markers?.forEach((shape) => outline(fit, shape, colors.marker));
+  }
+  const live = freshPreview();
+  if (live?.width && live?.height) {
+    const fit = containTransform(width, height, live.width, live.height);
+    for (const role of PALETTE_ROLES) {
+      live.roles?.[role]?.notes?.forEach((shape) => glow(fit, shape, colors[role]));
+    }
+  }
+}
+
+function renderPalette(cameraReady) {
+  const palette = state?.palette;
+  const editable = Boolean(palette) && previewSupported;
+  if (pickRole && (!editable || !cameraReady)) pickRole = null;
+  const lights = roleLights(freshPreview());
+  for (const role of PALETTE_ROLES) {
+    const swatch = $(`color-${role}`);
+    const color = palette?.roles?.[role]?.hex;
+    swatch.disabled = !editable;
+    if (color && document.activeElement !== swatch) swatch.value = color;
+    const box = swatch.closest(".palette-role");
+    box.style.setProperty("--role-color", color || FALLBACK_COLORS[role]);
+    box.dataset.picking = String(pickRole === role);
+    $(`light-${role}`).dataset.state = lights[role].state;
+    $(`seen-${role}`).textContent = lights[role].text;
+    $(`seen-${role}`).dataset.state = lights[role].state;
+    $(`pick-${role}`).disabled = !editable || !cameraReady;
+    $(`pick-${role}`).setAttribute("aria-pressed", String(pickRole === role));
+  }
+  $("palette-reset").disabled = !editable || !palette.custom;
+  document.querySelectorAll(".note-dot[data-role]").forEach((dot) => {
+    dot.style.background = palette?.roles?.[dot.dataset.role]?.hex || "";
+  });
+
+  const note = $("palette-note");
+  const outdated = Boolean(state) && (!palette || !previewSupported);
+  if (paletteError && performance.now() - paletteError.at > PALETTE_ERROR_MS) paletteError = null;
+  note.textContent = outdated
+    ? "Reiniciá web.py para elegir colores y ver la detección en vivo."
+    : paletteError?.message || (pickRole
+      ? `Tocá un post-it de ${ROLE_LABELS[pickRole]} en la imagen. Esc cancela.`
+      : PALETTE_NOTE);
+  note.dataset.tone = outdated || paletteError ? "warn" : "";
+  $("pick-banner").hidden = !pickRole;
+  $("pick-banner").textContent = pickRole ? `Tocá un post-it de ${ROLE_LABELS[pickRole]} · Esc cancela` : "";
+  if (pickRole) $("camera-stage").dataset.picking = pickRole;
+  else delete $("camera-stage").dataset.picking;
 }
 
 function render() {
@@ -359,6 +512,7 @@ function render() {
   $("stat-attempts").textContent = String(game.attempts ?? 0);
   $("status-message").textContent = statusText(localNotice, state, guide);
   $("status-panel").dataset.tone = localNotice?.tone || "info";
+  renderPalette(cameraReady);
   drawCameraOverlay();
 }
 
@@ -389,11 +543,34 @@ $("aim-left").addEventListener("click", () => changeAngle(Number($("angle-range"
 $("aim-right").addEventListener("click", () => changeAngle(Number($("angle-range").value) + 5));
 $("angle-range").addEventListener("input", (event) => setAngle(event.target.value));
 $("angle-range").addEventListener("change", (event) => changeAngle(event.target.value));
+for (const role of PALETTE_ROLES) {
+  $(`color-${role}`).addEventListener("change", (event) => setColor(role, event.target.value));
+  $(`pick-${role}`).addEventListener("click", () => togglePick(role));
+}
+$("palette-reset").addEventListener("click", () => {
+  paletteError = null;
+  sendAction("palette_reset");
+});
+$("camera-stage").addEventListener("click", (event) => {
+  if (!pickRole || !stream || !video.videoWidth) return;
+  const point = framePointFromClick(event.clientX, event.clientY,
+    $("camera-stage").getBoundingClientRect(), video.videoWidth, video.videoHeight);
+  if (!point) return;
+  const role = pickRole;
+  pickRole = null;
+  setColor(role, sampleHex(point));
+});
 
 document.addEventListener("keydown", (event) => {
   if (isProjectorShortcut(event)) {
     event.preventDefault();
     openProjector();
+    return;
+  }
+  if (pickRole && event.key === "Escape") {
+    event.preventDefault();
+    pickRole = null;
+    render();
     return;
   }
   if (isTypingTarget(event.target) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -446,3 +623,4 @@ render();
 pollState();
 setInterval(pollState, 300);
 startCamera("", true);
+schedulePreview(0);

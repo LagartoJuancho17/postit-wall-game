@@ -47,28 +47,28 @@ class DetectorTests(unittest.TestCase):
         image[275:385, 120:230] = 225
         with self.assertRaises(DetectionError) as caught:
             detect_board(image)
-        self.assertEqual((caught.exception.color, caught.exception.found), ("amarillos", 0))
+        self.assertEqual((caught.exception.role, caught.exception.found), ("start", 0))
 
     def test_extra_goal_is_ambiguous(self):
         image, _ = scene()
         draw_note(image, (650, 130), 12)
         with self.assertRaises(DetectionError) as caught:
             detect_board(image)
-        self.assertEqual((caught.exception.color, caught.exception.found), ("naranja", 2))
+        self.assertEqual((caught.exception.role, caught.exception.found), ("goal", 2))
 
     def test_extra_marker_is_ambiguous(self):
         image, _ = scene()
         draw_note(image, (500, 100), 157)
         with self.assertRaises(DetectionError) as caught:
             detect_board(image)
-        self.assertEqual((caught.exception.color, caught.exception.found), ("fucsia/violeta", 5))
+        self.assertEqual((caught.exception.role, caught.exception.found), ("marker", 5))
 
     def test_missing_marker_is_reported(self):
         image, _ = scene()
         image[50:130, 50:130] = 225
         with self.assertRaises(DetectionError) as caught:
             detect_board(image)
-        self.assertEqual((caught.exception.color, caught.exception.found), ("fucsia/violeta", 3))
+        self.assertEqual((caught.exception.role, caught.exception.found), ("marker", 3))
 
     def test_perspective_marker_center_is_diagonal_intersection(self):
         image, _ = scene()

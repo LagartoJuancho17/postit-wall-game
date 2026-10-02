@@ -56,6 +56,7 @@
               <button id="retry-camera" class="button button-light" type="button">Activar cámara</button>
             </div>
             <div id="camera-live-tag" class="live-tag" hidden><span></span> EN VIVO</div>
+            <div id="pick-banner" class="pick-banner" role="status" hidden></div>
           </div>
           <div class="camera-toolbar">
             <label for="camera-select">Cámara</label>
@@ -64,11 +65,39 @@
             </select>
             <span class="toolbar-note">La imagen se usa para escanear entre intentos.</span>
           </div>
-          <div class="legend" aria-label="Colores del tablero">
-            <span><i class="swatch swatch-yellow"></i>Inicio</span>
-            <span><i class="swatch swatch-orange"></i>Llegada</span>
-            <span><i class="swatch swatch-green"></i>Rebotes</span>
-            <span><i class="swatch swatch-magenta"></i>4 esquinas</span>
+          <div class="palette" aria-label="Colores de los post-its y detección en vivo">
+            <div class="palette-role" data-role="start">
+              <span class="role-light" id="light-start" aria-hidden="true"></span>
+              <input class="role-swatch" id="color-start" type="color" value="#f7d84b" aria-label="Color del post-it de inicio" disabled>
+              <span class="role-name">Inicio</span>
+              <strong class="role-count" id="seen-start" title="Detectados ahora / necesarios">—</strong>
+              <button class="role-pick" id="pick-start" type="button" aria-pressed="false" aria-label="Tomar el color de inicio tocando la imagen" title="Tomar el color tocando la imagen" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5"/><path d="m16.5 2.5 5 5-3 3-5-5z"/><path d="M13.5 6.5 4 16v4h4l9.5-9.5"/></svg></button>
+            </div>
+            <div class="palette-role" data-role="goal">
+              <span class="role-light" id="light-goal" aria-hidden="true"></span>
+              <input class="role-swatch" id="color-goal" type="color" value="#ff9b49" aria-label="Color del post-it de llegada" disabled>
+              <span class="role-name">Llegada</span>
+              <strong class="role-count" id="seen-goal" title="Detectados ahora / necesarios">—</strong>
+              <button class="role-pick" id="pick-goal" type="button" aria-pressed="false" aria-label="Tomar el color de llegada tocando la imagen" title="Tomar el color tocando la imagen" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5"/><path d="m16.5 2.5 5 5-3 3-5-5z"/><path d="M13.5 6.5 4 16v4h4l9.5-9.5"/></svg></button>
+            </div>
+            <div class="palette-role" data-role="bumper">
+              <span class="role-light" id="light-bumper" aria-hidden="true"></span>
+              <input class="role-swatch" id="color-bumper" type="color" value="#6cc678" aria-label="Color de los post-its de rebote" disabled>
+              <span class="role-name">Rebotes</span>
+              <strong class="role-count" id="seen-bumper" title="Detectados ahora (opcionales)">—</strong>
+              <button class="role-pick" id="pick-bumper" type="button" aria-pressed="false" aria-label="Tomar el color de rebotes tocando la imagen" title="Tomar el color tocando la imagen" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5"/><path d="m16.5 2.5 5 5-3 3-5-5z"/><path d="M13.5 6.5 4 16v4h4l9.5-9.5"/></svg></button>
+            </div>
+            <div class="palette-role" data-role="marker">
+              <span class="role-light" id="light-marker" aria-hidden="true"></span>
+              <input class="role-swatch" id="color-marker" type="color" value="#d75ab9" aria-label="Color de los post-its de esquina" disabled>
+              <span class="role-name">Esquinas</span>
+              <strong class="role-count" id="seen-marker" title="Detectados ahora / necesarios">—</strong>
+              <button class="role-pick" id="pick-marker" type="button" aria-pressed="false" aria-label="Tomar el color de esquinas tocando la imagen" title="Tomar el color tocando la imagen" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5"/><path d="m16.5 2.5 5 5-3 3-5-5z"/><path d="M13.5 6.5 4 16v4h4l9.5-9.5"/></svg></button>
+            </div>
+          </div>
+          <div class="palette-footer">
+            <p id="palette-note">Tocá el gotero y después el post-it en la imagen, o elegí el color en el cuadrado. La luz se enciende cuando la cámara lo detecta.</p>
+            <button id="palette-reset" class="link-button" type="button" disabled>Colores originales</button>
           </div>
         </section>
 
@@ -85,10 +114,10 @@
               <button id="calibrate-button" class="button button-secondary" type="button" disabled>Calibrar 4 esquinas <kbd>C</kbd></button>
             </div>
             <div class="detected-notes" aria-label="Post-its detectados">
-              <div><span class="note-dot yellow"></span><span>Inicio</span><strong id="count-start">—</strong></div>
-              <div><span class="note-dot orange"></span><span>Llegada</span><strong id="count-goal">—</strong></div>
-              <div><span class="note-dot green"></span><span>Rebotes</span><strong id="count-bumpers">—</strong></div>
-              <div><span class="note-dot magenta"></span><span>Esquinas</span><strong id="count-markers">—</strong></div>
+              <div><span class="note-dot" data-role="start"></span><span>Inicio</span><strong id="count-start">—</strong></div>
+              <div><span class="note-dot" data-role="goal"></span><span>Llegada</span><strong id="count-goal">—</strong></div>
+              <div><span class="note-dot" data-role="bumper"></span><span>Rebotes</span><strong id="count-bumpers">—</strong></div>
+              <div><span class="note-dot" data-role="marker"></span><span>Esquinas</span><strong id="count-markers">—</strong></div>
             </div>
           </section>
 

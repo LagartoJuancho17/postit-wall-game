@@ -1,0 +1,1032 @@
+{
+ "samples": {
+  "extra_corner": {
+   "palette": {
+    "custom": false,
+    "roles": {
+     "bumper": {
+      "custom": false,
+      "hex": "#6cc678",
+      "hue_high": 90,
+      "hue_low": 40,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "goal": {
+      "custom": false,
+      "hex": "#ff9b49",
+      "hue_high": 19,
+      "hue_low": 5,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "marker": {
+      "custom": false,
+      "hex": "#d75ab9",
+      "hue_high": 179,
+      "hue_low": 125,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "start": {
+      "custom": false,
+      "hex": "#f7d84b",
+      "hue_high": 39,
+      "hue_low": 20,
+      "min_saturation": 75,
+      "min_value": 55
+     }
+    }
+   },
+   "preview": {
+    "height": 720,
+    "roles": {
+     "bumper": {
+      "count": 1,
+      "expected": null,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 394.0,
+          "y": 211.0
+         },
+         {
+          "x": 395.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 210.0
+         }
+        ]
+       }
+      ]
+     },
+     "goal": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 750.0,
+          "y": 320.0
+         },
+         {
+          "x": 750.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 380.0
+         },
+         {
+          "x": 811.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     },
+     "marker": {
+      "count": 5,
+      "expected": 4,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 608.0
+         },
+         {
+          "x": 848.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 608.0
+         },
+         {
+          "x": 68.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 458.0,
+          "y": 578.0
+         },
+         {
+          "x": 458.0,
+          "y": 622.0
+         },
+         {
+          "x": 502.0,
+          "y": 622.0
+         },
+         {
+          "x": 502.0,
+          "y": 578.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 68.0
+         },
+         {
+          "x": 848.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 68.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 68.0
+         },
+         {
+          "x": 68.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 68.0
+         }
+        ]
+       }
+      ]
+     },
+     "start": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 150.0,
+          "y": 320.0
+         },
+         {
+          "x": 150.0,
+          "y": 380.0
+         },
+         {
+          "x": 209.0,
+          "y": 381.0
+         },
+         {
+          "x": 211.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "width": 960
+   },
+   "scan_ok": false
+  },
+  "full_wall": {
+   "palette": {
+    "custom": false,
+    "roles": {
+     "bumper": {
+      "custom": false,
+      "hex": "#6cc678",
+      "hue_high": 90,
+      "hue_low": 40,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "goal": {
+      "custom": false,
+      "hex": "#ff9b49",
+      "hue_high": 19,
+      "hue_low": 5,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "marker": {
+      "custom": false,
+      "hex": "#d75ab9",
+      "hue_high": 179,
+      "hue_low": 125,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "start": {
+      "custom": false,
+      "hex": "#f7d84b",
+      "hue_high": 39,
+      "hue_low": 20,
+      "min_saturation": 75,
+      "min_value": 55
+     }
+    }
+   },
+   "preview": {
+    "height": 720,
+    "roles": {
+     "bumper": {
+      "count": 1,
+      "expected": null,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 394.0,
+          "y": 211.0
+         },
+         {
+          "x": 395.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 210.0
+         }
+        ]
+       }
+      ]
+     },
+     "goal": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 750.0,
+          "y": 320.0
+         },
+         {
+          "x": 750.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 380.0
+         },
+         {
+          "x": 811.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     },
+     "marker": {
+      "count": 4,
+      "expected": 4,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 608.0
+         },
+         {
+          "x": 848.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 608.0
+         },
+         {
+          "x": 68.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 68.0
+         },
+         {
+          "x": 848.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 68.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 68.0
+         },
+         {
+          "x": 68.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 68.0
+         }
+        ]
+       }
+      ]
+     },
+     "start": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 150.0,
+          "y": 320.0
+         },
+         {
+          "x": 150.0,
+          "y": 380.0
+         },
+         {
+          "x": 209.0,
+          "y": 381.0
+         },
+         {
+          "x": 211.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "width": 960
+   },
+   "scan_ok": true
+  },
+  "missing_start": {
+   "palette": {
+    "custom": false,
+    "roles": {
+     "bumper": {
+      "custom": false,
+      "hex": "#6cc678",
+      "hue_high": 90,
+      "hue_low": 40,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "goal": {
+      "custom": false,
+      "hex": "#ff9b49",
+      "hue_high": 19,
+      "hue_low": 5,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "marker": {
+      "custom": false,
+      "hex": "#d75ab9",
+      "hue_high": 179,
+      "hue_low": 125,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "start": {
+      "custom": false,
+      "hex": "#f7d84b",
+      "hue_high": 39,
+      "hue_low": 20,
+      "min_saturation": 75,
+      "min_value": 55
+     }
+    }
+   },
+   "preview": {
+    "height": 720,
+    "roles": {
+     "bumper": {
+      "count": 1,
+      "expected": null,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 394.0,
+          "y": 211.0
+         },
+         {
+          "x": 395.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 210.0
+         }
+        ]
+       }
+      ]
+     },
+     "goal": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 750.0,
+          "y": 320.0
+         },
+         {
+          "x": 750.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 380.0
+         },
+         {
+          "x": 811.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     },
+     "marker": {
+      "count": 4,
+      "expected": 4,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 608.0
+         },
+         {
+          "x": 848.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 608.0
+         },
+         {
+          "x": 68.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 68.0
+         },
+         {
+          "x": 848.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 68.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 68.0
+         },
+         {
+          "x": 68.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 68.0
+         }
+        ]
+       }
+      ]
+     },
+     "start": {
+      "count": 0,
+      "expected": 1,
+      "notes": []
+     }
+    },
+    "width": 960
+   },
+   "scan_ok": false
+  },
+  "recolored_default_colors": {
+   "palette": {
+    "custom": false,
+    "roles": {
+     "bumper": {
+      "custom": false,
+      "hex": "#6cc678",
+      "hue_high": 90,
+      "hue_low": 40,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "goal": {
+      "custom": false,
+      "hex": "#ff9b49",
+      "hue_high": 19,
+      "hue_low": 5,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "marker": {
+      "custom": false,
+      "hex": "#d75ab9",
+      "hue_high": 179,
+      "hue_low": 125,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "start": {
+      "custom": false,
+      "hex": "#f7d84b",
+      "hue_high": 39,
+      "hue_low": 20,
+      "min_saturation": 75,
+      "min_value": 55
+     }
+    }
+   },
+   "preview": {
+    "height": 720,
+    "roles": {
+     "bumper": {
+      "count": 0,
+      "expected": null,
+      "notes": []
+     },
+     "goal": {
+      "count": 0,
+      "expected": 1,
+      "notes": []
+     },
+     "marker": {
+      "count": 5,
+      "expected": 4,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 750.0,
+          "y": 320.0
+         },
+         {
+          "x": 750.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 320.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 608.0
+         },
+         {
+          "x": 848.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 608.0
+         },
+         {
+          "x": 68.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 68.0
+         },
+         {
+          "x": 848.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 68.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 68.0
+         },
+         {
+          "x": 68.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 68.0
+         }
+        ]
+       }
+      ]
+     },
+     "start": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 394.0,
+          "y": 211.0
+         },
+         {
+          "x": 396.0,
+          "y": 261.0
+         },
+         {
+          "x": 465.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 210.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "width": 960
+   },
+   "scan_ok": false
+  },
+  "recolored_picked_colors": {
+   "palette": {
+    "custom": true,
+    "roles": {
+     "bumper": {
+      "custom": true,
+      "hex": "#e6d817",
+      "hue_high": 38,
+      "hue_low": 18,
+      "min_saturation": 115,
+      "min_value": 92
+     },
+     "goal": {
+      "custom": true,
+      "hex": "#e61733",
+      "hue_high": 6,
+      "hue_low": 166,
+      "min_saturation": 115,
+      "min_value": 92
+     },
+     "marker": {
+      "custom": true,
+      "hex": "#a117e6",
+      "hue_high": 150,
+      "hue_low": 130,
+      "min_saturation": 115,
+      "min_value": 92
+     },
+     "start": {
+      "custom": true,
+      "hex": "#177ee5",
+      "hue_high": 115,
+      "hue_low": 95,
+      "min_saturation": 114,
+      "min_value": 92
+     }
+    }
+   },
+   "preview": {
+    "height": 720,
+    "roles": {
+     "bumper": {
+      "count": 1,
+      "expected": null,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 395.0,
+          "y": 210.0
+         },
+         {
+          "x": 396.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 210.0
+         }
+        ]
+       }
+      ]
+     },
+     "goal": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 750.0,
+          "y": 320.0
+         },
+         {
+          "x": 750.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 320.0
+         }
+        ]
+       }
+      ]
+     },
+     "marker": {
+      "count": 4,
+      "expected": 4,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 608.0
+         },
+         {
+          "x": 848.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 652.0
+         },
+         {
+          "x": 892.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 608.0
+         },
+         {
+          "x": 68.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 652.0
+         },
+         {
+          "x": 112.0,
+          "y": 608.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 848.0,
+          "y": 68.0
+         },
+         {
+          "x": 848.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 112.0
+         },
+         {
+          "x": 892.0,
+          "y": 68.0
+         }
+        ]
+       },
+       {
+        "points": [
+         {
+          "x": 68.0,
+          "y": 68.0
+         },
+         {
+          "x": 68.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 112.0
+         },
+         {
+          "x": 112.0,
+          "y": 68.0
+         }
+        ]
+       }
+      ]
+     },
+     "start": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 150.0,
+          "y": 320.0
+         },
+         {
+          "x": 150.0,
+          "y": 380.0
+         },
+         {
+          "x": 210.0,
+          "y": 380.0
+         },
+         {
+          "x": 210.0,
+          "y": 320.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "width": 960
+   },
+   "scan_ok": true
+  }
+ },
+ "version": 1
+}
