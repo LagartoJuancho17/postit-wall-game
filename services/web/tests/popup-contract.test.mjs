@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { isProjectorShortcut } from "../ui/ui-core.mjs";
+import { isProjectorShortcut, SETUP_STAGES } from "../ui/ui-core.mjs";
 
 const read = (name) => readFileSync(new URL(`../ui/${name}`, import.meta.url), "utf8");
 const operator = read("app.js");
@@ -25,6 +25,17 @@ test("every element the scripts look up exists in its page", () => {
   const projectorPageIds = idsIn(projectorPage);
   for (const id of operatorIds) assert.ok(operatorPageIds.has(id), `index.html lacks #${id}`);
   for (const id of projectorIds) assert.ok(projectorPageIds.has(id), `projector.html lacks #${id}`);
+});
+
+test("the next setup step is shown above the buttons it unblocks", () => {
+  const steps = [...operatorPage.matchAll(/data-step="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(steps, SETUP_STAGES);
+  assert.match(operator, /const guide = setupGuide\(state, cameraReady, projectionReady\);/);
+  assert.match(operator, /const controls = controlsFor\(state, cameraReady, projectionReady\);/);
+  assert.match(operator, /\$\(["']setup-hint["']\)\.textContent = guide\.message;/);
+  assert.match(operator, /\$\(["']open-projector["']\)\.dataset\.attention = String\(guide\.step === ["']projector["']\)/);
+  assert.match(operator, /\.step-hint \[data-step\]/);
+  assert.match(operator, /\$\(["']status-message["']\)\.textContent = statusText\(localNotice, state, guide\);/);
 });
 
 test("a paused attempt shows a working resume button", () => {

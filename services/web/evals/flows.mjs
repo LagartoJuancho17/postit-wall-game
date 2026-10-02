@@ -10,12 +10,16 @@
  * - no_camera: without a live camera, nothing that needs a frame is enabled.
  * - journey: the moves an operator needs are enabled where they need them.
  * - reopen: every phase with the projector closed recovers after J.
+ * - guidance: whenever every panel button is disabled, the panel names what
+ *   unblocks it (camera, J for the projector, or the cross in the projector
+ *   window), never points at a disabled button, and the backend message
+ *   cannot hide a browser-side blocker.
  */
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { controlsFor } from "../ui/ui-core.mjs";
+import { controlsFor, setupGuide, statusText } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
 const CONTROLS = ["scan", "calibrate", "launch", "aim", "reset", "resume"];
@@ -79,17 +83,51 @@ function reopenCase() {
   return { case: "reopen", passed: stuck.length === 0, stuck };
 }
 
+const OUTSIDE_PANEL = new Set(["camera", "projector", "align"]);
+const NAMES_ITS_FIX = { camera: /cámara/i, projector: /\bJ\b/, align: /cruz/i };
+
+function guidanceCase() {
+  const seen = new Set();
+  const unguided = [];
+  let deadStates = 0;
+  for (const [name, { state }] of Object.entries(matrix.phases)) {
+    for (const camera of [true, false]) {
+      for (const popup of [true, false]) {
+        const ready = popup && Boolean(state.projection.open);
+        const key = `${name}|camera=${camera}|projector=${ready}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const controls = controlsFor(state, camera, ready);
+        const guide = setupGuide(state, camera, ready);
+        const dead = CONTROLS.every((c) => !controls[c]);
+        deadStates += dead;
+        const problems = [];
+        if (dead && !OUTSIDE_PANEL.has(guide.step)) problems.push(`dead state guides to ${guide.step}`);
+        if (NAMES_ITS_FIX[guide.step] && !NAMES_ITS_FIX[guide.step].test(guide.message)) problems.push("message lacks the fix");
+        if (["scan", "calibrate"].includes(guide.step) && !controls[guide.step]) problems.push(`points at disabled ${guide.step}`);
+        if (guide.blocking && statusText(null, state, guide) !== guide.message) problems.push("backend message hides blocker");
+        if (problems.length) unguided.push({ state: key, problems });
+      }
+    }
+  }
+  return { case: "guidance", passed: unguided.length === 0, combos: seen.size, dead_states: deadStates, unguided };
+}
+
 export function runEval() {
+  const guidance = guidanceCase();
   const cases = [
     ...Object.entries(matrix.phases).map(([name, row]) => phaseCase(name, row)),
     journeyCase(),
     reopenCase(),
+    guidance,
   ];
   const passed = cases.filter((c) => c.passed).length;
   return {
     score: Number((passed / cases.length).toFixed(3)),
     pass_threshold: 1.0,
     disagreements: cases.reduce((n, c) => n + (c.unsound?.length ?? 0) + (c.missing?.length ?? 0), 0),
+    dead_states: guidance.dead_states,
+    unguided_states: guidance.unguided.length,
     cases,
   };
 }

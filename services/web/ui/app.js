@@ -7,6 +7,9 @@ import {
   isTypingTarget,
   normalizeAngle,
   preferredCamera,
+  SETUP_STAGES,
+  setupGuide,
+  statusText,
 } from "./ui-core.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -315,6 +318,7 @@ function render() {
   const cameraReady = Boolean(stream && video.videoWidth);
   const projectionReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const controls = controlsFor(state, cameraReady, projectionReady);
+  const guide = setupGuide(state, cameraReady, projectionReady);
   $("scan-button").disabled = scanBusy || !controls.scan;
   $("calibrate-button").disabled = scanBusy || !controls.calibrate;
   $("launch-button").disabled = !controls.launch;
@@ -328,6 +332,14 @@ function render() {
   $("open-projector").innerHTML = projectionReady
     ? "Enfocar proyección <kbd>J</kbd>"
     : "Abrir proyección <kbd>J</kbd>";
+  $("open-projector").dataset.attention = String(guide.step === "projector");
+  $("setup-hint").textContent = guide.message;
+  $("setup-hint").dataset.tone = guide.step === "play" ? "" : "next";
+  const stageIndex = SETUP_STAGES.indexOf(guide.stage);
+  document.querySelectorAll(".step-hint [data-step]").forEach((step) => {
+    const index = SETUP_STAGES.indexOf(step.dataset.step);
+    step.dataset.state = index < stageIndex ? "done" : index === stageIndex ? "current" : "todo";
+  });
 
   const counts = boardCounts(state);
   const scanned = Boolean(state?.camera_board || state?.board);
@@ -345,8 +357,7 @@ function render() {
   $("stat-bounces").textContent = String(game.bounces ?? 0);
   $("stat-time").textContent = `${Number(game.elapsed_s ?? 0).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
   $("stat-attempts").textContent = String(game.attempts ?? 0);
-  const message = localNotice?.message || state?.message || "Activá la cámara y abrí la proyección para comenzar.";
-  $("status-message").textContent = message;
+  $("status-message").textContent = statusText(localNotice, state, guide);
   $("status-panel").dataset.tone = localNotice?.tone || "info";
   drawCameraOverlay();
 }

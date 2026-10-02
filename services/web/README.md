@@ -50,6 +50,30 @@ reiniciar, continuar una pausa) y verifica que cada fase con el proyector
 cerrado se recupere al reabrirlo con `J`. El informe incluye
 `disagreements`: la cantidad de diferencias entre panel y backend.
 
+El caso **guidance** prueba cada fase con y sin cámara y con y sin proyector
+(38 combinaciones). En las 25 donde todos los botones del panel quedan
+deshabilitados, el panel tiene que nombrar lo que los destraba: la cámara,
+`J` para la proyección o la cruz en la ventana del proyector. Además, la guía
+nunca puede mandar a un botón deshabilitado, y el mensaje del backend no
+puede tapar un bloqueo que solo ve el navegador. Informa `dead_states` y
+`unguided_states`.
+
+## Guía del siguiente paso
+
+`setupGuide()` en `ui-core.mjs` decide el siguiente paso con las mismas
+entradas que `controlsFor()`: cámara, proyector, escanear, calibrar, alinear
+la cruz o jugar. El panel lo muestra en tres lugares:
+
+- debajo de "Preparar la pared", sin necesidad de hacer scroll;
+- en el indicador Cámara → Proyección → Escaneo → Juego;
+- con un anillo en **Abrir proyección** cuando ese es el paso que falta.
+
+`statusText()` hace que un bloqueo del navegador (falta de cámara o de
+proyector) tenga prioridad sobre el último mensaje del backend. Antes, con la
+cámara en vivo y el proyector cerrado, todo quedaba deshabilitado y el único
+mensaje decía "Cambió la cámara. Escaneá y calibrá otra vez.", que mandaba a
+un botón deshabilitado.
+
 Esta evaluación encontró el fallo de la pausa: al cerrar el proyector durante
 un intento, el backend lo pausa y sigue informando `status: "running"` con
 `paused: true`. El panel lo trataba como pelota en movimiento: ocultaba

@@ -59,6 +59,46 @@ export function controlsFor(state, cameraReady, popupReady) {
   };
 }
 
+/** Setup order of the page's step indicator (data-step in index.html). */
+export const SETUP_STAGES = ["camera", "projector", "scan", "play"];
+
+const SETUP_GUIDES = {
+  camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 debajo del video.",
+  projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
+  scan: "Siguiente: escaneá con S. Tienen que verse 4 fucsias, 1 amarillo y 1 naranja; los verdes son opcionales.",
+  calibrate: "Siguiente: calibrá las 4 esquinas con C.",
+  align: "En la ventana del proyector, llevá la cruz al centro de cada fucsia y confirmá con Enter.",
+  play: "La proyección se apaga un instante al escanear.",
+};
+const STAGE_OF = { camera: "camera", projector: "projector", scan: "scan", calibrate: "scan", align: "scan", play: "play" };
+
+/**
+ * What unblocks the operator next, from the same inputs as controlsFor.
+ * Camera and projector are browser-side: the backend cannot see them, so
+ * its message must not hide them (see statusText).
+ */
+export function setupGuide(state, cameraReady, popupReady) {
+  let step = "play";
+  if (!cameraReady) step = "camera";
+  else if (!popupReady) step = "projector";
+  else if (state?.calibration?.status === "collecting") step = "align";
+  else if (!state?.camera_board) step = "scan";
+  else if (state?.calibration?.status !== "ready") step = "calibrate";
+  return {
+    step,
+    stage: STAGE_OF[step],
+    message: SETUP_GUIDES[step],
+    blocking: step === "camera" || step === "projector",
+  };
+}
+
+/** A local notice wins, then a browser-side blocker, then the backend. */
+export function statusText(notice, state, guide) {
+  return notice?.message
+    || (guide?.blocking ? guide.message : state?.message)
+    || "Activá la cámara y abrí la proyección para comenzar.";
+}
+
 export function isTypingTarget(target) {
   if (!target || typeof target.closest !== "function") return false;
   return Boolean(target.closest("input:not([type='range']), select, textarea, [contenteditable='true']"));

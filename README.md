@@ -30,6 +30,10 @@ tamaño invalida la alineación. Los controles de la partida permanecen en la
 ventana principal. Si Chrome bloquea la ventana emergente, permití las
 ventanas emergentes para `127.0.0.1` y volvé a pulsar `J`.
 
+Los botones de escanear, calibrar y lanzar se habilitan recién con la cámara
+y la ventana de proyección listas. Debajo de "Preparar la pared", el panel
+muestra siempre el siguiente paso y resalta el botón que lo destraba.
+
 Con la cámara y la proyección listas:
 
 1. Pulsá `S` para escanear los post-its. La ventana del proyector se pone

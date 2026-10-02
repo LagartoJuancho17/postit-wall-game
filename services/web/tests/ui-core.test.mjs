@@ -15,6 +15,9 @@ import {
   pointInCanvas,
   preferredCamera,
   projectionSize,
+  SETUP_STAGES,
+  setupGuide,
+  statusText,
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
@@ -81,6 +84,72 @@ test("without the projector window every control is disabled", () => {
 test("controlsFor tolerates the empty state before the first poll", () => {
   assert.deepEqual(enabled(controlsFor(null, true, true)), ["scan"]);
   assert.deepEqual(enabled(controlsFor(undefined, undefined, undefined)), []);
+});
+
+// Next setup step per backend phase, camera live, projector ready when open.
+const EXPECTED_STEP = {
+  projector_closed: "projector",
+  waiting_camera: "scan",
+  scanned: "calibrate",
+  calibrating: "align",
+  ready: "play",
+  ready_closed: "projector",
+  running: "play",
+  paused_open: "play",
+  paused_closed: "projector",
+  won: "play",
+  lost: "play",
+};
+
+test("setupGuide names the next step for every backend phase", () => {
+  assert.deepEqual(Object.keys(EXPECTED_STEP).sort(), Object.keys(matrix.phases).sort());
+  for (const [name, { state }] of Object.entries(matrix.phases)) {
+    assert.equal(setupGuide(state, true, state.projection.open).step, EXPECTED_STEP[name], name);
+    assert.equal(setupGuide(state, false, state.projection.open).step, "camera", name);
+  }
+});
+
+test("live camera without the projector window points at J, not at scanning", () => {
+  // Regression: every button was disabled while the only message said
+  // "Cambió la cámara. Escaneá y calibrá otra vez." and the projector was closed.
+  const state = {
+    ...matrix.phases.projector_closed.state,
+    message: "Cambió la cámara. Escaneá y calibrá otra vez.",
+  };
+  assert.deepEqual(enabled(controlsFor(state, true, false)), []);
+  const guide = setupGuide(state, true, false);
+  assert.deepEqual([guide.step, guide.stage, guide.blocking], ["projector", "projector", true]);
+  assert.match(guide.message, /\bJ\b/);
+  assert.doesNotMatch(guide.message, /escaneá/i);
+  assert.equal(statusText(null, state, guide), guide.message);
+});
+
+test("the guide never sends the operator to a disabled button", () => {
+  for (const [name, { state }] of Object.entries(matrix.phases)) {
+    for (const camera of [true, false]) {
+      for (const popup of [true, false]) {
+        const ready = popup && state.projection.open;
+        const where = `${name} camera=${camera} projector=${ready}`;
+        const guide = setupGuide(state, camera, ready);
+        const controls = controlsFor(state, camera, ready);
+        if (guide.step === "scan" || guide.step === "calibrate") {
+          assert.equal(controls[guide.step], true, where);
+        }
+        assert.ok(SETUP_STAGES.includes(guide.stage), where);
+        assert.ok(guide.message, where);
+      }
+    }
+  }
+});
+
+test("statusText: local notice, then browser blocker, then backend message", () => {
+  const state = { message: "Tablero leído. Iniciá la calibración." };
+  const blocking = { blocking: true, message: "Siguiente: abrí la proyección con J." };
+  const clear = { blocking: false, message: "La proyección se apaga un instante al escanear." };
+  assert.equal(statusText({ message: "Leyendo los post-its…" }, state, blocking), "Leyendo los post-its…");
+  assert.equal(statusText(null, state, blocking), blocking.message);
+  assert.equal(statusText(null, state, clear), state.message);
+  assert.match(statusText(null, null, clear), /Activá la cámara/);
 });
 
 test("attemptPhase separates a paused attempt from a moving one", () => {
