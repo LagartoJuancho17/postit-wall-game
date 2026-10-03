@@ -179,6 +179,7 @@ class WebHttpIntegrationTests(unittest.TestCase):
     def test_usb_camera_routes_read_and_fix_settings(self) -> None:
         from services.web.tests.test_usb_camera import FakeBridge
         bridge = FakeBridge()
+        self.server.server_close()  # replaced by one whose USB bridge is fake
         self.server = create_server(port=self.port, controller=GameController(log_path=None, uvc=bridge),
                                     bind=False)
         status, camera = self.request("GET", "/api/camera?vendor=046d&product=082d")
