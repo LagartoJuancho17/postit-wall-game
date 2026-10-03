@@ -9,14 +9,17 @@ import {
   cameraDiagnosis,
   cameraSupport,
   describeCamera,
+  driftedModes,
   fixedPart,
   lockConstraints,
+  mergeSets,
   presetScore,
   refinePlan,
   searchPlan,
   settleMs,
   sharpestTrial,
   snap,
+  usbIdsFromLabel,
 } from "../ui/ui-core.mjs";
 
 const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
@@ -171,6 +174,44 @@ test("the panel fixes the camera on every start and saves what the search finds"
   assert.match(operator, /action\("projection_restore"\)/);
   // What Chrome exposes and what really got applied go to the log.
   for (const kind of ["capabilities", "applied", "search"]) assert.match(operator, new RegExp(`reportCamera\\("${kind}"`));
+});
+
+test("the USB ids come from the label Chrome gives the camera", () => {
+  assert.deepEqual(usbIdsFromLabel("HD Pro Webcam C920 (046d:082d)"), { vendor: "046d", product: "082d" });
+  assert.deepEqual(usbIdsFromLabel("Cam (046D:082D)"), { vendor: "046d", product: "082d" });
+  assert.equal(usbIdsFromLabel("Cámara FaceTime HD"), null);
+  assert.equal(usbIdsFromLabel(undefined), null);
+});
+
+test("drift is a manual mode of the preset that is automatic again", () => {
+  const preset = { whiteBalanceMode: "manual", exposureMode: "manual", colorTemperature: 4000 };
+  assert.deepEqual(driftedModes(preset, { whiteBalanceMode: "continuous", exposureMode: "manual" }),
+    ["whiteBalanceMode"]);
+  assert.deepEqual(driftedModes(preset, { whiteBalanceMode: "manual", exposureMode: "manual" }), []);
+  assert.deepEqual(driftedModes(preset, {}), ["whiteBalanceMode", "exposureMode"]);
+  assert.deepEqual(driftedModes({}, { focusMode: "continuous" }), []);
+});
+
+test("the USB route receives one manual settings object, gain included", () => {
+  const usbCaps = { ...c920, gain: { min: 0, max: 255, step: 1 } };
+  const merged = mergeSets(lockConstraints({ colorTemperature: 4100, exposureTime: 200, focusDistance: 33,
+    gain: 0 }, usbCaps));
+  assert.deepEqual(merged, { whiteBalanceMode: "manual", colorTemperature: 4100, exposureMode: "manual",
+    exposureTime: 200, focusMode: "manual", focusDistance: 35, gain: 0 });
+});
+
+test("without Chrome controls the panel fixes the camera through the server over USB", () => {
+  const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
+  // Chrome first; the USB route only when Chrome offers no manual mode.
+  assert.match(operator, /if \(!cameraSupport\(caps\)\.any\) \{\s*try \{\s*const usb = await usbCamera\(usbIdsFromLabel\(track\.label\)\);/);
+  assert.match(operator, /cameraDriver = "usb";/);
+  assert.match(operator, /if \(cameraDriver === "usb"\) \{[\s\S]*?fetch\("\/api\/camera", \{\s*method: "POST",[\s\S]*?settings: mergeSets\(sets\)/);
+  // The search reads its starting point through the same route.
+  assert.match(operator, /const start = await readCameraSettings\(track\);/);
+  // A watchdog puts back a preset when the camera returns to automatic.
+  assert.match(operator, /setInterval\(watchCamera, WATCH_CAMERA_MS\);/);
+  assert.match(operator, /const drifted = driftedModes\(preset\.settings, current\);/);
+  assert.match(operator, /reportCamera\("reapplied"/);
 });
 
 test("describeCamera and settleMs speak in operator units", () => {

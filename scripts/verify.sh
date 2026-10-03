@@ -14,5 +14,6 @@ fi
 "$PY" -m services.web.backend.eval
 "$PY" -m tests.eval_web_flow
 "$PY" -m services.web.contract.camera_trials --check
+"$PY" -m services.uvc.smoke
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs

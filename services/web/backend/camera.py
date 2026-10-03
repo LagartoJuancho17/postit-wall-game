@@ -16,7 +16,7 @@ from typing import Any
 
 MODES = ("whiteBalanceMode", "exposureMode", "focusMode")
 VALUES = ("colorTemperature", "exposureTime", "focusDistance",
-          "brightness", "contrast", "saturation", "sharpness")
+          "brightness", "contrast", "saturation", "sharpness", "gain")
 MAX_LABEL = 200
 MAX_REPORT_BYTES = 20_000
 

@@ -18,7 +18,7 @@ from pathlib import Path
 from threading import RLock
 import time
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import cv2
 import numpy as np
@@ -28,6 +28,7 @@ from services.calibration import estimate_homography, transform_board
 from services.physics import GameState, GameStatus, launch, ready_state, step
 from services.vision import (DEFAULT_PALETTE, EXPECTED_NOTES, build_palette, detect_board,
                              find_notes, frame_quality)
+from services.uvc import UvcBridge, UvcError
 from services.vision.palette import normalize_hex
 
 from . import camera
@@ -146,8 +147,10 @@ class GameController:
 
     def __init__(self, *, log_path: Path | None = None,
                  clock: Any = time.monotonic, palette_path: Path | None = None,
-                 camera_presets_path: Path | None = None):
+                 camera_presets_path: Path | None = None, uvc: Any = None):
         self._lock = RLock()
+        # USB camera control, outside the game lock: it never touches game state.
+        self.uvc = uvc if uvc is not None else UvcBridge()
         self._clock = clock
         self.log_path = log_path
         self.palette_path = palette_path
@@ -554,6 +557,25 @@ class GameController:
                 raise RequestError(f"Acción desconocida: {action}")
             return self._snapshot_unlocked()
 
+    def usb_camera(self, vendor: str | None, product: str | None) -> dict[str, Any]:
+        """The USB camera's controls in the panel's vocabulary, or why not."""
+        try:
+            return self.uvc.status(vendor, product)
+        except UvcError as exc:
+            return {"available": False, "reason": str(exc)}
+
+    def usb_apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Fix the USB camera's settings; only manual modes are accepted."""
+        try:
+            settings = camera.camera_settings(payload.get("settings"))
+        except ValueError as exc:
+            raise RequestError(str(exc)) from exc
+        try:
+            return self.uvc.apply(settings, payload.get("vendor"), payload.get("product"))
+        except UvcError as exc:
+            raise RequestError(f"La cámara no aceptó el ajuste por USB: {exc}",
+                               HTTPStatus.BAD_GATEWAY) from exc
+
     def preview_jpeg(self, data: bytes) -> dict[str, Any]:
         """Live detection for the camera panel; never changes the game.
 
@@ -725,6 +747,12 @@ def create_server(port: int = 0, controller: GameController | None = None,
                 if path == "/api/tick":
                     self._send_json(HTTPStatus.OK, controller.tick())
                     return
+                if path == "/api/camera":
+                    query = parse_qs(urlsplit(self.path).query)
+                    vendor = (query.get("vendor") or [None])[0]
+                    product = (query.get("product") or [None])[0]
+                    self._send_json(HTTPStatus.OK, controller.usb_camera(vendor, product))
+                    return
                 files = {
                     "/": "index.html", "/projector": "projector.html",
                     "/app.css": "app.css", "/app.js": "app.js",
@@ -761,10 +789,11 @@ def create_server(port: int = 0, controller: GameController | None = None,
             try:
                 self._check_write_headers()
                 path = urlsplit(self.path).path
-                if path not in ("/api/action", "/api/frame", "/api/preview"):
+                if path not in ("/api/action", "/api/frame", "/api/preview", "/api/camera"):
                     raise RequestError("Ruta desconocida.", HTTPStatus.NOT_FOUND)
                 content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
-                expected = "application/json" if path == "/api/action" else "image/jpeg"
+                expected = ("application/json" if path in ("/api/action", "/api/camera")
+                            else "image/jpeg")
                 if content_type != expected:
                     raise RequestError(f"Content-Type esperado: {expected}.",
                                        HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
@@ -780,7 +809,8 @@ def create_server(port: int = 0, controller: GameController | None = None,
                         raise RequestError("JSON inválido.") from exc
                     if not isinstance(payload, dict):
                         raise RequestError("La acción debe ser un objeto JSON.")
-                    result = controller.action(payload)
+                    result = (controller.usb_apply(payload) if path == "/api/camera"
+                              else controller.action(payload))
                 self._send_json(HTTPStatus.OK, result)
             except RequestError as exc:
                 self._error(exc)

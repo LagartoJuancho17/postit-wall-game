@@ -169,7 +169,24 @@ export const CAMERA_GROUPS = [
   { key: "exposure", mode: "exposureMode", value: "exposureTime", label: "exposición" },
   { key: "focus", mode: "focusMode", value: "focusDistance", label: "foco" },
 ];
-const CAMERA_EXTRAS = ["brightness", "contrast", "saturation", "sharpness"];
+const CAMERA_EXTRAS = ["brightness", "contrast", "saturation", "sharpness", "gain"];
+const CAMERA_MODES = ["whiteBalanceMode", "exposureMode", "focusMode"];
+
+/** USB vendor and product ids Chrome appends to a camera label: "C920 (046d:082d)". */
+export function usbIdsFromLabel(label) {
+  const match = /\(([0-9a-f]{4}):([0-9a-f]{4})\)/i.exec(label ?? "");
+  return match ? { vendor: match[1].toLowerCase(), product: match[2].toLowerCase() } : null;
+}
+
+/** Modes a saved preset fixes by hand that the camera has back on automatic. */
+export function driftedModes(preset, current) {
+  return CAMERA_MODES.filter((mode) => preset?.[mode] === "manual" && current?.[mode] !== "manual");
+}
+
+/** The advanced sets as one settings object, for the USB route. */
+export function mergeSets(sets) {
+  return Object.assign({}, ...sets);
+}
 export const SEARCH_EXPOSURE = [50, 100, 200, 400, 800]; // 5 to 80 ms; most are 10 ms multiples (50 Hz)
 export const SEARCH_TEMPERATURE = [3000, 4000, 5000, 6000];
 const TARGET_BRIGHTNESS = 0.62;

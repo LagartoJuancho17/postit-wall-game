@@ -10,8 +10,10 @@ import {
   containTransform,
   controlsFor,
   describeCamera,
+  driftedModes,
   fixedPart,
   lockConstraints,
+  mergeSets,
   presetScore,
   refinePlan,
   searchPlan,
@@ -32,6 +34,7 @@ import {
   setupGuide,
   statusText,
   THEME_KEY,
+  usbIdsFromLabel,
 } from "./ui-core.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -66,6 +69,8 @@ let pickRole = null;
 let paletteError = null;
 let sampleCanvas = null;
 let cameraCaps = null;
+let cameraDriver = "chrome"; // "chrome" or "usb"
+let cameraUsb = null;        // { vendor, product } when the server drives the camera
 let cameraLabel = "";
 let cameraLock = { tone: "idle", text: "Ajuste de cámara: esperando la imagen." };
 let tuning = null;
@@ -377,8 +382,31 @@ async function readCapabilities(track) {
   return { caps, photoError };
 }
 
+// Where the camera is fixed: through Chrome when it offers manual modes,
+// otherwise through the server, which talks to the camera over USB.
+async function usbCamera(ids) {
+  const query = ids ? `?vendor=${ids.vendor}&product=${ids.product}` : "";
+  const response = await fetch(`/api/camera${query}`, { cache: "no-store" });
+  if (response.status === 404) return { available: false, reason: "Reiniciá web.py para fijar la cámara por USB." };
+  return responseJSON(response);
+}
+
+async function readCameraSettings(track) {
+  if (cameraDriver === "usb") return (await usbCamera(cameraUsb)).settings ?? {};
+  return track.getSettings();
+}
+
 async function applyCamera(track, settings) {
   const sets = lockConstraints(settings, cameraCaps);
+  if (cameraDriver === "usb") {
+    if (!sets.length) return readCameraSettings(track);
+    const response = await fetch("/api/camera", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
+      body: JSON.stringify({ ...cameraUsb, settings: mergeSets(sets) }),
+    });
+    return (await responseJSON(response)).settings;
+  }
   if (sets.length) {
     const { width, height } = track.getSettings();
     await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, advanced: sets });
@@ -396,7 +424,8 @@ async function reportCamera(kind, details) {
 
 function lockStatus(settings, { unfixed = [], unavailable = [] }, black) {
   const values = describeCamera(settings);
-  const text = values ? `Cámara fija: ${values}` : "Cámara fija en los valores actuales";
+  const how = cameraDriver === "usb" ? " por USB" : "";
+  const text = values ? `Cámara fija${how}: ${values}` : `Cámara fija${how} en los valores actuales`;
   const problems = [
     unfixed.length ? `no tomó el manual: ${unfixed.join(", ")}` : "",
     unavailable.length ? `Chrome no da control de ${unavailable.join(", ")}` : "",
@@ -415,15 +444,36 @@ async function setupCameraLock() {
   render();
   const { caps, photoError } = await readCapabilities(track);
   if (track !== currentTrack()) return;
+  cameraDriver = "chrome";
+  cameraUsb = null;
   cameraCaps = caps;
+  const chromeDiagnosis = cameraDiagnosis(caps);
+  let usbReason = null;
+  if (!cameraSupport(caps).any) {
+    try {
+      const usb = await usbCamera(usbIdsFromLabel(track.label));
+      if (usb.available && cameraSupport(usb.capabilities).any) {
+        cameraDriver = "usb";
+        cameraUsb = { vendor: usb.device.vendor, product: usb.device.product };
+        cameraCaps = usb.capabilities;
+      } else {
+        usbReason = usb.reason || "la cámara no ofrece controles manuales por USB";
+      }
+    } catch (error) {
+      usbReason = error.message;
+    }
+  }
+  if (track !== currentTrack()) return;
   const support = cameraSupport(cameraCaps);
-  const diagnosis = cameraDiagnosis(cameraCaps);
-  console.info("Controles de cámara que informa Chrome:", cameraKeys(cameraCaps), photoError ?? "");
-  await reportCamera("capabilities", { capabilities: cameraKeys(cameraCaps), support, diagnosis,
-    photo_error: photoError, all_keys: Object.keys(cameraCaps) });
+  const diagnosis = cameraDriver === "usb"
+    ? `por USB: ${cameraDiagnosis(cameraCaps)} · Chrome: ${chromeDiagnosis}`
+    : chromeDiagnosis;
+  console.info("Controles de cámara:", cameraDriver, cameraKeys(cameraCaps), photoError ?? "");
+  await reportCamera("capabilities", { driver: cameraDriver, capabilities: cameraKeys(cameraCaps), support,
+    diagnosis, chrome_keys: Object.keys(caps), photo_error: photoError, usb_reason: usbReason });
   if (!support.any) {
-    cameraLock = { tone: "warn", detail: diagnosis,
-      text: "Chrome no ofrece modo manual de balance, exposición ni foco para esta cámara (pasá el mouse para ver qué informó)." };
+    cameraLock = { tone: "warn", detail: `Chrome: ${chromeDiagnosis} · USB: ${usbReason}`,
+      text: `Ni Chrome ni el control USB pueden fijar esta cámara (${usbReason}).` };
     render();
     return;
   }
@@ -488,7 +538,7 @@ async function tuneCamera() {
       await waitForBlackout();
       black = true;
     }
-    const start = track.getSettings();
+    const start = await readCameraSettings(track);
     const focus = Number.isFinite(start.focusDistance) ? { focusDistance: start.focusDistance } : {};
     const grid = [];
     for (const exposureTime of plan.exposureTime) {
@@ -865,6 +915,27 @@ navigator.mediaDevices?.addEventListener?.("devicechange", () => {
   updateCameraList(stream?.getVideoTracks()[0]?.getSettings().deviceId).catch(() => {});
 });
 
+// Over USB nothing tells the panel if the camera goes back to automatic
+// (unplugged, the Mac slept, another app touched it), so it checks.
+const WATCH_CAMERA_MS = 20000;
+async function watchCamera() {
+  if (cameraDriver !== "usb" || tuning || scanBusy || !currentTrack()) return;
+  const preset = state?.camera_presets?.[cameraLabel];
+  if (!preset) return;
+  try {
+    const current = (await usbCamera(cameraUsb)).settings;
+    const drifted = driftedModes(preset.settings, current);
+    if (!drifted.length) return;
+    const actual = await applyCamera(currentTrack(), preset.settings);
+    const fixed = fixedPart(actual, cameraCaps);
+    await reportCamera("reapplied", { drifted, actual: cameraKeys(actual), unfixed: fixed.unfixed });
+    cameraLock = { ...lockStatus(fixed.settings, fixed, preset.black), detail: cameraLock.detail };
+    render();
+  } catch {
+    // The next check tries again; a failed check changes nothing.
+  }
+}
+
 async function pollState() {
   if (polling) return;
   polling = true;
@@ -882,5 +953,6 @@ async function pollState() {
 render();
 pollState();
 setInterval(pollState, 300);
+setInterval(watchCamera, WATCH_CAMERA_MS);
 startCamera("", true);
 schedulePreview(0);

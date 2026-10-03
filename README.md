@@ -145,7 +145,14 @@ El foco elige la imagen más nítida.
 En la barra de la cámara se ve el resultado, por ejemplo
 `Cámara fija: 4000 K · 20 ms · foco 35`.
 
-Qué hace el panel según lo que informa Chrome de cada control:
+**Por dónde fija la cámara.** Primero se lo pide a Chrome. Si Chrome no ofrece
+modo manual, como pasa con la C920 en macOS, el servidor le habla a la cámara
+directamente por USB (ver `services/uvc/README.md`), y el estado dice
+`Cámara fija por USB: …`. En ese caso, cada 20 segundos el panel comprueba que
+nada haya vuelto a automático (por ejemplo, si se desenchufó la cámara o la Mac
+se durmió). Si pasó, vuelve a aplicar el ajuste y lo registra como `reapplied`.
+
+Qué hace el panel según lo que se puede controlar de cada ajuste:
 
 - **Modo manual y rango de valores**: puede apagar el automático, probar
   valores y guardar el mejor.
@@ -253,6 +260,7 @@ El script ejecuta estas pruebas y evaluaciones:
 ./.venv/bin/python -m services.web.backend.eval
 ./.venv/bin/python -m tests.eval_web_flow
 ./.venv/bin/python -m services.web.contract.camera_trials --check
+./.venv/bin/python -m services.uvc.smoke
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs
 ```
@@ -280,6 +288,8 @@ errores de alineación, cantidad de rebotes y tiempo de llegada.
 - `services/web/ui/`: panel de control y ventana de proyección del navegador.
 - `services/web/contract/`: matriz de estados del backend que leen las
   pruebas y la evaluación del navegador.
+- `services/uvc/`: control de la cámara por USB (balance, exposición y foco
+  manuales) cuando Chrome no lo ofrece.
 - `main.py`: entrada del programa.
 - `web.py`: entrada de la interfaz web.
 

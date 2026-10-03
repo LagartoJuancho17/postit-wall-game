@@ -151,6 +151,25 @@ Al arrancar cada cámara, `setupCameraLock()` hace esto:
 3. Si hay un ajuste guardado con ese nombre de cámara, lo aplica. Si no, corre
    `tuneCamera()`.
 
+**Canal.** Si Chrome no ofrece modo manual para ningún control,
+`setupCameraLock()` le pregunta al servidor por `GET /api/camera`, con los
+ids USB que Chrome agrega al nombre de la cámara (`usbIdsFromLabel()`). Si la
+cámara se puede controlar por USB, pasa a `cameraDriver = "usb"`:
+
+- `applyCamera()` manda los conjuntos de `lockConstraints()` unidos
+  (`mergeSets()`) a `POST /api/camera`;
+- la búsqueda lee su punto de partida por la misma vía;
+- `watchCamera()` revisa cada 20 s si algún modo guardado en manual volvió a
+  automático (`driftedModes()`). Si pasó, aplica el ajuste de nuevo y lo
+  registra como `reapplied`.
+
+Probado en el navegador con una C920 simulada en el servidor, que parte de la
+lectura real:
+
+- Chrome solo informó tamaño y fotogramas, y el panel pasó solo al canal USB;
+- buscó, guardó y, al recargar, aplicó el ajuste en una sola llamada;
+- con un desvío simulado del balance, el vigilante lo corrigió en unos 9 s.
+
 `cameraSupport()` separa dos cosas por control:
 
 - **`lock`**: existe un modo `manual`. Alcanza para apagar el automático y

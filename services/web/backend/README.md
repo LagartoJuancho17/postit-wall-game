@@ -22,6 +22,8 @@ bind=False)` crea el handler sin llamar a `bind`.
 | `POST /api/frame` | Bytes `image/jpeg` de una captura oscura; primera lectura o relectura. |
 | `POST /api/preview` | Bytes `image/jpeg` del video en vivo; devuelve lo detectado por rol sin cambiar el juego. |
 | `POST /api/action` | Objeto JSON con una acción de la tabla siguiente. |
+| `GET /api/camera?vendor=046d&product=082d` | Controles de la cámara USB en el vocabulario de Chrome: `{"available", "device", "capabilities", "settings"}`, o `{"available": false, "reason"}`. Sin ids usa la única cámara USB conectada. |
+| `POST /api/camera` | JSON `{"vendor", "product", "settings"}`: fija la cámara por USB. Solo admite modos `manual` (400 si no); responde 502 con el motivo si la cámara rechaza el pedido. |
 
 Las escrituras requieren `X-Postit-Client: 1`. Si se envía `Origin`, debe ser
 exactamente `http://127.0.0.1:<puerto>`. También se valida `Host` en todas las

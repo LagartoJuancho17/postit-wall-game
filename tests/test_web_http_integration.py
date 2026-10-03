@@ -176,6 +176,26 @@ class WebHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(state["palette"]["custom"])
 
+    def test_usb_camera_routes_read_and_fix_settings(self) -> None:
+        from services.web.tests.test_usb_camera import FakeBridge
+        bridge = FakeBridge()
+        self.server = create_server(port=self.port, controller=GameController(log_path=None, uvc=bridge),
+                                    bind=False)
+        status, camera = self.request("GET", "/api/camera?vendor=046d&product=082d")
+        self.assertEqual((status, camera["available"]), (200, True))
+        self.assertEqual(bridge.calls[0], ("status", "046d", "082d"))
+        body = json.dumps({"vendor": "046d", "product": "082d",
+                           "settings": {"focusMode": "manual"}}).encode()
+        self.assertEqual(self.request("POST", "/api/camera", body,
+                                      {"Content-Type": "application/json"})[0], 403)
+        status, applied = self.request("POST", "/api/camera", body, {
+            "Content-Type": "application/json", "X-Postit-Client": "1"})
+        self.assertEqual(status, 200)
+        self.assertEqual(applied["settings"]["focusMode"], "manual")
+        auto = json.dumps({"settings": {"focusMode": "continuous"}}).encode()
+        self.assertEqual(self.request("POST", "/api/camera", auto, {
+            "Content-Type": "application/json", "X-Postit-Client": "1"})[0], 400)
+
     def test_camera_or_projector_change_invalidates_old_mapping(self) -> None:
         headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}
         self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)
