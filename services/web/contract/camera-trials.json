@@ -1,0 +1,3455 @@
+{
+ "version": 1,
+ "grid": {
+  "exposureTime": [
+   50,
+   100,
+   200,
+   400,
+   800
+  ],
+  "colorTemperature": [
+   3000,
+   4000,
+   5000,
+   6000
+  ]
+ },
+ "rooms": [
+  {
+   "name": "neutral",
+   "light_k": 4500,
+   "ideal_exposure": 260,
+   "trials": [
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.231,
+       "sharpness": 2.32,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.176,
+       "sharpness": 2.31,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.169,
+       "sharpness": 2.3,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.184,
+       "sharpness": 2.3,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.459,
+       "sharpness": 2.86,
+       "note_saturation": 222.5
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.353,
+       "sharpness": 2.84,
+       "note_saturation": 224.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.345,
+       "sharpness": 2.81,
+       "note_saturation": 226.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.369,
+       "sharpness": 2.83,
+       "note_saturation": 224.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0005,
+       "dark": 0.0,
+       "brightness": 0.918,
+       "sharpness": 5.1,
+       "note_saturation": 223.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.71,
+       "sharpness": 4.94,
+       "note_saturation": 223.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.694,
+       "sharpness": 4.92,
+       "note_saturation": 225.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.749,
+       "sharpness": 4.91,
+       "note_saturation": 225.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.51,
+       "note_saturation": 211.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.52,
+       "note_saturation": 215.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.53,
+       "note_saturation": 216.1
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9971,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.57,
+       "note_saturation": 216.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9977,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.76,
+       "note_saturation": 173.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9976,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.82,
+       "note_saturation": 179.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9975,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.83,
+       "note_saturation": 181.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9975,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.83,
+       "note_saturation": 181.8
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "warm_lamps",
+   "light_k": 3000,
+   "ideal_exposure": 350,
+   "trials": [
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0004,
+       "brightness": 0.122,
+       "sharpness": 2.21,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.141,
+       "sharpness": 2.22,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.157,
+       "sharpness": 2.22,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.169,
+       "sharpness": 2.21,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.243,
+       "sharpness": 2.51,
+       "note_saturation": 228.5
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.282,
+       "sharpness": 2.49,
+       "note_saturation": 217.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.318,
+       "sharpness": 2.5,
+       "note_saturation": 233.1
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.341,
+       "sharpness": 2.5,
+       "note_saturation": 234.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.49,
+       "sharpness": 3.66,
+       "note_saturation": 225.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.569,
+       "sharpness": 3.63,
+       "note_saturation": 225.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.631,
+       "sharpness": 3.63,
+       "note_saturation": 230.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.682,
+       "sharpness": 3.62,
+       "note_saturation": 232.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9466,
+       "dark": 0.0,
+       "brightness": 0.984,
+       "sharpness": 7.43,
+       "note_saturation": 224.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 6.94,
+       "note_saturation": 224.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 6.34,
+       "note_saturation": 225.5
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 6.95,
+       "note_saturation": 225.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9973,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 3.49,
+       "note_saturation": 198.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9973,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 3.49,
+       "note_saturation": 201.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9973,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 3.49,
+       "note_saturation": 202.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9974,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 3.48,
+       "note_saturation": 202.0
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "cool_daylight",
+   "light_k": 6000,
+   "ideal_exposure": 130,
+   "trials": [
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 2,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.51,
+       "sharpness": 2.89,
+       "note_saturation": 222.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.396,
+       "sharpness": 2.83,
+       "note_saturation": 221.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.353,
+       "sharpness": 2.83,
+       "note_saturation": 223.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.329,
+       "sharpness": 2.81,
+       "note_saturation": 225.5
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 2,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9703,
+       "dark": 0.0,
+       "brightness": 0.996,
+       "sharpness": 4.99,
+       "note_saturation": 221.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.788,
+       "sharpness": 4.98,
+       "note_saturation": 221.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.706,
+       "sharpness": 4.95,
+       "note_saturation": 223.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.663,
+       "sharpness": 4.92,
+       "note_saturation": 225.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 5.02,
+       "note_saturation": 210.0
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.53,
+       "note_saturation": 214.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.52,
+       "note_saturation": 215.1
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.53,
+       "note_saturation": 215.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9978,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.77,
+       "note_saturation": 170.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9976,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.81,
+       "note_saturation": 177.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9976,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.83,
+       "note_saturation": 179.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9977,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.82,
+       "note_saturation": 180.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9981,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.09,
+       "note_saturation": 124.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9981,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.09,
+       "note_saturation": 107.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.998,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.06,
+       "note_saturation": 111.1
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.998,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.06,
+       "note_saturation": 112.7
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "dim",
+   "light_k": 4000,
+   "ideal_exposure": 700,
+   "trials": [
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.9999,
+       "brightness": 0.078,
+       "sharpness": 2.13,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 1.0,
+       "brightness": 0.059,
+       "sharpness": 2.12,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 1.0,
+       "brightness": 0.067,
+       "sharpness": 2.14,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 1.0,
+       "brightness": 0.075,
+       "sharpness": 2.14,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0004,
+       "brightness": 0.161,
+       "sharpness": 2.22,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0004,
+       "brightness": 0.122,
+       "sharpness": 2.2,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.137,
+       "sharpness": 2.23,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.141,
+       "sharpness": 2.21,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.318,
+       "sharpness": 2.53,
+       "note_saturation": 223.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.243,
+       "sharpness": 2.51,
+       "note_saturation": 228.0
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.275,
+       "sharpness": 2.51,
+       "note_saturation": 227.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.294,
+       "sharpness": 2.5,
+       "note_saturation": 228.0
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.639,
+       "sharpness": 3.75,
+       "note_saturation": 220.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.49,
+       "sharpness": 3.67,
+       "note_saturation": 225.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.545,
+       "sharpness": 3.64,
+       "note_saturation": 225.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.588,
+       "sharpness": 3.64,
+       "note_saturation": 225.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9917,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 7.31,
+       "note_saturation": 221.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9473,
+       "dark": 0.0,
+       "brightness": 0.984,
+       "sharpness": 7.41,
+       "note_saturation": 224.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9971,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 7.16,
+       "note_saturation": 225.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9971,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 7.19,
+       "note_saturation": 225.2
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "bright",
+   "light_k": 5000,
+   "ideal_exposure": 70,
+   "trials": [
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.894,
+       "sharpness": 4.71,
+       "note_saturation": 223.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.686,
+       "sharpness": 4.57,
+       "note_saturation": 221.9
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.616,
+       "sharpness": 4.52,
+       "note_saturation": 225.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 50,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.0,
+       "dark": 0.0,
+       "brightness": 0.663,
+       "sharpness": 4.52,
+       "note_saturation": 225.2
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9971,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 5.22,
+       "note_saturation": 214.0
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.7,
+       "note_saturation": 217.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9972,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.73,
+       "note_saturation": 218.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 100,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 1,
+        "expected": 1
+       },
+       "goal": {
+        "count": 1,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": true,
+       "clipped": 0.9971,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 4.81,
+       "note_saturation": 218.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9977,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.91,
+       "note_saturation": 177.7
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9977,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.97,
+       "note_saturation": 184.1
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9974,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.96,
+       "note_saturation": 185.8
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 200,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9975,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 2.97,
+       "note_saturation": 186.4
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9981,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.28,
+       "note_saturation": 131.0
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9981,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.26,
+       "note_saturation": 119.0
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9979,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.25,
+       "note_saturation": 122.3
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 400,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 2,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 1,
+        "expected": null
+       },
+       "marker": {
+        "count": 4,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.998,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 1.24,
+       "note_saturation": 123.6
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 3000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 0.9998,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 0.02,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 4000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 1.0,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 0.01,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 5000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 1.0,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 0.0,
+       "note_saturation": null
+      }
+     }
+    },
+    {
+     "settings": {
+      "exposureTime": 800,
+      "colorTemperature": 6000
+     },
+     "preview": {
+      "roles": {
+       "start": {
+        "count": 0,
+        "expected": 1
+       },
+       "goal": {
+        "count": 0,
+        "expected": 1
+       },
+       "bumper": {
+        "count": 0,
+        "expected": null
+       },
+       "marker": {
+        "count": 0,
+        "expected": 4
+       }
+      },
+      "quality": {
+       "ready": false,
+       "clipped": 1.0,
+       "dark": 0.0,
+       "brightness": 1.0,
+       "sharpness": 0.0,
+       "note_saturation": null
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

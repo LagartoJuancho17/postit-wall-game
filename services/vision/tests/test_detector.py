@@ -84,6 +84,18 @@ class DetectorTests(unittest.TestCase):
         self.assertAlmostEqual(observed.y, expected_y, delta=2)
         self.assertGreater(abs(observed.y - 96), 8)
 
+    def test_a_wall_tinted_like_a_note_is_not_a_giant_note(self):
+        # Regression: under a strongly wrong white balance the whole wall
+        # turned orange and counted as one goal note, so a broken frame
+        # looked ready. A blob over 5% of the frame is never a post-it.
+        image, _ = scene()
+        wall = np.all(image == 225, axis=2)
+        image[wall] = bgr(14, 150)
+        with self.assertRaises(DetectionError) as caught:
+            detect_board(image)
+        self.assertEqual(caught.exception.role, "goal")
+        self.assertEqual(caught.exception.found, 0)
+
     def test_invalid_frame_is_rejected(self):
         for invalid in (None, np.zeros((100, 100), np.uint8), np.zeros((100, 100, 3), np.float32)):
             with self.assertRaises(ValueError):

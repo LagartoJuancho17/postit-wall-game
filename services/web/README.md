@@ -102,6 +102,63 @@ cambio), `/api/preview` responde 404 y el estado no trae `palette`. En ese
 caso el panel desactiva los selectores y muestra "Reiniciá web.py…"; el resto
 sigue funcionando.
 
+El caso **camera** usa `contract/camera-trials.json`. Ahí hay cinco salas
+simuladas: neutra, lámparas cálidas de 3000 K, luz de día de 6000 K, poca luz
+y mucha luz. `camera_trials.py` genera, para cada exposición y balance de la
+grilla de búsqueda, la foto que tomaría una cámara fija en esa sala y la
+puntúa con el backend real. El eval corre el elegidor del panel en cada sala y
+exige:
+
+- que el escaneo funcione;
+- menos de 2 % de píxeles quemados;
+- balance a 1000 K o menos de la luz real;
+- exposición entre la mitad y el doble de la ideal.
+
+Un test comprueba que la grilla de `ui-core.mjs` para una C920 sea idéntica a
+la del simulador. `verify.sh` regenera las pruebas con `--check`: las cuentas
+y `ready` tienen que coincidir exactamente y las medidas dentro de una
+tolerancia.
+
+## Cámara fija
+
+Al arrancar cada cámara, `setupCameraLock()` hace esto:
+
+1. Lee `getCapabilities()`, después de pedir `ImageCapture.getPhotoCapabilities()`.
+2. Registra en el log qué controles hay.
+3. Si hay un ajuste guardado con ese nombre de cámara, lo aplica. Si no, corre
+   `tuneCamera()`.
+
+`lockConstraints()` arma un conjunto `advanced` por control, siempre en
+`manual`. Un conjunto que la cámara no puede cumplir se descarta entero, así
+que separarlos evita que un control no soportado anule a los demás.
+`fixedPart()` guarda solo lo que `getSettings()` confirma en `manual` e
+informa el resto como "sin fijar".
+
+La búsqueda tiene tres etapas:
+
+1. **Grilla**: exposición × balance (`searchPlan()`), con el foco fijo donde
+   estaba.
+2. **Barrido de foco**: con el mejor punto de la grilla elige la imagen más
+   nítida (`sharpestTrial()`).
+3. **Refinamiento**: el mejor punto más sus vecinos (`refinePlan()`, ±25 % de
+   exposición y ±500 K), todo con el foco nuevo.
+
+Cada prueba espera `settleMs()` (tres cuadros de exposición más 250 ms) y
+puntúa con `presetScore()`. Durante la búsqueda se pausan la vista previa
+normal y el escaneo, y se bloquea el cambio de cámara. Si el proyector está
+listo, se pone en negro; al terminar, `projection_restore` y `resume`
+devuelven la imagen.
+
+Probado en el navegador con una cámara simulada que respeta
+`applyConstraints()`, con luz de 3000 K, exposición ideal de 30 ms y nitidez
+en 160:
+
+- La búsqueda encontró `3500 K · 20 ms · foco 165` (165 es la posición del
+  barrido más cercana a 160) en 32 pruebas, todo en manual.
+- Al recargar, lo aplicó en una sola llamada sin volver a buscar.
+- Con el proyector abierto, lo puso en negro, guardó `black: true` y le
+  devolvió la imagen.
+
 ## Guía del siguiente paso
 
 `setupGuide()` en `ui-core.mjs` decide el siguiente paso con las mismas

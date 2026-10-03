@@ -158,6 +158,147 @@ export function averageHex(rgba) {
   return `#${sum.map((total) => Math.round(total / pixels).toString(16).padStart(2, "0")).join("")}`;
 }
 
+/**
+ * Camera controls the panel fixes by hand. Each pairs a mode with the value
+ * it fixes; extras have no automatic mode but are pinned so another app
+ * cannot leave them changed. Units follow the Image Capture spec:
+ * exposureTime in 100 µs, colorTemperature in kelvin.
+ */
+export const CAMERA_GROUPS = [
+  { key: "whiteBalance", mode: "whiteBalanceMode", value: "colorTemperature", label: "balance de blancos" },
+  { key: "exposure", mode: "exposureMode", value: "exposureTime", label: "exposición" },
+  { key: "focus", mode: "focusMode", value: "focusDistance", label: "foco" },
+];
+const CAMERA_EXTRAS = ["brightness", "contrast", "saturation", "sharpness"];
+export const SEARCH_EXPOSURE = [50, 100, 200, 400, 800]; // 5 to 80 ms; most are 10 ms multiples (50 Hz)
+export const SEARCH_TEMPERATURE = [3000, 4000, 5000, 6000];
+const TARGET_BRIGHTNESS = 0.62;
+
+const isRange = (range) => Number.isFinite(range?.min) && Number.isFinite(range?.max) && range.max >= range.min;
+
+/** Which controls this camera lets Chrome fix by hand (from getCapabilities()). */
+export function cameraSupport(caps) {
+  const support = Object.fromEntries(CAMERA_GROUPS.map((group) => [group.key,
+    Array.isArray(caps?.[group.mode]) && caps[group.mode].includes("manual") && isRange(caps?.[group.value])]));
+  return { ...support, any: CAMERA_GROUPS.some((group) => support[group.key]) };
+}
+
+/** A value clamped into a capability range and onto its step. */
+export function snap(value, range) {
+  const clamp = (number) => Math.min(range.max, Math.max(range.min, number));
+  let result = clamp(value);
+  if (range.step > 0) result = clamp(range.min + Math.round((result - range.min) / range.step) * range.step);
+  return Number(result.toFixed(6));
+}
+
+/**
+ * applyConstraints() advanced sets that fix these values. One set per control:
+ * an advanced set the camera cannot satisfy is skipped whole, so a separate
+ * set keeps one unsupported control from voiding the others.
+ */
+export function lockConstraints(settings, caps) {
+  const support = cameraSupport(caps);
+  const sets = [];
+  for (const group of CAMERA_GROUPS) {
+    if (support[group.key] && Number.isFinite(settings?.[group.value])) {
+      sets.push({ [group.mode]: "manual", [group.value]: snap(settings[group.value], caps[group.value]) });
+    }
+  }
+  for (const key of CAMERA_EXTRAS) {
+    if (isRange(caps?.[key]) && Number.isFinite(settings?.[key])) sets.push({ [key]: snap(settings[key], caps[key]) });
+  }
+  return sets;
+}
+
+/** The fixed part of getSettings(), ready to save; lists what stayed automatic. */
+export function fixedPart(actual, caps) {
+  const support = cameraSupport(caps);
+  const settings = {};
+  const unfixed = [];
+  for (const group of CAMERA_GROUPS) {
+    if (!support[group.key]) continue;
+    if (actual?.[group.mode] === "manual" && Number.isFinite(actual?.[group.value])) {
+      settings[group.mode] = "manual";
+      settings[group.value] = actual[group.value];
+    } else {
+      unfixed.push(group.label);
+    }
+  }
+  for (const key of CAMERA_EXTRAS) {
+    if (isRange(caps?.[key]) && Number.isFinite(actual?.[key])) settings[key] = actual[key];
+  }
+  return { settings, unfixed };
+}
+
+/** Exposure × white balance grid and focus positions for this camera. */
+export function searchPlan(caps, focusSteps = 7) {
+  const support = cameraSupport(caps);
+  const unique = (values) => [...new Set(values)];
+  const focus = caps?.focusDistance;
+  return {
+    exposureTime: support.exposure ? unique(SEARCH_EXPOSURE.map((value) => snap(value, caps.exposureTime))) : [undefined],
+    colorTemperature: support.whiteBalance ? unique(SEARCH_TEMPERATURE.map((value) => snap(value, caps.colorTemperature))) : [undefined],
+    focusDistance: support.focus
+      ? unique(Array.from({ length: focusSteps }, (_, index) =>
+        snap(focus.min + (focus.max - focus.min) * index / (focusSteps - 1), focus)))
+      : [],
+  };
+}
+
+/** Neighbors of the best grid point: a bit shorter and longer, cooler and warmer. */
+export function refinePlan(best, caps) {
+  const support = cameraSupport(caps);
+  const plans = [];
+  if (support.exposure && Number.isFinite(best?.exposureTime)) {
+    for (const factor of [0.75, 1.33]) plans.push({ ...best, exposureTime: snap(best.exposureTime * factor, caps.exposureTime) });
+  }
+  if (support.whiteBalance && Number.isFinite(best?.colorTemperature)) {
+    for (const delta of [-500, 500]) plans.push({ ...best, colorTemperature: snap(best.colorTemperature + delta, caps.colorTemperature) });
+  }
+  const same = (a, b) => a.exposureTime === b.exposureTime && a.colorTemperature === b.colorTemperature;
+  return plans.filter((plan, index) => !same(plan, best) && plans.findIndex((other) => same(other, plan)) === index);
+}
+
+/**
+ * How well a /api/preview frame suits scanning. A frame the scan accepts
+ * always beats one it refuses; then each satisfied role, then saturated
+ * notes, a wall exposed near 62% and no clipped or black pixels.
+ */
+export function presetScore(preview) {
+  const quality = preview?.quality;
+  if (!quality) return -Infinity;
+  const roles = preview.roles ?? {};
+  const satisfied = ["start", "goal", "marker"].filter((role) => roles[role]?.count === NEEDED[role]).length;
+  return (quality.ready ? 1000 : 0) + satisfied * 100 + ((roles.bumper?.count ?? 0) > 0 ? 10 : 0)
+    + 0.2 * (quality.note_saturation ?? 0) - 400 * quality.clipped - 150 * quality.dark
+    - 200 * Math.abs(quality.brightness - TARGET_BRIGHTNESS);
+}
+
+/** Highest score; the earliest trial wins a tie. */
+export function bestTrial(trials) {
+  return trials.reduce((best, trial) => (!best || trial.score > best.score ? trial : best), null);
+}
+
+/** Sharpest frame of a focus sweep; the earliest wins a tie. */
+export function sharpestTrial(trials) {
+  return trials.reduce((best, trial) =>
+    (!best || trial.preview.quality.sharpness > best.preview.quality.sharpness ? trial : best), null);
+}
+
+/** "4000 K · 20 ms · foco 35" for the fixed parts of a preset. */
+export function describeCamera(settings) {
+  const parts = [];
+  if (Number.isFinite(settings?.colorTemperature)) parts.push(`${Math.round(settings.colorTemperature)} K`);
+  if (Number.isFinite(settings?.exposureTime)) parts.push(`${Number((settings.exposureTime / 10).toFixed(1))} ms`);
+  if (Number.isFinite(settings?.focusDistance)) parts.push(`foco ${Number(settings.focusDistance.toFixed(2))}`);
+  return parts.join(" · ");
+}
+
+/** Wait after a change before measuring: three frames of exposure plus slack. */
+export function settleMs(settings) {
+  return 250 + 3 * Math.max(0, (settings?.exposureTime ?? 0) / 10);
+}
+
 export function isTypingTarget(target) {
   if (!target || typeof target.closest !== "function") return false;
   return Boolean(target.closest("input:not([type='range']), select, textarea, [contenteditable='true']"));

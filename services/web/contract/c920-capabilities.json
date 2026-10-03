@@ -1,0 +1,13 @@
+{
+ "_note": "Representative getCapabilities() of a Logitech C920 from its UVC ranges. Replace with the real values logged as camera_report/capabilities in runs/web-events.jsonl.",
+ "whiteBalanceMode": ["manual", "continuous"],
+ "colorTemperature": {"min": 2000, "max": 6500, "step": 1},
+ "exposureMode": ["manual", "continuous"],
+ "exposureTime": {"min": 3, "max": 2047, "step": 1},
+ "focusMode": ["manual", "continuous"],
+ "focusDistance": {"min": 0, "max": 250, "step": 5},
+ "brightness": {"min": 0, "max": 255, "step": 1},
+ "contrast": {"min": 0, "max": 255, "step": 1},
+ "saturation": {"min": 0, "max": 255, "step": 1},
+ "sharpness": {"min": 0, "max": 255, "step": 1}
+}

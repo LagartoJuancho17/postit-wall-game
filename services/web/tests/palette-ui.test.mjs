@@ -103,7 +103,7 @@ test("the panel wires pickers, eyedropper and live preview to the backend", () =
   assert.match(operator, /sendAction\("palette_reset"\)/);
   assert.match(operator, /setColor\(role, sampleHex\(point\)\)/);
   assert.match(operator, /fetch\("\/api\/preview"/);
-  assert.match(operator, /if \(previewBusy \|\| scanBusy \|\| document\.hidden/);
+  assert.match(operator, /if \(previewBusy \|\| scanBusy \|\| tuning \|\| document\.hidden/);
   assert.match(operator, /response\.status === 404\) \{\s*previewSupported = false;/);
 });
 

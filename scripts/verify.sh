@@ -13,5 +13,6 @@ fi
 "$PY" -m services.runtime.eval
 "$PY" -m services.web.backend.eval
 "$PY" -m tests.eval_web_flow
+"$PY" -m services.web.contract.camera_trials --check
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs

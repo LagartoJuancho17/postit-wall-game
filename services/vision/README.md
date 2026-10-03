@@ -46,8 +46,26 @@ markers 125–179, with saturation ≥75 and value ≥55.
 The detector uses HSV thresholding per role, 3 px morphological cleanup,
 contour area and rectangle-shape filters. A blob must cover at least
 `max(80, 0.00012 × frame area)` pixels, so notes need to be visibly separated
-and much larger than camera noise. Even lighting and locked camera exposure
-improve reliability.
+and much larger than camera noise.
+
+A blob must also cover at most 5% of the frame (`MAX_NOTE_FRACTION`). Under
+a badly wrong white balance the whole wall takes a note's color. Before this
+cap, that wall counted as one giant note with the real note inside it, so a
+broken frame looked ready. Even lighting and locked camera exposure improve
+reliability.
+
+## Frame quality
+
+`frame_quality(frame_bgr, palette, notes=None)` measures how well a frame
+suits detection. The panel uses it to pick fixed camera settings. It returns:
+
+- `ready`: `detect_board` would succeed.
+- `clipped` / `dark`: fraction of pixels whose brightest channel is ≥250 /
+  <25.
+- `brightness`: median brightest channel, 0–1, which mostly reads the wall's
+  exposure.
+- `sharpness`: variance of the Laplacian of the lightly blurred gray image.
+- `note_saturation`: mean saturation inside the detected notes, or `None`.
 
 On any missing or duplicate required note, `DetectionError` exposes `role`,
 `expected` and `found`, and its Spanish user-facing message names the role
@@ -60,7 +78,7 @@ new scan.
 From the project root:
 
 ```sh
-python -m unittest services.vision.tests.test_detector services.vision.tests.test_palette
+python -m unittest services.vision.tests.test_detector services.vision.tests.test_palette services.vision.tests.test_quality
 python -m services.vision.eval
 ```
 

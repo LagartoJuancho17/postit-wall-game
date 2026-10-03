@@ -27,8 +27,10 @@ from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon, quadrilateral_c
 from services.calibration import estimate_homography, transform_board
 from services.physics import GameState, GameStatus, launch, ready_state, step
 from services.vision import (DEFAULT_PALETTE, EXPECTED_NOTES, build_palette, detect_board,
-                             find_notes)
+                             find_notes, frame_quality)
 from services.vision.palette import normalize_hex
+
+from . import camera
 
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -143,7 +145,8 @@ class GameController:
     """Serialized game transitions; safe for concurrent panel and popup polls."""
 
     def __init__(self, *, log_path: Path | None = None,
-                 clock: Any = time.monotonic, palette_path: Path | None = None):
+                 clock: Any = time.monotonic, palette_path: Path | None = None,
+                 camera_presets_path: Path | None = None):
         self._lock = RLock()
         self._clock = clock
         self.log_path = log_path
@@ -151,6 +154,9 @@ class GameController:
         self.palette_choices: dict[str, str | None] = {role: None for role in ROLES}
         self.palette = DEFAULT_PALETTE
         self._load_palette()
+        self.camera_presets_path = camera_presets_path
+        self.camera_presets: dict[str, dict[str, Any]] = {}
+        self._load_camera_presets()
         self.camera_board: Board | None = None
         self.board: Board | None = None
         self.matrix = None
@@ -213,6 +219,23 @@ class GameController:
             # The colors still apply now; only surviving a restart is lost.
             self._log("palette_not_saved", path=str(self.palette_path), reason=str(exc))
 
+    def _load_camera_presets(self) -> None:
+        if self.camera_presets_path is None or not self.camera_presets_path.exists():
+            return
+        try:
+            self.camera_presets = camera.load_presets(self.camera_presets_path)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            self._log("camera_presets_ignored", path=str(self.camera_presets_path), reason=str(exc))
+
+    def _save_camera_presets(self) -> None:
+        if self.camera_presets_path is None:
+            return
+        try:
+            camera.save_presets(self.camera_presets_path, self.camera_presets)
+        except OSError as exc:
+            self._log("camera_presets_not_saved", path=str(self.camera_presets_path),
+                      reason=str(exc))
+
     def _palette_json(self) -> dict[str, Any]:
         rules = self.palette.to_json()
         return {
@@ -248,6 +271,7 @@ class GameController:
             "camera_board": _board_json(self.camera_board),
             "board": _board_json(self.board),
             "palette": self._palette_json(),
+            "camera_presets": json.loads(json.dumps(self.camera_presets)),
             "calibration": {
                 "status": ("collecting" if self._calibration_target is not None else
                            "ready" if self.matrix is not None else "none"),
@@ -356,6 +380,13 @@ class GameController:
                                        HTTPStatus.CONFLICT)
                 self.projection_mode = "black"
                 self._changed("Proyección en negro. Ahora podés capturar la pared.")
+            elif action == "projection_restore":
+                # After a blackout that produced no new board (a failed scan or
+                # a camera search), show again what the projector was showing.
+                if self.projector_open:
+                    self.projection_mode = ("calibration" if self._calibration_target else
+                                            "game" if self.board else "black")
+                    self.revision += 1
             elif action == "calibrate":
                 if not self.projector_open:
                     raise RequestError("Abrí la ventana del proyector con J.", HTTPStatus.CONFLICT)
@@ -477,6 +508,39 @@ class GameController:
                               + (" Escaneá otra vez para aplicarlos al tablero."
                                  if self.camera_board is not None else ""))
                 self._log("palette_reset")
+            elif action == "camera_preset_save":
+                try:
+                    label = camera.camera_label(payload.get("camera"))
+                    settings = camera.camera_settings(payload.get("settings"))
+                    capabilities = camera.report(payload.get("capabilities") or {})
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                entry = camera.preset_entry(settings, score=payload.get("score"),
+                                            black=payload.get("black"))
+                self.camera_presets[label] = entry
+                self._save_camera_presets()
+                self._changed(f"Ajuste fijo de cámara guardado para {label}.")
+                trials = payload.get("trials")
+                self._log("camera_preset_saved", camera=label, settings=settings,
+                          score=entry["score"], black=entry["black"],
+                          trials=trials if isinstance(trials, int) else None,
+                          capabilities=capabilities)
+            elif action == "camera_preset_clear":
+                try:
+                    label = camera.camera_label(payload.get("camera"))
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                if self.camera_presets.pop(label, None) is not None:
+                    self._save_camera_presets()
+                    self._changed(f"Ajuste de cámara borrado para {label}.")
+                    self._log("camera_preset_cleared", camera=label)
+            elif action == "camera_report":
+                try:
+                    label = camera.camera_label(payload.get("camera"))
+                    details = camera.report(payload.get("report"))
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                self._log("camera_report", camera=label, **{"report": details})
             elif action == "resume":
                 if (not self.projector_open or self.game is None or
                         self.game.status != GameStatus.RUNNING or not self.paused):
@@ -510,6 +574,7 @@ class GameController:
             "roles": {role: {"count": len(notes[role]), "expected": EXPECTED_NOTES[role],
                              "notes": [_polygon_json(polygon) for polygon in notes[role]]}
                       for role in ROLES},
+            "quality": frame_quality(frame, palette, notes),
         }
 
     def scan_jpeg(self, data: bytes) -> dict[str, Any]:
@@ -590,7 +655,8 @@ def create_server(port: int = 0, controller: GameController | None = None,
         raise ValueError("port must be between 0 and 65535")
     runs = Path(__file__).resolve().parents[3] / "runs"
     controller = controller or GameController(
-        log_path=runs / "web-events.jsonl", palette_path=runs / "palette.json"
+        log_path=runs / "web-events.jsonl", palette_path=runs / "palette.json",
+        camera_presets_path=runs / "camera-presets.json",
     )
     static_dir = static_dir or Path(__file__).resolve().parents[1] / "ui"
 

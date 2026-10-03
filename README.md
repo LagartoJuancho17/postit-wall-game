@@ -89,6 +89,54 @@ Límites:
   iluminar papeles de más. El escaneo apaga la proyección antes de leer.
 - Después de cambiar un color, escaneá otra vez para aplicarlo al tablero.
 
+## Cámara fija: nada en automático
+
+El balance de blancos, la exposición y el foco automáticos cambian los colores
+cuando el proyector se apaga para escanear. Por eso el panel los fija:
+
+- **Al abrir la cámara**, si hay un ajuste guardado para esa cámara (por
+  nombre, por ejemplo `HD Pro Webcam C920 (046d:082d)`), lo aplica en manual
+  enseguida.
+- **Si no hay ajuste guardado, lo busca solo y lo guarda.** La búsqueda nunca
+  usa el automático: prueba valores fijos y elige el mejor. Tarda unos 15
+  segundos.
+- **Buscar ajuste fijo / Buscar otra vez** repite la búsqueda cuando quieras.
+  Hacelo con la ventana de proyección abierta: la búsqueda la pone en negro
+  como al escanear y después vuelve a mostrar lo que había. Si el ajuste se
+  buscó sin proyector, el estado lo avisa en ámbar.
+
+La búsqueda prueba:
+
+1. **Exposición y balance**: 5 exposiciones (5, 10, 20, 40 y 80 ms; casi
+   todas múltiplos de 10 ms para no parpadear con la luz de 50 Hz) por 4
+   balances (3000 a 6000 K).
+2. **Foco**: 7 posiciones de foco con lo mejor del paso anterior.
+3. **Refinamiento**: los vecinos del mejor ajuste.
+
+Cada prueba la puntúa el backend con el mismo detector del escaneo, en este
+orden de prioridad:
+
+- que el escaneo funcione;
+- cuántos tipos de post-it se ven bien;
+- el color de los post-its;
+- la pared expuesta cerca del 62 % de brillo, sin zonas quemadas ni negras.
+
+El foco elige la imagen más nítida.
+
+En la barra de la cámara se ve el resultado, por ejemplo
+`Cámara fija: 4000 K · 20 ms · foco 35`. Si Chrome no deja fijar algún
+control de esa cámara, el estado lo dice ("Sin fijar: foco").
+
+Los ajustes quedan en `runs/camera-presets.json`. En `runs/web-events.jsonl`
+quedan como `camera_report`:
+
+- qué controles expone Chrome;
+- qué valores quedaron realmente aplicados;
+- el resultado de cada búsqueda.
+
+Si cambiás la luz de la sala, buscá otra vez. Si cambia el color de la imagen,
+volvé a tomar los colores con el gotero.
+
 ## Montaje
 
 1. Usá una pared plana. Colocá los cuatro post-its de esquina cerca de las
@@ -173,6 +221,7 @@ El script ejecuta estas pruebas y evaluaciones:
 ./.venv/bin/python -m services.runtime.eval
 ./.venv/bin/python -m services.web.backend.eval
 ./.venv/bin/python -m tests.eval_web_flow
+./.venv/bin/python -m services.web.contract.camera_trials --check
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs
 ```

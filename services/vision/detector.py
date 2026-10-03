@@ -17,6 +17,7 @@ from .palette import DEFAULT_PALETTE
 
 # How many notes of each role a playable board needs; bumpers are optional.
 EXPECTED_NOTES: dict[str, int | None] = {"start": 1, "goal": 1, "bumper": None, "marker": 4}
+MAX_NOTE_FRACTION = 0.05  # of the frame area
 
 
 class DetectionError(ValueError):
@@ -77,11 +78,14 @@ def _find_candidates(hsv: np.ndarray, rule: ColorRule) -> list[_Candidate]:
     # At 1080p the floor is roughly 250 px². This rejects isolated hot
     # pixels without depending on a particular webcam resolution.
     min_area = max(80.0, width * height * 0.00012)
+    # A note is a small part of a wall that also shows the whole field. A
+    # bigger blob is a tinted wall or a large object, never a post-it.
+    max_area = width * height * MAX_NOTE_FRACTION
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     candidates: list[_Candidate] = []
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area < min_area:
+        if area < min_area or area > max_area:
             continue
         (_, _), (rect_width, rect_height), _ = cv2.minAreaRect(contour)
         short_side = min(rect_width, rect_height)

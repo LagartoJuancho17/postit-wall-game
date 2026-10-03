@@ -189,6 +189,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": -45.0,
      "attempts": 0,
@@ -606,6 +607,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": -180.0,
      "attempts": 1,
@@ -1021,6 +1023,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": 0.0,
      "attempts": 1,
@@ -1436,6 +1439,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": 0.0,
      "attempts": 1,
@@ -1521,6 +1525,7 @@
      "width": 0
     },
     "camera_board": null,
+    "camera_presets": {},
     "game": {
      "aim_degrees": -45.0,
      "attempts": 0,
@@ -1933,6 +1938,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": -45.0,
      "attempts": 0,
@@ -2348,6 +2354,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": -45.0,
      "attempts": 0,
@@ -2763,6 +2770,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": 0.0,
      "attempts": 1,
@@ -3013,6 +3021,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": -45.0,
      "attempts": 0,
@@ -3095,6 +3104,7 @@
      "width": 0
     },
     "camera_board": null,
+    "camera_presets": {},
     "game": {
      "aim_degrees": -45.0,
      "attempts": 0,
@@ -3507,6 +3517,7 @@
       ]
      }
     },
+    "camera_presets": {},
     "game": {
      "aim_degrees": 0.0,
      "attempts": 1,

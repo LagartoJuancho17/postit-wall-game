@@ -63,7 +63,8 @@
             <select id="camera-select" aria-label="Elegir cámara">
               <option value="">Buscando cámaras…</option>
             </select>
-            <span class="toolbar-note">La imagen se usa para escanear entre intentos.</span>
+            <span id="camera-lock" class="camera-lock" data-tone="idle" role="status">Ajuste de cámara: esperando la imagen.</span>
+            <button id="camera-tune" class="button button-secondary button-compact" type="button" disabled>Buscar ajuste fijo</button>
           </div>
           <div class="palette" aria-label="Colores de los post-its y detección en vivo">
             <div class="palette-role" data-role="start">

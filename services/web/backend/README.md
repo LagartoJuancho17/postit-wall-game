@@ -44,6 +44,10 @@ un límite de 12 megapíxeles, comprobado **antes** de decodificarlo.
 | `pause`, `resume` | ninguno | Pausa o reanuda el intento. |
 | `palette_set` | `role` (`start`, `goal`, `bumper`, `marker`), `hex` (`#rrggbb`) | Cambia el color de ese rol; responde 400 con el motivo si es casi gris, muy oscuro o parecido a otro rol. |
 | `palette_reset` | ninguno | Vuelve a los colores por defecto. |
+| `camera_preset_save` | `camera` (nombre), `settings`, `score`, `black`, `trials`, `capabilities` | Guarda el ajuste fijo de esa cámara. `settings` solo admite `whiteBalanceMode`, `exposureMode` y `focusMode` en `"manual"`, y `colorTemperature`, `exposureTime`, `focusDistance`, `brightness`, `contrast`, `saturation` y `sharpness` como números finitos. Responde 400 ante cualquier modo automático. |
+| `camera_preset_clear` | `camera` | Borra el ajuste de esa cámara. |
+| `camera_report` | `camera`, `report` (objeto de hasta 20 KB) | Solo registra en el log lo que el navegador pudo controlar y aplicar; no cambia el juego. |
+| `projection_restore` | ninguno | Tras un negro sin tablero nuevo (escaneo fallido o búsqueda de cámara), vuelve a mostrar juego, calibración o negro según corresponda. |
 
 Antes de `/api/frame`, la interfaz envía `projection_black`, espera la
 confirmación de que la ventana pintó negro y deja 150 ms para que el proyector
@@ -65,10 +69,23 @@ iniciar se recuperan; si el archivo está dañado, se ignora, se usan los
 colores por defecto y se registra `palette_ignored`.
 
 `POST /api/preview` responde `{"width", "height", "roles": {rol: {"count",
-"expected", "notes": [polígono, ...]}}}` en píxeles de esa foto. `expected`
-vale 1 para inicio y llegada, 4 para esquinas y `null` para los rebotes
-opcionales. Usa el mismo detector y la misma paleta que el escaneo, pero no
-exige cantidades ni toca el estado del juego. Cada
+"expected", "notes": [polígono, ...]}}, "quality": {...}}` en píxeles de esa
+foto. `expected` vale 1 para inicio y llegada, 4 para esquinas y `null` para
+los rebotes opcionales. `quality` viene de `services.vision.frame_quality`:
+
+- `ready`: si el escaneo de esa foto funcionaría;
+- `clipped` y `dark`: fracción de píxeles quemados y negros;
+- `brightness`: brillo mediano;
+- `sharpness`: nitidez;
+- `note_saturation`: saturación dentro de los post-its.
+
+El panel usa `quality` para elegir el ajuste fijo de cámara. Igual que el
+escaneo, usa el mismo detector y la misma paleta, pero no exige cantidades ni
+toca el estado del juego.
+
+`camera_presets` en el estado es `{nombre de cámara: {"settings", "score",
+"black", "saved_at"}}`, persistido en `runs/camera-presets.json`. Si el
+archivo está dañado, se ignora y se registra `camera_presets_ignored`. Cada
 polígono se codifica como `{ "points": [{ "x": ..., "y": ... }, ...] }`.
 `projection.target` incluye `x`, `y`, `index` (1 a 4) y `label` durante la
 calibración. `width` y `height` son los píxeles CSS lógicos de
@@ -82,8 +99,9 @@ más de 250 ms pausa ese intervalo, como hace el modo Pygame.
 ## Evidencia
 
 `runs/web-events.jsonl` guarda eventos de tamaño del proyector, capturas,
-calibración, cambios de color (`palette_changed`, `palette_reset`) y
-resultado de intentos. La evaluación sintética comprueba varias cosas:
+calibración, cambios de color (`palette_changed`, `palette_reset`), ajustes
+de cámara (`camera_preset_saved` y `camera_report` con `kind`
+`capabilities`, `applied` o `search`) y resultado de intentos. La evaluación sintética comprueba varias cosas:
 
 - error de mapeo menor de 1 px;
 - victoria;

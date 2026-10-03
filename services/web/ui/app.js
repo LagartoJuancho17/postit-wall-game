@@ -1,10 +1,21 @@
 import {
+  attemptPhase,
   attemptView,
   averageHex,
+  bestTrial,
   boardCounts,
   cameraName,
+  cameraSupport,
   containTransform,
   controlsFor,
+  describeCamera,
+  fixedPart,
+  lockConstraints,
+  presetScore,
+  refinePlan,
+  searchPlan,
+  settleMs,
+  sharpestTrial,
   framePointFromClick,
   isProjectorShortcut,
   isTypingTarget,
@@ -50,6 +61,14 @@ let previewSupported = true;
 let pickRole = null;
 let paletteError = null;
 let sampleCanvas = null;
+let cameraCaps = null;
+let cameraLabel = "";
+let cameraLock = { tone: "idle", text: "Ajuste de cámara: esperando la imagen." };
+let tuning = null;
+const CAMERA_KEYS = ["whiteBalanceMode", "colorTemperature", "exposureMode", "exposureTime",
+  "focusMode", "focusDistance", "brightness", "contrast", "saturation", "sharpness",
+  "width", "height", "frameRate"];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function notice(message, tone = "info") {
   localNotice = { message, tone };
@@ -170,8 +189,11 @@ async function startCamera(deviceId = "", preferExternal = false) {
     $("connection-pill").dataset.tone = "ready";
     clearNotice();
     render();
+    setupCameraLock();
   } catch (error) {
     stopCamera();
+    cameraCaps = null;
+    cameraLock = { tone: "idle", text: "Ajuste de cámara: esperando la imagen." };
     const message = cameraError(error);
     $("camera-placeholder").hidden = false;
     $("camera-placeholder").querySelector("strong").textContent = "No se ve la cámara";
@@ -251,7 +273,7 @@ function freshPreview() {
 // Live detection: the scan's own detector and palette, run on the backend.
 async function previewTick() {
   previewTimer = null;
-  if (previewBusy || scanBusy || document.hidden || !stream || !video.videoWidth) {
+  if (previewBusy || scanBusy || tuning || document.hidden || !stream || !video.videoWidth) {
     schedulePreview();
     return;
   }
@@ -299,6 +321,176 @@ async function setColor(role, hex) {
   }
 }
 
+function currentTrack() {
+  return stream?.getVideoTracks()[0] ?? null;
+}
+
+function cameraKeys(source) {
+  return Object.fromEntries(CAMERA_KEYS.filter((key) => source?.[key] !== undefined)
+    .map((key) => [key, source[key]]));
+}
+
+async function readCapabilities(track) {
+  // Chrome fills the image-capture part of getCapabilities() once it has read
+  // the camera's photo state; asking ImageCapture first makes that explicit.
+  if ("ImageCapture" in window) {
+    try {
+      await Promise.race([new ImageCapture(track).getPhotoCapabilities(), sleep(2000)]);
+    } catch {
+      // A camera without photo state still answers getCapabilities().
+    }
+  }
+  return track.getCapabilities?.() ?? {};
+}
+
+async function applyCamera(track, settings) {
+  const sets = lockConstraints(settings, cameraCaps);
+  if (sets.length) {
+    const { width, height } = track.getSettings();
+    await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, advanced: sets });
+  }
+  return track.getSettings();
+}
+
+async function reportCamera(kind, details) {
+  try {
+    await action("camera_report", { camera: cameraLabel, report: { kind, ...details } });
+  } catch {
+    // The log is evidence, not a requirement: a failed report changes nothing.
+  }
+}
+
+function lockStatus(settings, unfixed, black) {
+  const text = `Cámara fija: ${describeCamera(settings) || "sin valores"}`;
+  if (unfixed.length) return { tone: "warn", text: `${text}. Sin fijar: ${unfixed.join(", ")}.` };
+  if (!black) return { tone: "warn", text: `${text}. Repetí la búsqueda con la proyección abierta.` };
+  return { tone: "ok", text };
+}
+
+// Every camera start: apply the saved preset, or search one and save it.
+async function setupCameraLock() {
+  const track = currentTrack();
+  if (!track || tuning) return;
+  cameraLabel = track.label || cameraSelect.selectedOptions[0]?.textContent || "Cámara";
+  cameraLock = { tone: "busy", text: "Leyendo los controles de la cámara…" };
+  render();
+  cameraCaps = await readCapabilities(track);
+  if (track !== currentTrack()) return;
+  const support = cameraSupport(cameraCaps);
+  await reportCamera("capabilities", { capabilities: cameraKeys(cameraCaps), support });
+  if (!support.any) {
+    cameraLock = { tone: "warn", text: "Chrome no deja fijar balance, exposición ni foco en esta cámara." };
+    render();
+    return;
+  }
+  try {
+    applyState(await responseJSON(await fetch("/api/state", { cache: "no-store" })));
+  } catch {
+    // The regular poll keeps trying.
+  }
+  if (!state || !("camera_presets" in state)) {
+    cameraLock = { tone: "warn", text: "Reiniciá web.py para fijar la cámara." };
+    render();
+    return;
+  }
+  const preset = state.camera_presets[cameraLabel];
+  if (!preset) {
+    await tuneCamera();
+    return;
+  }
+  try {
+    const actual = await applyCamera(track, preset.settings);
+    const { settings, unfixed } = fixedPart(actual, cameraCaps);
+    await reportCamera("applied", { requested: preset.settings, actual: cameraKeys(actual), unfixed });
+    cameraLock = lockStatus(settings, unfixed, preset.black);
+  } catch (error) {
+    cameraLock = { tone: "error", text: `No se pudo fijar la cámara: ${error.message}` };
+  }
+  render();
+}
+
+async function tryCamera(track, settings) {
+  if (track !== currentTrack()) throw new Error("la cámara cambió durante la búsqueda");
+  await applyCamera(track, settings);
+  await sleep(settleMs(settings));
+  const response = await fetch("/api/preview", {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
+    body: await jpegFromVideo(.8),
+  });
+  const result = await responseJSON(response);
+  preview = { ...result, at: performance.now() }; // the lights follow the search
+  tuning.done += 1;
+  render();
+  return { settings, preview: result, score: presetScore(result) };
+}
+
+// Only fixed values are tried: an exposure × white balance grid, a focus
+// sweep, then the neighbors of the best. Scored by the scan's own detector.
+async function tuneCamera() {
+  const track = currentTrack();
+  if (!track || tuning || scanBusy || !cameraCaps || !cameraSupport(cameraCaps).any) return;
+  const plan = searchPlan(cameraCaps);
+  const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
+  tuning = { done: 0, total: plan.exposureTime.length * plan.colorTemperature.length
+    + plan.focusDistance.length + 5 };
+  cameraSelect.disabled = true;
+  let black = false;
+  render();
+  try {
+    if (projectorReady && attemptPhase(state?.game) !== "running") {
+      applyState(await action("projection_black"));
+      await waitForBlackout();
+      black = true;
+    }
+    const start = track.getSettings();
+    const focus = Number.isFinite(start.focusDistance) ? { focusDistance: start.focusDistance } : {};
+    const grid = [];
+    for (const exposureTime of plan.exposureTime) {
+      for (const colorTemperature of plan.colorTemperature) {
+        grid.push(await tryCamera(track, { ...focus, exposureTime, colorTemperature }));
+      }
+    }
+    let best = bestTrial(grid).settings;
+    if (plan.focusDistance.length) {
+      const sweep = [];
+      for (const focusDistance of plan.focusDistance) sweep.push(await tryCamera(track, { ...best, focusDistance }));
+      best = { ...best, focusDistance: sharpestTrial(sweep).settings.focusDistance };
+    }
+    const finalists = [await tryCamera(track, best)];
+    for (const settings of refinePlan(best, cameraCaps)) finalists.push(await tryCamera(track, settings));
+    const winner = bestTrial(finalists);
+    const actual = await applyCamera(track, winner.settings);
+    const { settings, unfixed } = fixedPart(actual, cameraCaps);
+    await reportCamera("search", { chosen: winner.settings, score: winner.score, trials: tuning.done,
+      actual: cameraKeys(actual), unfixed, black });
+    if (Object.keys(settings).length) {
+      applyState(await action("camera_preset_save", { camera: cameraLabel, settings, score: winner.score,
+        black, trials: tuning.done, capabilities: cameraKeys(cameraCaps) }));
+    }
+    cameraLock = lockStatus(settings, unfixed, black);
+  } catch (error) {
+    cameraLock = { tone: "error", text: `No se pudo fijar la cámara: ${error.message}` };
+  } finally {
+    if (black) {
+      await restoreProjection();
+      channel.postMessage({ type: "resume" });
+    }
+    tuning = null;
+    cameraSelect.disabled = cameraSelect.options.length === 0 || !cameraSelect.options[0].value;
+    render();
+  }
+}
+
+// A blackout that produced no new board must not leave the projector dark.
+async function restoreProjection() {
+  try {
+    applyState(await action("projection_restore"));
+  } catch {
+    // A server without this action restores the view on the next game action.
+  }
+}
+
 function togglePick(role) {
   paletteError = null;
   pickRole = pickRole === role ? null : role;
@@ -306,7 +498,7 @@ function togglePick(role) {
 }
 
 async function scanBoard() {
-  if (scanBusy) return;
+  if (scanBusy || tuning) return;
   if (!controlsFor(state, Boolean(stream), popupReady && state?.projection?.open).scan) return;
   scanBusy = true;
   render();
@@ -327,6 +519,7 @@ async function scanBoard() {
     render();
   } catch (error) {
     notice(error.message, "error");
+    await restoreProjection();
   } finally {
     channel.postMessage({ type: "resume" });
     scanBusy = false;
@@ -472,8 +665,15 @@ function render() {
   const projectionReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const controls = controlsFor(state, cameraReady, projectionReady);
   const guide = setupGuide(state, cameraReady, projectionReady);
-  $("scan-button").disabled = scanBusy || !controls.scan;
-  $("calibrate-button").disabled = scanBusy || !controls.calibrate;
+  $("scan-button").disabled = scanBusy || Boolean(tuning) || !controls.scan;
+  $("calibrate-button").disabled = scanBusy || Boolean(tuning) || !controls.calibrate;
+  const lock = tuning ? { tone: "busy", text: `Buscando ajuste fijo de cámara ${tuning.done}/${tuning.total}…` } : cameraLock;
+  $("camera-lock").textContent = lock.text;
+  $("camera-lock").title = lock.text;
+  $("camera-lock").dataset.tone = lock.tone;
+  $("camera-tune").disabled = !cameraReady || Boolean(tuning) || scanBusy || !cameraSupport(cameraCaps).any
+    || !state || !("camera_presets" in state) || attemptPhase(state?.game) === "running";
+  $("camera-tune").textContent = state?.camera_presets?.[cameraLabel] ? "Buscar otra vez" : "Buscar ajuste fijo";
   $("launch-button").disabled = !controls.launch;
   $("launch-button").hidden = controls.resume;
   $("resume-button").hidden = !controls.resume;
@@ -547,6 +747,7 @@ for (const role of PALETTE_ROLES) {
   $(`color-${role}`).addEventListener("change", (event) => setColor(role, event.target.value));
   $(`pick-${role}`).addEventListener("click", () => togglePick(role));
 }
+$("camera-tune").addEventListener("click", () => tuneCamera());
 $("palette-reset").addEventListener("click", () => {
   paletteError = null;
   sendAction("palette_reset");

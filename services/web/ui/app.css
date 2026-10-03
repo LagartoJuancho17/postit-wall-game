@@ -118,6 +118,13 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; p
 .camera-toolbar label { color: #43574e; font-size: 12px; font-weight: 700; }
 .camera-toolbar select { background: var(--surface); border: 1px solid #c6d1c9; border-radius: 7px; color: var(--ink); min-width: 240px; max-width: 45%; height: 35px; padding: 0 29px 0 10px; font-size: 12px; }
 .toolbar-note { margin-left: auto; text-align: right; color: var(--muted); font-size: 11px; }
+.camera-toolbar { flex-wrap: wrap; row-gap: 8px; padding-block: 10px; }
+.camera-lock { flex: 1 1 220px; min-width: 0; margin-left: auto; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.35; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.camera-lock[data-tone="ok"] { color: #1f6a4a; font-weight: 650; }
+.camera-lock[data-tone="busy"] { color: #155d55; font-weight: 650; }
+.camera-lock[data-tone="warn"] { color: #94571a; font-weight: 650; }
+.camera-lock[data-tone="error"] { color: #944439; font-weight: 650; }
+.button-compact { flex: 0 0 auto; min-height: 34px; padding: 7px 11px; font-size: 12px; }
 .palette { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 17px; }
 .palette-role { --role-color: #c9d0cb; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 46px; padding: 6px 7px 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color .18s ease, box-shadow .18s ease; }
 .palette-role[data-picking="true"] { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(13, 113, 104, .16); }
@@ -222,6 +229,7 @@ html:fullscreen body.projector-page[data-mode="game"] .projector-toast { display
   .topbar-actions .button { font-size: 11px; padding: 9px 11px; }
   .calibration-dock { align-items: stretch; flex-direction: column; }
   .palette-footer { flex-direction: column; gap: 4px; }
+  .camera-lock { flex-basis: 100%; margin-left: 0; text-align: left; white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }

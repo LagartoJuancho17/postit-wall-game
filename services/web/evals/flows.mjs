@@ -16,15 +16,23 @@
  *   cannot hide a browser-side blocker.
  * - lights: on real /api/preview responses, the start, goal and corner
  *   lights are all "on" exactly when a scan of the same frame succeeds.
+ * - camera: in five simulated rooms (contract/camera-trials.json, frames
+ *   scored by the real backend), the fixed-camera search picks a setting
+ *   the scan accepts, without clipping, with white balance within 1000 K of
+ *   the light and exposure within 2x of the ideal.
  */
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { controlsFor, roleLights, setupGuide, statusText } from "../ui/ui-core.mjs";
+import {
+  bestTrial, controlsFor, presetScore, roleLights, searchPlan, setupGuide, statusText,
+} from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
 const previews = JSON.parse(readFileSync(new URL("../contract/preview-samples.json", import.meta.url), "utf8"));
+const cameraTrials = JSON.parse(readFileSync(new URL("../contract/camera-trials.json", import.meta.url), "utf8"));
+const c920 = JSON.parse(readFileSync(new URL("../contract/c920-capabilities.json", import.meta.url), "utf8"));
 const CONTROLS = ["scan", "calibrate", "launch", "aim", "reset", "resume"];
 const NEEDS_CAMERA = ["scan", "calibrate", "launch"];
 const JOURNEY = [
@@ -127,6 +135,23 @@ function lightsCase() {
   return { case: "lights", passed: wrong.length === 0, samples: Object.keys(previews.samples).length, wrong };
 }
 
+function cameraCase() {
+  const plan = searchPlan(c920);
+  const sameGrid = JSON.stringify([plan.exposureTime, plan.colorTemperature])
+    === JSON.stringify([cameraTrials.grid.exposureTime, cameraTrials.grid.colorTemperature]);
+  const rooms = cameraTrials.rooms.map((room) => {
+    const best = bestTrial(room.trials.map((trial) => ({ ...trial, score: presetScore(trial.preview) })));
+    const { quality } = best.preview;
+    const { exposureTime, colorTemperature } = best.settings;
+    const passed = quality.ready && quality.clipped < 0.02
+      && Math.abs(colorTemperature - room.light_k) <= 1000
+      && exposureTime >= room.ideal_exposure / 2 && exposureTime <= room.ideal_exposure * 2;
+    return { room: room.name, light_k: room.light_k, ideal_exposure: room.ideal_exposure,
+      chosen: best.settings, ready: quality.ready, clipped: quality.clipped, passed };
+  });
+  return { case: "camera", passed: sameGrid && rooms.every((room) => room.passed), same_grid: sameGrid, rooms };
+}
+
 export function runEval() {
   const guidance = guidanceCase();
   const cases = [
@@ -135,6 +160,7 @@ export function runEval() {
     reopenCase(),
     guidance,
     lightsCase(),
+    cameraCase(),
   ];
   const passed = cases.filter((c) => c.passed).length;
   return {
