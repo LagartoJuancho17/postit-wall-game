@@ -5,8 +5,8 @@ import unittest
 import cv2
 import numpy as np
 
-from services.vision import DetectionError, detect_board
-from services.vision.tests.scene import bgr, draw_note, scene
+from services.vision import DetectionError, detect_board, find_notes
+from services.vision.tests.scene import HEIGHT, WIDTH, bgr, draw_note, scene
 
 
 def center(polygon):
@@ -95,6 +95,17 @@ class DetectorTests(unittest.TestCase):
             detect_board(image)
         self.assertEqual(caught.exception.role, "goal")
         self.assertEqual(caught.exception.found, 0)
+
+    def test_the_note_size_cap_sits_at_five_percent_of_the_frame(self):
+        image, _ = scene()
+        image[275:385, 120:230] = 225  # remove the regular start note
+        side = int((WIDTH * HEIGHT * 0.045) ** 0.5)  # 4.5% of the frame
+        draw_note(image, (480, 380), 30, (side, side))
+        self.assertEqual(len(find_notes(image)["start"]), 1)
+        image[380 - side:380 + side, 480 - side:480 + side] = 225
+        side = int((WIDTH * HEIGHT * 0.055) ** 0.5)  # 5.5% of the frame
+        draw_note(image, (480, 380), 30, (side, side))
+        self.assertEqual(len(find_notes(image)["start"]), 0)
 
     def test_invalid_frame_is_rejected(self):
         for invalid in (None, np.zeros((100, 100), np.uint8), np.zeros((100, 100, 3), np.float32)):

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import unittest
 
-from services.web.contract.matrix import (MATRIX_PATH, PREVIEWS_PATH, build_matrix,
-                                          build_previews, shape)
+from services.web.contract.matrix import (_PROBES, MATRIX_PATH, PHASES, PREVIEWS_PATH,
+                                          _reach, build_matrix, build_previews, clone, shape)
 
 REGENERATE = "Regenerá con: ./.venv/bin/python -m services.web.contract.matrix"
 # Fields the UI branches on. Values must match exactly, not just their type.
@@ -24,8 +24,10 @@ def _dig(value: dict, path: tuple[str, ...]) -> object:
 class StateMatrixContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        # Built once: the gate has a 2 s budget and these drive the real backend.
         cls.live = build_matrix()["phases"]
         cls.committed = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))["phases"]
+        cls.live_previews = build_previews()["samples"]
 
     def test_committed_matrix_has_the_same_phases(self) -> None:
         self.assertEqual(sorted(self.committed), sorted(self.live), REGENERATE)
@@ -65,7 +67,7 @@ class StateMatrixContractTests(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_committed_preview_samples_match_the_backend(self) -> None:
-        live = build_previews()["samples"]
+        live = self.live_previews
         committed = json.loads(PREVIEWS_PATH.read_text(encoding="utf-8"))["samples"]
         self.assertEqual(sorted(committed), sorted(live), REGENERATE)
         for name, sample in live.items():
@@ -79,7 +81,7 @@ class StateMatrixContractTests(unittest.TestCase):
                 self.assertEqual(old["scan_ok"], sample["scan_ok"], REGENERATE)
 
     def test_preview_samples_cover_ok_missing_and_misread_walls(self) -> None:
-        samples = build_previews()["samples"]
+        samples = self.live_previews
         counts = {name: {r: d["count"] for r, d in s["preview"]["roles"].items()}
                   for name, s in samples.items()}
         full = {"start": 1, "goal": 1, "bumper": 1, "marker": 4}
@@ -93,6 +95,23 @@ class StateMatrixContractTests(unittest.TestCase):
         self.assertEqual(counts["recolored_default_colors"],
                          {"start": 1, "goal": 0, "bumper": 0, "marker": 5})
         self.assertEqual(counts["recolored_picked_colors"], full)
+
+    def test_probes_on_copies_never_leak_into_the_phase(self) -> None:
+        # The matrix probes copies to stay inside the 2 s gate; a probe that
+        # changed the original would corrupt every later probe of that phase.
+        for name in ("scanned", "ready", "paused_open"):
+            wall = _reach(name)
+            before = wall.controller.snapshot()
+            for probe in _PROBES.values():
+                twin = clone(wall)
+                try:
+                    probe(twin)
+                except ValueError:
+                    pass
+                twin.now += 5
+                twin.controller.tick()
+            self.assertEqual(wall.controller.snapshot(), before, name)
+        self.assertEqual(len(PHASES), 11)
 
     def test_shape_ignores_values_but_not_types_or_keys(self) -> None:
         self.assertEqual(shape({"a": 1.5, "b": [{"x": 1}]}), shape({"b": [{"x": 9}], "a": 2}))

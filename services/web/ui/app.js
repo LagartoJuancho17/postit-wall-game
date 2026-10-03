@@ -4,6 +4,7 @@ import {
   averageHex,
   bestTrial,
   boardCounts,
+  cameraDiagnosis,
   cameraName,
   cameraSupport,
   containTransform,
@@ -18,16 +19,19 @@ import {
   sharpestTrial,
   framePointFromClick,
   isProjectorShortcut,
+  isThemeShortcut,
   isTypingTarget,
   normalizeAngle,
   PALETTE_ROLES,
   patchOrigin,
   preferredCamera,
+  projectorTheme,
   ROLE_LABELS,
   roleLights,
   SETUP_STAGES,
   setupGuide,
   statusText,
+  THEME_KEY,
 } from "./ui-core.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -69,6 +73,27 @@ const CAMERA_KEYS = ["whiteBalanceMode", "colorTemperature", "exposureMode", "ex
   "focusMode", "focusDistance", "brightness", "contrast", "saturation", "sharpness",
   "width", "height", "frameRate"];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let projectorBackdrop = storedProjectorTheme();
+
+function storedProjectorTheme() {
+  try {
+    return projectorTheme(localStorage.getItem(THEME_KEY));
+  } catch {
+    return "dark";
+  }
+}
+
+// The projector window reads the same key and listens on the channel.
+function setProjectorTheme(next) {
+  projectorBackdrop = projectorTheme(next);
+  try {
+    localStorage.setItem(THEME_KEY, projectorBackdrop);
+  } catch {
+    // Not remembered across reloads; the open window still switches.
+  }
+  channel.postMessage({ type: "theme", theme: projectorBackdrop });
+  render();
+}
 
 function notice(message, tone = "info") {
   localNotice = { message, tone };
@@ -332,15 +357,24 @@ function cameraKeys(source) {
 
 async function readCapabilities(track) {
   // Chrome fills the image-capture part of getCapabilities() once it has read
-  // the camera's photo state; asking ImageCapture first makes that explicit.
+  // the camera's photo state; asking ImageCapture first makes that explicit,
+  // and a few retries cover a slow first read.
+  let photoError = null;
   if ("ImageCapture" in window) {
     try {
-      await Promise.race([new ImageCapture(track).getPhotoCapabilities(), sleep(2000)]);
-    } catch {
-      // A camera without photo state still answers getCapabilities().
+      await Promise.race([new ImageCapture(track).getPhotoCapabilities(), sleep(3000)]);
+    } catch (error) {
+      photoError = `${error.name}: ${error.message}`;
     }
+  } else {
+    photoError = "ImageCapture no existe en este navegador";
   }
-  return track.getCapabilities?.() ?? {};
+  let caps = track.getCapabilities?.() ?? {};
+  for (let attempt = 0; attempt < 6 && !cameraSupport(caps).any; attempt += 1) {
+    await sleep(500);
+    caps = track.getCapabilities?.() ?? {};
+  }
+  return { caps, photoError };
 }
 
 async function applyCamera(track, settings) {
@@ -360,9 +394,14 @@ async function reportCamera(kind, details) {
   }
 }
 
-function lockStatus(settings, unfixed, black) {
-  const text = `Cámara fija: ${describeCamera(settings) || "sin valores"}`;
-  if (unfixed.length) return { tone: "warn", text: `${text}. Sin fijar: ${unfixed.join(", ")}.` };
+function lockStatus(settings, { unfixed = [], unavailable = [] }, black) {
+  const values = describeCamera(settings);
+  const text = values ? `Cámara fija: ${values}` : "Cámara fija en los valores actuales";
+  const problems = [
+    unfixed.length ? `no tomó el manual: ${unfixed.join(", ")}` : "",
+    unavailable.length ? `Chrome no da control de ${unavailable.join(", ")}` : "",
+  ].filter(Boolean);
+  if (problems.length) return { tone: "warn", text: `${text}. Ojo: ${problems.join("; ")}.` };
   if (!black) return { tone: "warn", text: `${text}. Repetí la búsqueda con la proyección abierta.` };
   return { tone: "ok", text };
 }
@@ -374,12 +413,17 @@ async function setupCameraLock() {
   cameraLabel = track.label || cameraSelect.selectedOptions[0]?.textContent || "Cámara";
   cameraLock = { tone: "busy", text: "Leyendo los controles de la cámara…" };
   render();
-  cameraCaps = await readCapabilities(track);
+  const { caps, photoError } = await readCapabilities(track);
   if (track !== currentTrack()) return;
+  cameraCaps = caps;
   const support = cameraSupport(cameraCaps);
-  await reportCamera("capabilities", { capabilities: cameraKeys(cameraCaps), support });
+  const diagnosis = cameraDiagnosis(cameraCaps);
+  console.info("Controles de cámara que informa Chrome:", cameraKeys(cameraCaps), photoError ?? "");
+  await reportCamera("capabilities", { capabilities: cameraKeys(cameraCaps), support, diagnosis,
+    photo_error: photoError, all_keys: Object.keys(cameraCaps) });
   if (!support.any) {
-    cameraLock = { tone: "warn", text: "Chrome no deja fijar balance, exposición ni foco en esta cámara." };
+    cameraLock = { tone: "warn", detail: diagnosis,
+      text: "Chrome no ofrece modo manual de balance, exposición ni foco para esta cámara (pasá el mouse para ver qué informó)." };
     render();
     return;
   }
@@ -400,9 +444,10 @@ async function setupCameraLock() {
   }
   try {
     const actual = await applyCamera(track, preset.settings);
-    const { settings, unfixed } = fixedPart(actual, cameraCaps);
-    await reportCamera("applied", { requested: preset.settings, actual: cameraKeys(actual), unfixed });
-    cameraLock = lockStatus(settings, unfixed, preset.black);
+    const fixed = fixedPart(actual, cameraCaps);
+    await reportCamera("applied", { requested: preset.settings, actual: cameraKeys(actual),
+      unfixed: fixed.unfixed, unavailable: fixed.unavailable });
+    cameraLock = { ...lockStatus(fixed.settings, fixed, preset.black), detail: diagnosis };
   } catch (error) {
     cameraLock = { tone: "error", text: `No se pudo fijar la cámara: ${error.message}` };
   }
@@ -461,14 +506,15 @@ async function tuneCamera() {
     for (const settings of refinePlan(best, cameraCaps)) finalists.push(await tryCamera(track, settings));
     const winner = bestTrial(finalists);
     const actual = await applyCamera(track, winner.settings);
-    const { settings, unfixed } = fixedPart(actual, cameraCaps);
+    const fixed = fixedPart(actual, cameraCaps);
+    const { settings } = fixed;
     await reportCamera("search", { chosen: winner.settings, score: winner.score, trials: tuning.done,
-      actual: cameraKeys(actual), unfixed, black });
+      actual: cameraKeys(actual), unfixed: fixed.unfixed, unavailable: fixed.unavailable, black });
     if (Object.keys(settings).length) {
       applyState(await action("camera_preset_save", { camera: cameraLabel, settings, score: winner.score,
         black, trials: tuning.done, capabilities: cameraKeys(cameraCaps) }));
     }
-    cameraLock = lockStatus(settings, unfixed, black);
+    cameraLock = { ...lockStatus(settings, fixed, black), detail: cameraDiagnosis(cameraCaps) };
   } catch (error) {
     cameraLock = { tone: "error", text: `No se pudo fijar la cámara: ${error.message}` };
   } finally {
@@ -669,7 +715,7 @@ function render() {
   $("calibrate-button").disabled = scanBusy || Boolean(tuning) || !controls.calibrate;
   const lock = tuning ? { tone: "busy", text: `Buscando ajuste fijo de cámara ${tuning.done}/${tuning.total}…` } : cameraLock;
   $("camera-lock").textContent = lock.text;
-  $("camera-lock").title = lock.text;
+  $("camera-lock").title = lock.detail ? `${lock.text}\n\nChrome informa: ${lock.detail}` : lock.text;
   $("camera-lock").dataset.tone = lock.tone;
   $("camera-tune").disabled = !cameraReady || Boolean(tuning) || scanBusy || !cameraSupport(cameraCaps).any
     || !state || !("camera_presets" in state) || attemptPhase(state?.game) === "running";
@@ -686,6 +732,8 @@ function render() {
     ? "Enfocar proyección <kbd>J</kbd>"
     : "Abrir proyección <kbd>J</kbd>";
   $("open-projector").dataset.attention = String(guide.step === "projector");
+  $("theme-dark").setAttribute("aria-pressed", String(projectorBackdrop === "dark"));
+  $("theme-light").setAttribute("aria-pressed", String(projectorBackdrop === "light"));
   $("setup-hint").textContent = guide.message;
   $("setup-hint").dataset.tone = guide.step === "play" ? "" : "next";
   const stageIndex = SETUP_STAGES.indexOf(guide.stage);
@@ -720,6 +768,10 @@ channel.onmessage = (event) => {
   const data = event.data || {};
   if (data.type === "ready") {
     popupReady = true;
+    channel.postMessage({ type: "theme", theme: projectorBackdrop });
+    render();
+  } else if (data.type === "theme") {
+    projectorBackdrop = projectorTheme(data.theme); // switched from the projector window
     render();
   } else if (data.type === "closed") {
     popupReady = false;
@@ -748,6 +800,8 @@ for (const role of PALETTE_ROLES) {
   $(`pick-${role}`).addEventListener("click", () => togglePick(role));
 }
 $("camera-tune").addEventListener("click", () => tuneCamera());
+$("theme-dark").addEventListener("click", () => setProjectorTheme("dark"));
+$("theme-light").addEventListener("click", () => setProjectorTheme("light"));
 $("palette-reset").addEventListener("click", () => {
   paletteError = null;
   sendAction("palette_reset");
@@ -766,6 +820,11 @@ document.addEventListener("keydown", (event) => {
   if (isProjectorShortcut(event)) {
     event.preventDefault();
     openProjector();
+    return;
+  }
+  if (isThemeShortcut(event)) {
+    event.preventDefault();
+    setProjectorTheme(projectorBackdrop === "dark" ? "light" : "dark");
     return;
   }
   if (pickRole && event.key === "Escape") {

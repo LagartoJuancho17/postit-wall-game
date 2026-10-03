@@ -57,6 +57,25 @@ La vista de cámara sigue en directo durante la partida. El tablero del juego
 se lee solo al escanear; las luces de detección en vivo son una guía previa.
 Si movés la cámara, la pared o el proyector, repetí la calibración.
 
+## Fondo del proyector: oscuro o claro
+
+Arriba a la derecha, junto a **Abrir proyección**, está **Fondo: Oscuro /
+Claro**. También se cambia con la tecla `F`, desde el panel o desde la
+ventana del proyector. El cambio se ve al instante en la ventana del
+proyector y queda guardado en el navegador.
+
+- **Oscuro**: fondo negro con trazos claros (el aspecto original).
+- **Claro**: fondo blanco suave (`#f3f2ec`) con trazos oscuros: pelota y cruz
+  casi negras, contornos verde azulado, dorado oscuro y óxido. Todos los
+  trazos tienen contraste 4:1 o más contra el fondo; la cuadrícula de guía,
+  2.5:1.
+
+En los dos modos, al escanear o al buscar el ajuste de cámara, la ventana se
+pone en **negro absoluto**. La lectura de colores y el ajuste fijo de cámara
+siempre se hacen en las mismas condiciones. Con fondo claro, mientras jugás la
+pared queda iluminada y la cámara la ve más clara: las luces de detección en
+vivo pueden apagarse, pero el escaneo no se ve afectado.
+
 ## Colores de los post-its
 
 Debajo del video hay una fila por tipo de post-it: inicio, llegada, rebotes y
@@ -124,8 +143,20 @@ orden de prioridad:
 El foco elige la imagen más nítida.
 
 En la barra de la cámara se ve el resultado, por ejemplo
-`Cámara fija: 4000 K · 20 ms · foco 35`. Si Chrome no deja fijar algún
-control de esa cámara, el estado lo dice ("Sin fijar: foco").
+`Cámara fija: 4000 K · 20 ms · foco 35`.
+
+Qué hace el panel según lo que informa Chrome de cada control:
+
+- **Modo manual y rango de valores**: puede apagar el automático, probar
+  valores y guardar el mejor.
+- **Solo modo manual**: apaga el automático y congela el valor que tenía la
+  cámara. El estado dice "Cámara fija en los valores actuales".
+- **Ningún modo manual**: no puede tocarlo. El estado dice "Chrome no ofrece
+  modo manual…".
+
+En cualquier caso, pasá el mouse sobre el estado para ver qué informó Chrome
+de cada control. Si Chrome ofrece el manual pero un control no lo toma, el
+estado lo marca ("no tomó el manual: foco").
 
 Los ajustes quedan en `runs/camera-presets.json`. En `runs/web-events.jsonl`
 quedan como `camera_report`:

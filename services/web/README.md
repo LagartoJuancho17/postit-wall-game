@@ -119,14 +119,48 @@ la del simulador. `verify.sh` regenera las pruebas con `--check`: las cuentas
 y `ready` tienen que coincidir exactamente y las medidas dentro de una
 tolerancia.
 
+## Fondo del proyector
+
+`PROJECTOR_THEMES` en `ui-core.mjs` define el fondo y cada color de trazo de
+los temas `dark` (los colores originales) y `light`.
+
+`projectorBackground(theme, forcedBlack)` devuelve `#000000` mientras la
+ventana está forzada a negro por un escaneo o una búsqueda de cámara,
+cualquiera sea el tema. Si no, devuelve el fondo del tema.
+
+El panel guarda la elección en `localStorage` (`postit-wall:projector-theme`)
+y la avisa por el `BroadcastChannel` que ya comparte con la ventana del
+proyector. También la reenvía cuando la ventana avisa `ready`, así coinciden
+aunque el almacenamiento esté bloqueado. La tecla `F` cambia el tema desde
+cualquiera de las dos ventanas.
+
+El caso **projector_theme** del eval exige, en los dos temas:
+
+- negro absoluto al escanear;
+- contraste 4:1 o más de cada trazo contra su fondo (2.5:1 para la cuadrícula
+  de guía).
+
 ## Cámara fija
 
 Al arrancar cada cámara, `setupCameraLock()` hace esto:
 
 1. Lee `getCapabilities()`, después de pedir `ImageCapture.getPhotoCapabilities()`.
-2. Registra en el log qué controles hay.
+   Si no aparece ningún control, reintenta seis veces cada medio segundo.
+2. Registra en el log qué controles hay: claves, diagnóstico por control y
+   error de `ImageCapture`.
 3. Si hay un ajuste guardado con ese nombre de cámara, lo aplica. Si no, corre
    `tuneCamera()`.
+
+`cameraSupport()` separa dos cosas por control:
+
+- **`lock`**: existe un modo `manual`. Alcanza para apagar el automático y
+  congelar el valor actual.
+- **`search`**: además hay un rango de valores, así que se pueden probar y
+  fijar valores.
+
+Antes se exigían las dos para todo, y una cámara que solo informaba los modos
+quedaba en automático con el aviso "no deja fijar". Ese caso está en los tests
+como regresión.
 
 `lockConstraints()` arma un conjunto `advanced` por control, siempre en
 `manual`. Un conjunto que la cámara no puede cumplir se descarta entero, así

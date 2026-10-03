@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   bestTrial,
+  cameraDiagnosis,
   cameraSupport,
   describeCamera,
   fixedPart,
@@ -23,12 +24,38 @@ const c920 = read("../contract/c920-capabilities.json");
 const trials = read("../contract/camera-trials.json");
 const samples = read("../contract/preview-samples.json").samples;
 
-test("support needs a manual mode and a value range for each control", () => {
-  assert.deepEqual(cameraSupport(c920), { whiteBalance: true, exposure: true, focus: true, any: true });
-  assert.deepEqual(cameraSupport({ focusMode: ["continuous"], focusDistance: { min: 0, max: 1 } }),
-    { whiteBalance: false, exposure: false, focus: false, any: false });
-  assert.deepEqual(cameraSupport({ exposureMode: ["manual"] }).exposure, false);
+test("lock needs only a manual mode; search also needs a value range", () => {
+  const full = { lock: true, search: true };
+  assert.deepEqual(cameraSupport(c920),
+    { whiteBalance: full, exposure: full, focus: full, any: true, searchable: true });
+  const autoOnly = cameraSupport({ focusMode: ["continuous"], focusDistance: { min: 0, max: 1 } });
+  assert.deepEqual([autoOnly.focus, autoOnly.any], [{ lock: false, search: false }, false]);
+  // Regression: modes without ranges used to count as "no control at all",
+  // so the panel left white balance and focus automatic.
+  const modesOnly = cameraSupport({ whiteBalanceMode: ["continuous", "manual"], focusMode: ["manual"] });
+  assert.deepEqual([modesOnly.whiteBalance, modesOnly.focus, modesOnly.any, modesOnly.searchable],
+    [{ lock: true, search: false }, { lock: true, search: false }, true, false]);
   assert.equal(cameraSupport(null).any, false);
+});
+
+test("without ranges the panel still switches the automatic off", () => {
+  const modesOnly = { whiteBalanceMode: ["continuous", "manual"], exposureMode: ["continuous", "manual"],
+    focusMode: ["continuous", "manual"] };
+  assert.deepEqual(lockConstraints({ colorTemperature: 4000, focusDistance: 30 }, modesOnly), [
+    { whiteBalanceMode: "manual" }, { exposureMode: "manual" }, { focusMode: "manual" },
+  ]);
+  const plan = searchPlan(modesOnly);
+  assert.deepEqual(plan, { exposureTime: [undefined], colorTemperature: [undefined], focusDistance: [] });
+  const fixed = fixedPart({ whiteBalanceMode: "manual", exposureMode: "manual", focusMode: "continuous" }, modesOnly);
+  assert.deepEqual(fixed.settings, { whiteBalanceMode: "manual", exposureMode: "manual" });
+  assert.deepEqual([fixed.unfixed, fixed.unavailable], [["foco"], []]);
+});
+
+test("the diagnosis says what Chrome reported for each control", () => {
+  assert.equal(cameraDiagnosis(c920),
+    "balance de blancos: modos manual/continuous, 2000–6500 · exposición: modos manual/continuous, 3–2047 · foco: modos manual/continuous, 0–250");
+  assert.equal(cameraDiagnosis({}),
+    "balance de blancos: modos no informado, sin rango · exposición: modos no informado, sin rango · foco: modos no informado, sin rango");
 });
 
 test("snap clamps into the range and onto the step", () => {
@@ -48,16 +75,18 @@ test("lock constraints are manual, one control per advanced set", () => {
     { brightness: 128 },
   ]);
   const noFocus = { ...c920, focusMode: ["continuous"] };
-  assert.equal(lockConstraints({ focusDistance: 30 }, noFocus).length, 0);
+  assert.equal(lockConstraints({ focusDistance: 30 }, noFocus).some((set) => "focusMode" in set), false);
 });
 
 test("only what really went manual is saved; the rest is reported", () => {
   const actual = { whiteBalanceMode: "manual", colorTemperature: 4000, exposureMode: "continuous",
     exposureTime: 333, focusMode: "manual", focusDistance: 35, brightness: 128, width: 1280 };
-  const { settings, unfixed } = fixedPart(actual, c920);
+  const { settings, unfixed, unavailable } = fixedPart(actual, c920);
   assert.deepEqual(settings, { whiteBalanceMode: "manual", colorTemperature: 4000,
     focusMode: "manual", focusDistance: 35, brightness: 128 });
   assert.deepEqual(unfixed, ["exposición"]);
+  assert.deepEqual(unavailable, []);
+  assert.deepEqual(fixedPart(actual, { ...c920, focusMode: ["continuous"] }).unavailable, ["foco"]);
 });
 
 test("the search grid for a C920 is the grid the simulated rooms were scored on", () => {

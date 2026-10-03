@@ -1,4 +1,12 @@
-import { pointInCanvas, projectionSize } from "./ui-core.mjs";
+import {
+  isThemeShortcut,
+  pointInCanvas,
+  projectionSize,
+  projectorBackground,
+  projectorColors,
+  projectorTheme,
+  THEME_KEY,
+} from "./ui-core.mjs";
 
 const canvas = document.getElementById("projector-canvas");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -18,6 +26,26 @@ let dragging = false;
 let tickBusy = false;
 let resizeTimer = null;
 let viewport = projectionSize(window);
+let theme = storedTheme();
+
+function storedTheme() {
+  try {
+    return projectorTheme(localStorage.getItem(THEME_KEY));
+  } catch {
+    return "dark"; // storage blocked: the panel still sends its choice
+  }
+}
+
+function setTheme(next) {
+  theme = projectorTheme(next);
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Not remembered across reloads; the switch still works now.
+  }
+  channel.postMessage({ type: "theme", theme });
+  draw();
+}
 
 function showError(error) {
   toast.textContent = error.message || String(error);
@@ -69,8 +97,9 @@ function applyState(next) {
   draw();
 }
 
-function drawBlack() {
-  ctx.fillStyle = "#000";
+function drawBackground() {
+  // A scan or camera search needs pure black whatever the theme.
+  ctx.fillStyle = projectorBackground(theme, blackoutForced);
   ctx.fillRect(0, 0, viewport.width, viewport.height);
 }
 
@@ -89,11 +118,12 @@ function drawPolygon(polygon, color, width = 3) {
 
 function drawBoard(board, grid = false) {
   if (!board) return;
-  drawPolygon(board.playfield, "#56dbe0", 3);
+  const colors = projectorColors(theme);
+  drawPolygon(board.playfield, colors.playfield, 3);
   if (grid && board.playfield?.points?.length === 4) {
     const [tl, tr, br, bl] = board.playfield.points;
     const mix = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-    ctx.strokeStyle = "#36696a";
+    ctx.strokeStyle = colors.grid;
     ctx.lineWidth = 1;
     for (const t of [.25, .5, .75]) {
       const lines = [[mix(tl, bl, t), mix(tr, br, t)], [mix(tl, tr, t), mix(bl, br, t)]];
@@ -105,15 +135,16 @@ function drawBoard(board, grid = false) {
       }
     }
   }
-  drawPolygon(board.start, "#ffdf53", 4);
-  drawPolygon(board.goal, "#ffa659", 4);
-  board.bumpers?.forEach((polygon) => drawPolygon(polygon, "#77ec8f", 3));
+  drawPolygon(board.start, colors.start, 4);
+  drawPolygon(board.goal, colors.goal, 4);
+  board.bumpers?.forEach((polygon) => drawPolygon(polygon, colors.bumper, 3));
 }
 
 function drawTarget(target) {
+  const colors = projectorColors(theme);
   const x = target.x;
   const y = target.y;
-  ctx.strokeStyle = "#fff";
+  ctx.strokeStyle = colors.cross;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(x - 29, y);
@@ -121,7 +152,7 @@ function drawTarget(target) {
   ctx.moveTo(x, y - 29);
   ctx.lineTo(x, y + 29);
   ctx.stroke();
-  ctx.strokeStyle = "#f877d5";
+  ctx.strokeStyle = colors.crossRing;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(x, y, 9, 0, Math.PI * 2);
@@ -130,33 +161,36 @@ function drawTarget(target) {
 
 function drawGame(game, board) {
   if (!board || !game?.position) return;
+  const colors = projectorColors(theme);
   drawBoard(board);
   const ball = game.position;
   if (game.status === "ready") {
     const angle = (game.aim_degrees ?? -45) * Math.PI / 180;
-    ctx.strokeStyle = "#f6fbfc";
+    ctx.strokeStyle = colors.ball;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(ball.x, ball.y);
     ctx.lineTo(ball.x + 70 * Math.cos(angle), ball.y + 70 * Math.sin(angle));
     ctx.stroke();
   }
-  ctx.fillStyle = "#f6fbfc";
+  ctx.fillStyle = colors.ball;
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
   ctx.fill();
   if (game.status === "won" || game.status === "lost") {
     ctx.font = "700 42px -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillStyle = game.status === "won" ? "#77ec8f" : "#ff8680";
+    ctx.fillStyle = game.status === "won" ? colors.won : colors.lost;
     ctx.fillText(game.status === "won" ? "¡LLEGASTE!" : "FUERA DEL CAMPO", viewport.width / 2, 75);
   }
 }
 
 function draw() {
-  drawBlack();
+  drawBackground();
   const mode = blackoutForced ? "black" : (state?.projection?.mode || "black");
   document.body.dataset.mode = mode;
+  document.body.dataset.theme = theme;
+  document.body.dataset.blackout = String(blackoutForced);
   const calibrating = mode === "calibration" && Boolean(state?.projection?.target);
   dock.hidden = !calibrating;
   stateLabel.textContent = calibrating
@@ -223,6 +257,11 @@ canvas.addEventListener("pointerup", (event) => {
 canvas.addEventListener("pointercancel", () => { dragging = false; });
 
 document.addEventListener("keydown", (event) => {
+  if (isThemeShortcut(event)) {
+    event.preventDefault();
+    setTheme(theme === "dark" ? "light" : "dark");
+    return;
+  }
   if (state?.projection?.mode !== "calibration" || !localTarget) return;
   const step = event.shiftKey ? 1 : 8;
   const moves = {
@@ -269,8 +308,17 @@ channel.onmessage = async (event) => {
   } else if (data.type === "resume") {
     blackoutForced = false;
     draw();
+  } else if (data.type === "theme") {
+    theme = projectorTheme(data.theme);
+    draw();
   }
 };
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== THEME_KEY) return;
+  theme = projectorTheme(event.newValue);
+  draw();
+});
 
 window.addEventListener("pagehide", () => {
   channel.postMessage({ type: "closed" });

@@ -20,13 +20,17 @@
  *   scored by the real backend), the fixed-camera search picks a setting
  *   the scan accepts, without clipping, with white balance within 1000 K of
  *   the light and exposure within 2x of the ideal.
+ * - projector_theme: in the dark and light projector backgrounds a scan
+ *   still sees pure black, and every stroke keeps its contrast (4:1, the
+ *   faint grid 2.5:1) against its background.
  */
 
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import {
-  bestTrial, controlsFor, presetScore, roleLights, searchPlan, setupGuide, statusText,
+  bestTrial, contrastRatio, controlsFor, presetScore, PROJECTOR_THEMES, projectorBackground,
+  roleLights, SCAN_BLACK, searchPlan, setupGuide, statusText,
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
@@ -152,6 +156,20 @@ function cameraCase() {
   return { case: "camera", passed: sameGrid && rooms.every((room) => room.passed), same_grid: sameGrid, rooms };
 }
 
+function themeCase() {
+  const problems = [];
+  for (const [theme, colors] of Object.entries(PROJECTOR_THEMES)) {
+    if (projectorBackground(theme, true) !== SCAN_BLACK) problems.push(`${theme}: el escaneo no ve negro`);
+    for (const [name, color] of Object.entries(colors)) {
+      if (name === "background") continue;
+      const minimum = name === "grid" ? 2.5 : 4;
+      const ratio = contrastRatio(color, colors.background);
+      if (ratio < minimum) problems.push(`${theme}.${name} contraste ${ratio.toFixed(2)} < ${minimum}`);
+    }
+  }
+  return { case: "projector_theme", passed: problems.length === 0, themes: Object.keys(PROJECTOR_THEMES), problems };
+}
+
 export function runEval() {
   const guidance = guidanceCase();
   const cases = [
@@ -161,6 +179,7 @@ export function runEval() {
     guidance,
     lightsCase(),
     cameraCase(),
+    themeCase(),
   ];
   const passed = cases.filter((c) => c.passed).length;
   return {

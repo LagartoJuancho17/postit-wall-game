@@ -176,11 +176,31 @@ const TARGET_BRIGHTNESS = 0.62;
 
 const isRange = (range) => Number.isFinite(range?.min) && Number.isFinite(range?.max) && range.max >= range.min;
 
-/** Which controls this camera lets Chrome fix by hand (from getCapabilities()). */
+/**
+ * What Chrome lets the panel do with each control (from getCapabilities()).
+ * lock: a "manual" mode exists, enough to switch the automatic off and
+ * freeze the current value. search: there is also a value range, so values
+ * can be tried and set.
+ */
 export function cameraSupport(caps) {
-  const support = Object.fromEntries(CAMERA_GROUPS.map((group) => [group.key,
-    Array.isArray(caps?.[group.mode]) && caps[group.mode].includes("manual") && isRange(caps?.[group.value])]));
-  return { ...support, any: CAMERA_GROUPS.some((group) => support[group.key]) };
+  const groups = Object.fromEntries(CAMERA_GROUPS.map((group) => {
+    const lock = Array.isArray(caps?.[group.mode]) && caps[group.mode].includes("manual");
+    return [group.key, { lock, search: lock && isRange(caps?.[group.value]) }];
+  }));
+  return {
+    ...groups,
+    any: CAMERA_GROUPS.some((group) => groups[group.key].lock),
+    searchable: CAMERA_GROUPS.some((group) => groups[group.key].search),
+  };
+}
+
+/** Per control, what Chrome reported: for the operator and the log. */
+export function cameraDiagnosis(caps) {
+  return CAMERA_GROUPS.map((group) => {
+    const modes = Array.isArray(caps?.[group.mode]) ? caps[group.mode].join("/") : "no informado";
+    const range = isRange(caps?.[group.value]) ? `${caps[group.value].min}–${caps[group.value].max}` : "sin rango";
+    return `${group.label}: modos ${modes}, ${range}`;
+  }).join(" · ");
 }
 
 /** A value clamped into a capability range and onto its step. */
@@ -200,9 +220,12 @@ export function lockConstraints(settings, caps) {
   const support = cameraSupport(caps);
   const sets = [];
   for (const group of CAMERA_GROUPS) {
-    if (support[group.key] && Number.isFinite(settings?.[group.value])) {
-      sets.push({ [group.mode]: "manual", [group.value]: snap(settings[group.value], caps[group.value]) });
-    }
+    const can = support[group.key];
+    if (!can.lock) continue;
+    // Without a range only the mode is sent: manual alone freezes the value.
+    sets.push(can.search && Number.isFinite(settings?.[group.value])
+      ? { [group.mode]: "manual", [group.value]: snap(settings[group.value], caps[group.value]) }
+      : { [group.mode]: "manual" });
   }
   for (const key of CAMERA_EXTRAS) {
     if (isRange(caps?.[key]) && Number.isFinite(settings?.[key])) sets.push({ [key]: snap(settings[key], caps[key]) });
@@ -210,16 +233,22 @@ export function lockConstraints(settings, caps) {
   return sets;
 }
 
-/** The fixed part of getSettings(), ready to save; lists what stayed automatic. */
+/**
+ * The fixed part of getSettings(), ready to save. unfixed: Chrome offers a
+ * manual mode but the control did not switch. unavailable: Chrome offers no
+ * manual mode at all for that control.
+ */
 export function fixedPart(actual, caps) {
   const support = cameraSupport(caps);
   const settings = {};
   const unfixed = [];
+  const unavailable = [];
   for (const group of CAMERA_GROUPS) {
-    if (!support[group.key]) continue;
-    if (actual?.[group.mode] === "manual" && Number.isFinite(actual?.[group.value])) {
+    if (!support[group.key].lock) {
+      unavailable.push(group.label);
+    } else if (actual?.[group.mode] === "manual") {
       settings[group.mode] = "manual";
-      settings[group.value] = actual[group.value];
+      if (Number.isFinite(actual?.[group.value])) settings[group.value] = actual[group.value];
     } else {
       unfixed.push(group.label);
     }
@@ -227,7 +256,7 @@ export function fixedPart(actual, caps) {
   for (const key of CAMERA_EXTRAS) {
     if (isRange(caps?.[key]) && Number.isFinite(actual?.[key])) settings[key] = actual[key];
   }
-  return { settings, unfixed };
+  return { settings, unfixed, unavailable };
 }
 
 /** Exposure × white balance grid and focus positions for this camera. */
@@ -236,9 +265,9 @@ export function searchPlan(caps, focusSteps = 7) {
   const unique = (values) => [...new Set(values)];
   const focus = caps?.focusDistance;
   return {
-    exposureTime: support.exposure ? unique(SEARCH_EXPOSURE.map((value) => snap(value, caps.exposureTime))) : [undefined],
-    colorTemperature: support.whiteBalance ? unique(SEARCH_TEMPERATURE.map((value) => snap(value, caps.colorTemperature))) : [undefined],
-    focusDistance: support.focus
+    exposureTime: support.exposure.search ? unique(SEARCH_EXPOSURE.map((value) => snap(value, caps.exposureTime))) : [undefined],
+    colorTemperature: support.whiteBalance.search ? unique(SEARCH_TEMPERATURE.map((value) => snap(value, caps.colorTemperature))) : [undefined],
+    focusDistance: support.focus.search
       ? unique(Array.from({ length: focusSteps }, (_, index) =>
         snap(focus.min + (focus.max - focus.min) * index / (focusSteps - 1), focus)))
       : [],
@@ -249,10 +278,10 @@ export function searchPlan(caps, focusSteps = 7) {
 export function refinePlan(best, caps) {
   const support = cameraSupport(caps);
   const plans = [];
-  if (support.exposure && Number.isFinite(best?.exposureTime)) {
+  if (support.exposure.search && Number.isFinite(best?.exposureTime)) {
     for (const factor of [0.75, 1.33]) plans.push({ ...best, exposureTime: snap(best.exposureTime * factor, caps.exposureTime) });
   }
-  if (support.whiteBalance && Number.isFinite(best?.colorTemperature)) {
+  if (support.whiteBalance.search && Number.isFinite(best?.colorTemperature)) {
     for (const delta of [-500, 500]) plans.push({ ...best, colorTemperature: snap(best.colorTemperature + delta, caps.colorTemperature) });
   }
   const same = (a, b) => a.exposureTime === b.exposureTime && a.colorTemperature === b.colorTemperature;
@@ -297,6 +326,59 @@ export function describeCamera(settings) {
 /** Wait after a change before measuring: three frames of exposure plus slack. */
 export function settleMs(settings) {
   return 250 + 3 * Math.max(0, (settings?.exposureTime ?? 0) / 10);
+}
+
+/**
+ * Projector themes: the background and everything drawn on it. Dark keeps
+ * the original colors. Light darkens every stroke so it stays visible on
+ * a lit wall. Whatever the theme, a scan or camera search sees pure black.
+ */
+export const PROJECTOR_THEMES = {
+  dark: {
+    background: "#000000", playfield: "#56dbe0", grid: "#36696a", start: "#ffdf53",
+    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#77ec8f", lost: "#ff8680",
+    cross: "#ffffff", crossRing: "#f877d5",
+  },
+  light: {
+    background: "#f3f2ec", playfield: "#0d7168", grid: "#6f968d", start: "#946f00",
+    goal: "#c2540c", bumper: "#1f7a43", ball: "#17211f", won: "#1f7a43", lost: "#b0392e",
+    cross: "#17211f", crossRing: "#a8308a",
+  },
+};
+export const THEME_KEY = "postit-wall:projector-theme";
+export const SCAN_BLACK = "#000000";
+
+export function projectorTheme(value) {
+  return value === "light" ? "light" : "dark";
+}
+
+export function projectorColors(theme) {
+  return PROJECTOR_THEMES[projectorTheme(theme)];
+}
+
+/** The projector's fill: the theme's background, or black while scanning. */
+export function projectorBackground(theme, forcedBlack) {
+  return forcedBlack ? SCAN_BLACK : projectorColors(theme).background;
+}
+
+/** F switches the projector background, like J opens the projector. */
+export function isThemeShortcut(event) {
+  return event.key?.toLowerCase() === "f"
+    && !event.repeat && !event.altKey && !event.ctrlKey && !event.metaKey
+    && !isTypingTarget(event.target);
+}
+
+/** WCAG contrast ratio between two #rrggbb colors (1 to 21). */
+export function contrastRatio(first, second) {
+  const luminance = (hex) => {
+    const [red, green, blue] = [1, 3, 5].map((index) => {
+      const channel = parseInt(hex.slice(index, index + 2), 16) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const [light, dark] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
 }
 
 export function isTypingTarget(target) {

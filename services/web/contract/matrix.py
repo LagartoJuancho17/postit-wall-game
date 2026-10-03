@@ -17,9 +17,11 @@ Regenerate after changing backend behavior or the snapshot shape::
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Callable
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 import cv2
@@ -151,21 +153,38 @@ def _reach(phase: str) -> _Wall:
     return wall
 
 
+def clone(wall: _Wall) -> _Wall:
+    """An independent copy of a phase, so each probe skips rebuilding it.
+
+    The controller's values are immutable or replaced on change; containers
+    are copied, and the lock and the clock are the copy's own.
+    """
+    twin = _Wall.__new__(_Wall)
+    twin.now = wall.now
+    controller = copy.copy(wall.controller)
+    for name, value in vars(controller).items():
+        if isinstance(value, (list, dict, set)):
+            setattr(controller, name, copy.deepcopy(value))
+    controller._lock = RLock()
+    controller._clock = lambda: twin.now
+    twin.controller = controller
+    return twin
+
+
 def build_matrix() -> dict[str, Any]:
-    """Drive the real backend; every probe starts from a freshly built phase."""
+    """Drive the real backend; every probe runs on its own copy of the phase."""
     phases: dict[str, Any] = {}
     for name in PHASES:
+        wall = _reach(name)
         accepts = {}
         for control in CONTROLS:
-            wall = _reach(name)
             try:
-                _PROBES[control](wall)
+                _PROBES[control](clone(wall))
             except RequestError:
                 accepts[control] = False
             else:
                 accepts[control] = True
-        phases[name] = {"state": _reach(name).controller.snapshot(),
-                        "accepts": accepts}
+        phases[name] = {"state": wall.controller.snapshot(), "accepts": accepts}
     return {"version": 1, "projector": list(PROJECTOR), "phases": phases}
 
 
