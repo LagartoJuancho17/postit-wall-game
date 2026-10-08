@@ -104,6 +104,20 @@ class WebHttpIntegrationTests(unittest.TestCase):
             200,
         )
 
+    def test_localhost_works_like_127_0_0_1_but_other_hosts_do_not(self) -> None:
+        action = json.dumps({"action": "projection_open", "width": 1280, "height": 800}).encode()
+        write = {"Content-Type": "application/json", "X-Postit-Client": "1"}
+        self.assertEqual(self.request("GET", "/api/state", headers={"Host": f"localhost:{self.port}"})[0], 200)
+        self.assertEqual(self.request("POST", "/api/action", action, {
+            **write, "Host": f"localhost:{self.port}", "Origin": f"http://localhost:{self.port}"})[0], 200)
+        for host in (f"evil.example:{self.port}", f"localhost:{self.port + 1}", "localhost"):
+            with self.subTest(host=host):
+                self.assertEqual(self.request("GET", "/api/state", headers={"Host": host})[0], 403)
+        for origin in (f"http://localhost:{self.port + 1}", f"http://evil.example:{self.port}",
+                       f"https://localhost:{self.port}"):
+            with self.subTest(origin=origin):
+                self.assertEqual(self.request("POST", "/api/action", action, {**write, "Origin": origin})[0], 403)
+
     def test_frame_upload_rejects_invalid_and_oversize_data(self) -> None:
         self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)
         headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}

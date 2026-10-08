@@ -35,6 +35,7 @@ from . import camera
 
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
+LOCAL_NAMES = ("127.0.0.1", "localhost")  # the panel may be opened with either
 MAX_FRAME_PIXELS = 12_000_000
 _MARKER_LABELS = (
     "superior izquierdo", "superior derecho", "inferior derecho", "inferior izquierdo"
@@ -688,8 +689,13 @@ def create_server(port: int = 0, controller: GameController | None = None,
         def log_message(self, format: str, *args: Any) -> None:
             pass  # Game events go to runs/web-events.jsonl; avoid noisy frame polls.
 
+        def _local_hosts(self) -> set[str]:
+            # Only loopback names with this exact port: an attacker's domain
+            # rebound to 127.0.0.1 still arrives with its own Host.
+            return {f"{name}:{self.server.server_port}" for name in LOCAL_NAMES}
+
         def _allowed_host(self) -> bool:
-            return self.headers.get("Host") == f"127.0.0.1:{self.server.server_port}"
+            return self.headers.get("Host") in self._local_hosts()
 
         def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
             body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
@@ -715,8 +721,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
                 raise RequestError("Falta la cabecera X-Postit-Client: 1.",
                                    HTTPStatus.FORBIDDEN)
             origin = self.headers.get("Origin")
-            expected = f"http://127.0.0.1:{self.server.server_port}"
-            if origin is not None and origin != expected:
+            if origin is not None and origin not in {f"http://{host}" for host in self._local_hosts()}:
                 raise RequestError("Origen no permitido.", HTTPStatus.FORBIDDEN)
 
         def _read_body(self) -> bytes:
