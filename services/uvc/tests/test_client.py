@@ -92,6 +92,15 @@ fi
         self.bridge.status()
         self.assertEqual(self.calls()[0], ["list"])
 
+    def test_without_ids_zero_or_several_cameras_say_why_in_plain_words(self) -> None:
+        for cameras, words in (("[]", "ninguna cámara USB conectada"),
+                               ('[{"vendor": "046d", "product": "082d"}, {"vendor": "1234", "product": "5678"}]',
+                                "hay 2 cámaras USB")):
+            with self.subTest(cameras=cameras):
+                bridge = UvcBridge(fake(self.root, f"printf '%s\\n' '{{\"cameras\": {cameras}}}'\n", "list"))
+                with self.assertRaisesRegex(UvcError, words):
+                    bridge.status()
+
     def test_bad_ids_are_refused_before_calling_the_helper(self) -> None:
         for vendor in ("46d", "zzzz", "046d0"):
             with self.subTest(vendor=vendor):

@@ -97,8 +97,10 @@ class UvcBridge:
         if vendor and product:
             return _hex4(vendor), _hex4(product)
         cameras = self.cameras()
-        if len(cameras) != 1:
-            raise UvcError(f"Hay {len(cameras)} cámaras USB; indicá cuál con vendor y product.")
+        if not cameras:
+            raise UvcError("no hay ninguna cámara USB conectada (¿está enchufada la C920?)")
+        if len(cameras) > 1:
+            raise UvcError(f"hay {len(cameras)} cámaras USB y esta no dice cuál es")
         return cameras[0]["vendor"], cameras[0]["product"]
 
     def status(self, vendor: str | None = None, product: str | None = None) -> dict[str, Any]:
