@@ -3,6 +3,8 @@ import {
   attemptView,
   averageHex,
   bestTrial,
+  CAMERA_GROUPS,
+  CAMERA_KEY,
   boardCounts,
   cameraDiagnosis,
   cameraName,
@@ -20,6 +22,7 @@ import {
   settleMs,
   sharpestTrial,
   framePointFromClick,
+  isPhoneCamera,
   isProjectorShortcut,
   isThemeShortcut,
   isTypingTarget,
@@ -30,6 +33,7 @@ import {
   projectorTheme,
   ROLE_LABELS,
   roleLights,
+  scanSettleMs,
   SETUP_STAGES,
   setupGuide,
   statusText,
@@ -43,7 +47,6 @@ const cameraSelect = $("camera-select");
 const overlay = $("camera-overlay");
 const channel = new BroadcastChannel("postit-wall");
 const PROJECTOR_URL = "/projector";
-const SETTLE_MS = 180;
 const PREVIEW_EVERY_MS = 250;
 const PREVIEW_MAX_AGE_MS = 1500;
 const SAMPLE_SIZE = 7;
@@ -73,6 +76,7 @@ let cameraDriver = "chrome"; // "chrome" or "usb"
 let cameraUsb = null;        // { vendor, product } when the server drives the camera
 let cameraLabel = "";
 let cameraLock = { tone: "idle", text: "Ajuste de cámara: esperando la imagen." };
+let cameraFixed = false; // white balance, exposure or focus held by hand
 let tuning = null;
 const CAMERA_KEYS = ["whiteBalanceMode", "colorTemperature", "exposureMode", "exposureTime",
   "focusMode", "focusDistance", "brightness", "contrast", "saturation", "sharpness",
@@ -156,6 +160,23 @@ function stopCamera() {
   video.srcObject = null;
 }
 
+// The camera the operator picked stays picked across reloads.
+function rememberedCamera() {
+  try {
+    return localStorage.getItem(CAMERA_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberCamera(label) {
+  try {
+    if (label) localStorage.setItem(CAMERA_KEY, label);
+  } catch {
+    // Not remembered; the C920 stays the default.
+  }
+}
+
 async function updateCameraList(selectedId = "") {
   if (!navigator.mediaDevices?.enumerateDevices) return;
   const cameras = (await navigator.mediaDevices.enumerateDevices())
@@ -170,7 +191,7 @@ async function updateCameraList(selectedId = "") {
   cameras.forEach((device, index) => {
     cameraSelect.add(new Option(cameraName(device, index), device.deviceId));
   });
-  cameraSelect.value = selectedId || preferredCamera(cameras)?.deviceId || cameras[0].deviceId;
+  cameraSelect.value = selectedId || preferredCamera(cameras, rememberedCamera())?.deviceId || cameras[0].deviceId;
 }
 
 async function startCamera(deviceId = "", preferExternal = false) {
@@ -206,7 +227,7 @@ async function startCamera(deviceId = "", preferExternal = false) {
     await updateCameraList(activeId);
     const cameras = (await navigator.mediaDevices.enumerateDevices())
       .filter((device) => device.kind === "videoinput");
-    const preferred = preferredCamera(cameras);
+    const preferred = preferredCamera(cameras, rememberedCamera());
     if (preferExternal && preferred?.deviceId && preferred.deviceId !== activeId) {
       cameraBusy = false;
       await startCamera(preferred.deviceId, false);
@@ -423,6 +444,7 @@ async function reportCamera(kind, details) {
 }
 
 function lockStatus(settings, { unfixed = [], unavailable = [] }, black) {
+  cameraFixed = CAMERA_GROUPS.some((group) => settings?.[group.mode] === "manual");
   const values = describeCamera(settings);
   const how = cameraDriver === "usb" ? " por USB" : "";
   const text = values ? `Cámara fija${how}: ${values}` : `Cámara fija${how} en los valores actuales`;
@@ -449,9 +471,14 @@ async function setupCameraLock() {
   cameraCaps = caps;
   const chromeDiagnosis = cameraDiagnosis(caps);
   let usbReason = null;
-  if (!cameraSupport(caps).any) {
+  const usbIds = usbIdsFromLabel(track.label);
+  if (!cameraSupport(caps).any && !usbIds) {
+    // Never ask for "the only USB camera": with the phone or the FaceTime
+    // camera active, that would fix the C920 while watching another image.
+    usbReason = "no es una cámara USB";
+  } else if (!cameraSupport(caps).any) {
     try {
-      const usb = await usbCamera(usbIdsFromLabel(track.label));
+      const usb = await usbCamera(usbIds);
       if (usb.available && cameraSupport(usb.capabilities).any) {
         cameraDriver = "usb";
         cameraUsb = { vendor: usb.device.vendor, product: usb.device.product };
@@ -472,8 +499,11 @@ async function setupCameraLock() {
   await reportCamera("capabilities", { driver: cameraDriver, capabilities: cameraKeys(cameraCaps), support,
     diagnosis, chrome_keys: Object.keys(caps), photo_error: photoError, usb_reason: usbReason });
   if (!support.any) {
+    cameraFixed = false;
     cameraLock = { tone: "warn", detail: `Chrome: ${chromeDiagnosis} · USB: ${usbReason}`,
-      text: `Ni Chrome ni el control USB pueden fijar esta cámara (${usbReason}).` };
+      text: isPhoneCamera(track.label)
+        ? "La cámara del celular queda en automático: no se puede fijar. Apagá Encuadre centrado y Retrato (Centro de control → Efectos de video) y no muevas el celular después de calibrar."
+        : `Ni Chrome ni el control USB pueden fijar esta cámara (${usbReason}).` };
     render();
     return;
   }
@@ -602,7 +632,7 @@ async function scanBoard() {
     notice("Apagando el proyector para leer los colores…", "busy");
     applyState(await action("projection_black"));
     await waitForBlackout();
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+    await new Promise((resolve) => setTimeout(resolve, scanSettleMs(cameraFixed)));
     notice("Leyendo los post-its…", "busy");
     const jpeg = await jpegFromVideo();
     const response = await fetch("/api/frame", {
@@ -835,7 +865,10 @@ channel.onmessage = (event) => {
 
 $("open-projector").addEventListener("click", openProjector);
 $("retry-camera").addEventListener("click", () => startCamera(cameraSelect.value || "", false));
-cameraSelect.addEventListener("change", () => startCamera(cameraSelect.value, false));
+cameraSelect.addEventListener("change", () => {
+  rememberCamera(cameraSelect.selectedOptions[0]?.textContent);
+  startCamera(cameraSelect.value, false);
+});
 $("scan-button").addEventListener("click", scanBoard);
 $("calibrate-button").addEventListener("click", () => sendAction("calibrate"));
 $("launch-button").addEventListener("click", () => sendAction("launch"));

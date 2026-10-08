@@ -11,8 +11,10 @@ import {
   describeCamera,
   driftedModes,
   fixedPart,
+  isPhoneCamera,
   lockConstraints,
   mergeSets,
+  scanSettleMs,
   presetScore,
   refinePlan,
   searchPlan,
@@ -202,8 +204,12 @@ test("the USB route receives one manual settings object, gain included", () => {
 
 test("without Chrome controls the panel fixes the camera through the server over USB", () => {
   const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
-  // Chrome first; the USB route only when Chrome offers no manual mode.
-  assert.match(operator, /if \(!cameraSupport\(caps\)\.any\) \{\s*try \{\s*const usb = await usbCamera\(usbIdsFromLabel\(track\.label\)\);/);
+  // Chrome first; the USB route only when Chrome offers no manual mode AND the
+  // active camera carries USB ids. Regression: with the phone active and the
+  // C920 plugged in, an id-less request fixed the C920 while watching the phone.
+  assert.match(operator, /const usbIds = usbIdsFromLabel\(track\.label\);\s*if \(!cameraSupport\(caps\)\.any && !usbIds\) \{/);
+  assert.match(operator, /\} else if \(!cameraSupport\(caps\)\.any\) \{\s*try \{\s*const usb = await usbCamera\(usbIds\);/);
+  assert.doesNotMatch(operator, /usbCamera\(null\)|usbCamera\(\)/);
   assert.match(operator, /cameraDriver = "usb";/);
   assert.match(operator, /if \(cameraDriver === "usb"\) \{[\s\S]*?fetch\("\/api\/camera", \{\s*method: "POST",[\s\S]*?settings: mergeSets\(sets\)/);
   // The search reads its starting point through the same route.
@@ -212,6 +218,18 @@ test("without Chrome controls the panel fixes the camera through the server over
   assert.match(operator, /setInterval\(watchCamera, WATCH_CAMERA_MS\);/);
   assert.match(operator, /const drifted = driftedModes\(preset\.settings, current\);/);
   assert.match(operator, /reportCamera\("reapplied"/);
+});
+
+test("the phone camera is recognized and an automatic camera waits longer before a scan", () => {
+  assert.equal(isPhoneCamera("Cámara de iPhone de Tobias"), true);
+  assert.equal(isPhoneCamera("Tobias's iPhone Camera"), true);
+  assert.equal(isPhoneCamera("Cámara de continuidad"), true);
+  assert.equal(isPhoneCamera("HD Pro Webcam C920 (046d:082d)"), false);
+  assert.equal(isPhoneCamera(undefined), false);
+  assert.equal(scanSettleMs(true), 180);
+  assert.equal(scanSettleMs(false), 1000);
+  const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
+  assert.match(operator, /setTimeout\(resolve, scanSettleMs\(cameraFixed\)\)/);
 });
 
 test("describeCamera and settleMs speak in operator units", () => {

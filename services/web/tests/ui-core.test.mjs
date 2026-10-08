@@ -186,6 +186,18 @@ test("preferredCamera picks the Logitech C920, else the first camera", () => {
   assert.equal(preferredCamera([]), null);
 });
 
+test("the camera the operator picked wins over the C920 after a reload", () => {
+  const c920 = { kind: "videoinput", deviceId: "b", label: "HD Pro Webcam C920 (046d:082d)" };
+  const phone = { kind: "videoinput", deviceId: "p", label: "Cámara de iPhone de Tobias" };
+  assert.equal(preferredCamera([c920, phone], "Cámara de iPhone de Tobias"), phone);
+  // A remembered camera that is gone falls back to the usual order.
+  assert.equal(preferredCamera([c920], "Cámara de iPhone de Tobias"), c920);
+  assert.equal(preferredCamera([c920, phone], ""), c920);
+  const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
+  assert.match(operator, /rememberCamera\(cameraSelect\.selectedOptions\[0\]\?\.textContent\);\s*startCamera\(cameraSelect\.value, false\);/);
+  assert.match(operator, /const preferred = preferredCamera\(cameras, rememberedCamera\(\)\);/);
+});
+
 test("cameraName falls back to a numbered name when the label is hidden", () => {
   assert.equal(cameraName({ label: "  FaceTime HD Camera " }), "FaceTime HD Camera");
   assert.equal(cameraName({ label: "" }, 1), "Cámara 2");

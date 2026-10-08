@@ -1,8 +1,27 @@
 /** Pure view logic shared by the operator page and its tests. */
 
-export function preferredCamera(devices) {
+/** The operator's last chosen camera (by label), else the Logitech C920, else the first. */
+export function preferredCamera(devices, remembered = "") {
   const cameras = devices.filter((device) => device.kind === "videoinput");
-  return cameras.find((device) => /c920|logitech/i.test(device.label)) ?? cameras[0] ?? null;
+  return cameras.find((device) => remembered && device.label === remembered)
+    ?? cameras.find((device) => /c920|logitech/i.test(device.label))
+    ?? cameras[0] ?? null;
+}
+
+export const CAMERA_KEY = "postit-wall:camera";
+
+/** An iPhone used as a webcam through Continuity Camera. */
+export function isPhoneCamera(label) {
+  return /iphone|continuidad|continuity/i.test(label ?? "");
+}
+
+/**
+ * Wait after the projector goes black before capturing a scan. A fixed
+ * camera only needs the projector to settle; an automatic one also has to
+ * let its exposure and white balance adapt to the dark wall.
+ */
+export function scanSettleMs(cameraFixed) {
+  return cameraFixed ? 180 : 1000;
 }
 
 export function cameraName(device, index = 0) {

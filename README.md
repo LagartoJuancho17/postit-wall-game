@@ -57,6 +57,27 @@ La vista de cámara sigue en directo durante la partida. El tablero del juego
 se lee solo al escanear; las luces de detección en vivo son una guía previa.
 Si movés la cámara, la pared o el proyector, repetí la calibración.
 
+## Usar la cámara del celular
+
+Un iPhone cerca de la Mac aparece como cámara (Cámara de continuidad), por
+ejemplo "Cámara de iPhone de Tobias". Elegilo en el selector **Cámara**
+debajo del video. El panel recuerda esa elección al recargar; sin elección
+guardada prefiere la C920.
+
+- **Fijalo.** Usá un soporte firme y no lo muevas después de calibrar: si
+  cambia el encuadre, hay que calibrar de nuevo.
+- **Apagá los efectos.** En Centro de control → Efectos de video, apagá
+  *Encuadre centrado*, que mueve el encuadre solo y rompe la calibración, y
+  también *Retrato* y *Luz de estudio*.
+- **Queda en automático.** El celular no es USB y Chrome no ofrece sus
+  controles, así que el balance, la exposición y el foco no se pueden fijar.
+  Para compensar, con una cámara automática el escaneo espera 1 segundo con
+  el proyector en negro antes de capturar, en vez de 0.18 s, para que la
+  exposición se acomode.
+- **No toca otra cámara.** El ajuste fijo por USB solo se usa con una cámara
+  cuyo nombre trae su ID USB. Con el celular activo, el panel nunca toca la
+  C920 aunque esté enchufada.
+
 ## Fondo del proyector: oscuro o claro
 
 Arriba a la derecha, junto a **Abrir proyección**, está **Fondo: Oscuro /
