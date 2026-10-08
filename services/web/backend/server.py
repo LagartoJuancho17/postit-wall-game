@@ -18,7 +18,7 @@ from pathlib import Path
 from threading import RLock
 import time
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import cv2
 import numpy as np
@@ -32,6 +32,7 @@ from services.uvc import UvcBridge, UvcError
 from services.vision.palette import normalize_hex
 
 from . import camera
+from .camera import camera_label as _camera_label
 
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -178,6 +179,7 @@ class GameController:
         self._accumulator = 0.0
         self.frame_width = 0
         self.frame_height = 0
+        self.frame_camera: str | None = None  # label of the camera the board was scanned with
         self.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J."
         self.revision = 0
 
@@ -271,7 +273,7 @@ class GameController:
             "phase": self._phase(),
             "message": self.message,
             "camera": {"status": "browser", "width": self.frame_width,
-                       "height": self.frame_height},
+                       "height": self.frame_height, "label": self.frame_camera},
             "camera_board": _board_json(self.camera_board),
             "board": _board_json(self.board),
             "palette": self._palette_json(),
@@ -346,6 +348,7 @@ class GameController:
                     self.game = None
                     self.frame_width = 0
                     self.frame_height = 0
+                    self.frame_camera = None
                     self._calibration_targets = []
                     self._calibration_target = None
                     self.paused = False
@@ -363,6 +366,7 @@ class GameController:
                 self.game = None
                 self.frame_width = 0
                 self.frame_height = 0
+                self.frame_camera = None
                 self._calibration_targets = []
                 self._calibration_target = None
                 self.paused = False
@@ -600,7 +604,14 @@ class GameController:
             "quality": frame_quality(frame, palette, notes),
         }
 
-    def scan_jpeg(self, data: bytes) -> dict[str, Any]:
+    def scan_jpeg(self, data: bytes, camera: str | None = None) -> dict[str, Any]:
+        """Read the board; ``camera`` names the camera, so a later start with
+        another camera knows this board does not fit it."""
+        if camera is not None:
+            try:
+                camera = _camera_label(camera)
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
         frame = _decode_jpeg(data)
         with self._lock:
             if not self.projector_open:
@@ -624,6 +635,7 @@ class GameController:
             self.board = board
             self.game = game
             self.frame_height, self.frame_width = frame.shape[:2]
+            self.frame_camera = camera
             self.paused = False
             self._accumulator = 0.0
             self._last_tick = None
@@ -804,7 +816,8 @@ def create_server(port: int = 0, controller: GameController | None = None,
                                        HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
                 body = self._read_body()
                 if path == "/api/frame":
-                    result = controller.scan_jpeg(body)
+                    label = self.headers.get("X-Postit-Camera")
+                    result = controller.scan_jpeg(body, unquote(label) if label else None)
                 elif path == "/api/preview":
                     result = controller.preview_jpeg(body)
                 else:

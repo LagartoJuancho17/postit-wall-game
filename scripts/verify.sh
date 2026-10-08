@@ -17,3 +17,4 @@ fi
 "$PY" -m services.uvc.smoke
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs
+"$PY" -m services.web.evals.eyedropper

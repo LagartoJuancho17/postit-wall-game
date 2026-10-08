@@ -62,7 +62,11 @@ Si movés la cámara, la pared o el proyector, repetí la calibración.
 Un iPhone cerca de la Mac aparece como cámara (Cámara de continuidad), por
 ejemplo "Cámara de iPhone de Tobias". Elegilo en el selector **Cámara**
 debajo del video. El panel recuerda esa elección al recargar; sin elección
-guardada prefiere la C920.
+guardada prefiere la C920. El tablero escaneado y la calibración quedan
+asociados al nombre de la cámara: recargar la página con la misma cámara los
+conserva, y elegir otra los descarta porque cambia el encuadre. Si la cámara
+no entrega imágenes en 8 segundos, el panel lo dice y muestra **Reintentar
+cámara**, que vuelve a la cámara recordada.
 
 - **Fijalo.** Usá un soporte firme y no lo muevas después de calibrar: si
   cambia el encuadre, hay que calibrar de nuevo.
@@ -108,9 +112,14 @@ esquinas. Cada una tiene:
   ninguno. Al lado figura la cuenta, por ejemplo `4/4`.
 - **Cuadrado de color**: abre el selector de color de Chrome. En macOS, ese
   selector trae su propia lupa para tomar un color de la pantalla.
-- **Gotero**: pulsalo y tocá el post-it en la imagen de la cámara. Toma el
-  color promedio de un cuadrito de 7×7 píxeles, igual que lo ve el detector.
-  `Esc` cancela.
+- **Gotero**: pulsalo y tocá el centro del post-it en la imagen de la
+  cámara. Apaga el proyector un instante, como el escaneo, para que la luz
+  proyectada no tiña el papel. Lee un cuadrito de 11×11 píxeles y se queda
+  con la parte más saturada: si el cuadrito pisa el borde, la pared no lava
+  el color. `Esc` cancela.
+- **Avisos**: si el color elegido es pálido, el panel lo dice. Con la imagen
+  siguiente también avisa si algo empeoró, por ejemplo "Con #d2b996 no veo
+  ningún post-it de rebotes", o si el color nuevo se confunde con otro tipo.
 
 Sobre la imagen, cada post-it detectado se ilumina con un halo de su color.
 Así se ve qué papel exacto cuenta como cada tipo. **Colores originales**
@@ -284,7 +293,12 @@ El script ejecuta estas pruebas y evaluaciones:
 ./.venv/bin/python -m services.uvc.smoke
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs
+./.venv/bin/python -m services.web.evals.eyedropper
 ```
+
+`services/web/evals/eyedropper.py` mide el gotero: hace 588 clicks sobre
+fotos de la pared en siete condiciones de luz y foco, y exige que todo click
+adentro del post-it funcione y que ningún click fallido pase sin aviso.
 
 `services/web/evals/flows.mjs` comprueba que cada botón del panel coincida
 con lo que el backend acepta en cada fase del juego. Si cambiás reglas del

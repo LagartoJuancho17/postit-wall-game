@@ -10,7 +10,7 @@ recibe una foto JPEG solo al escanear.
 | `ui/` | `index.html` + `app.js` (panel), `projector.html` + `projector.js` (ventana del proyector) y `ui-core.mjs`, la lógica pura que ambos comparten. |
 | `contract/` | `state-matrix.json`: snapshot real de `/api/state` en cada fase y qué acciones acepta el backend allí. `preview-samples.json`: respuestas reales de `/api/preview`, con la paleta que las produjo y si un escaneo de esa misma foto funciona. |
 | `tests/` | Pruebas rápidas: `*.test.mjs` (Node), `test_contract_matrix.py` y `test_palette_api.py`. |
-| `evals/` | `flows.mjs`: acuerdo entre los botones del panel y el backend. |
+| `evals/` | `flows.mjs`: acuerdo entre los botones del panel y el backend. `eyedropper.py`: tasa de acierto del gotero real contra el detector real. |
 
 ## Matriz de estados
 
@@ -33,6 +33,32 @@ del snapshot, y los valores de los que depende el panel (`phase`,
 `calibration.status`). Las coordenadas pueden variar sin que falle. El mismo
 comando regenera `preview-samples.json`; el test compara su forma, la paleta,
 las cuentas por rol y si el escaneo funciona.
+
+## Evaluación del gotero
+
+```sh
+./.venv/bin/python -m services.web.evals.eyedropper
+```
+
+Corre el JavaScript real del panel (`patchOrigin`, `noteColorHex`,
+`weakColor`, `pickVerdict`) sobre fotos de la pared recoloreada y juzga cada
+color con el backend real (`palette_set` y `preview_jpeg`). Siete
+condiciones: limpia, poca luz, luz cálida, ruido con JPEG fuerte, desenfoque,
+y pared beige nítida y desenfocada. 588 clicks: el centro de cada post-it y
+50 %, 80 %, 100 %, 110 % y 120 % del camino a cada borde.
+
+Un click acierta si, con los otros roles tomados en su centro, el preview ve
+todos los post-its (1 inicio, 1 llegada, 1 rebote, 4 esquinas). Umbrales:
+
+- adentro del post-it (hasta 80 %): 100 %;
+- en el borde (medio cuadrito sobre la pared): 90 % o más;
+- ningún fallo silencioso: todo click que falla termina rechazado por el
+  servidor, marcado como pálido o explicado por `pickVerdict()`;
+- ningún anillo peor que con el promedio simple (`averageHex`, el gotero
+  anterior).
+
+Medido el 2026-10-08: adentro 100 %, borde 100 %, afuera 51 % (promedio
+simple 35 %; sobre pared beige 47 % contra 12,5 %) y 0 fallos silenciosos.
 
 ## Evaluación de flujos
 
@@ -82,10 +108,26 @@ Debajo del video, cada rol (inicio, llegada, rebotes, esquinas) tiene:
 - la cuenta de lo detectado;
 - un gotero.
 
-El gotero promedia 7×7 píxeles del cuadro de video en el punto tocado.
-`framePointFromClick()` descarta las bandas negras de `object-fit: contain`.
-Ambos caminos envían `palette_set`, y un rechazo se muestra junto a los
-controles durante 8 segundos.
+El gotero lee un cuadrito de 11×11 píxeles (`SAMPLE_SIZE`) en el punto
+tocado. `framePointFromClick()` descarta las bandas negras de
+`object-fit: contain`. `noteColorHex()` se queda con la mediana de la mitad
+más saturada del cuadrito: si pisa el borde del post-it, la pared (menos
+saturada) queda afuera en vez de lavar el color. Antes de leer, con el
+proyector abierto y sin intento en curso, `pickColor()` lo pone en negro como
+el escaneo (`projection_black`, confirmación, espera de `scanSettleMs()`) y
+después lo restaura. Mientras tanto quedan deshabilitados el gotero,
+escanear, calibrar y la búsqueda de ajuste. Si el proyector no confirma el
+negro, el panel igual restaura la proyección y explica el motivo.
+
+Ambos caminos (gotero y selector) envían `palette_set`. Hay tres avisos, que
+quedan junto a los controles durante 8 segundos:
+
+- el rechazo del servidor (casi gris, muy oscuro o parecido a otro rol);
+- `weakColor()`: el color elegido es pálido (saturación menor a 0.35);
+- `pickVerdict()`: compara el preview anterior con el primero enviado después
+  del cambio y dice qué empeoró ("Con #d2b996 no veo ningún post-it de
+  rebotes…", "veo 2 post-its de inicio y van 1…", o que el color nuevo le
+  sacó post-its a otro rol).
 
 Cada 250 ms, con una sola foto en vuelo, el panel envía el video a
 `POST /api/preview`. Pausa ese envío durante el escaneo y con la pestaña

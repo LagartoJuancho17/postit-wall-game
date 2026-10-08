@@ -159,7 +159,7 @@ test("the panel fixes the camera on every start and saves what the search finds"
   assert.match(page, /id="camera-lock"/);
   assert.match(page, /id="camera-tune"/);
   // After a successful start, never before the camera hop settles.
-  assert.match(operator, /clearNotice\(\);\s*render\(\);\s*setupCameraLock\(\);\s*\} catch/);
+  assert.match(operator, /clearNotice\(\);\s*await forgetBoardOfOtherCamera\(currentTrack\(\)\?\.label\);\s*render\(\);\s*setupCameraLock\(\);\s*\} catch/);
   // A saved preset is applied; without one the search runs and saves.
   assert.match(operator, /const preset = state\.camera_presets\[cameraLabel\];\s*if \(!preset\) \{\s*await tuneCamera\(\);/);
   assert.match(operator, /action\("camera_preset_save", \{ camera: cameraLabel, settings, score: winner\.score,/);
@@ -167,9 +167,12 @@ test("the panel fixes the camera on every start and saves what the search finds"
   assert.match(operator, /return \{ settings, preview: result, score: presetScore\(result\) \};/);
   assert.match(operator, /advanced: sets \}/);
   // The scan and the regular preview wait while the search runs.
-  assert.match(operator, /async function scanBoard\(\) \{\s*if \(scanBusy \|\| tuning\) return;/);
+  assert.match(operator, /async function scanBoard\(\) \{\s*if \(scanBusy \|\| tuning \|\| pickBusy\) return;/);
   // The projector goes black for the search, like for a scan, and comes back.
-  assert.match(operator, /applyState\(await action\("projection_black"\)\);\s*await waitForBlackout\(\);\s*black = true;/);
+  // Owned as soon as the server went black: a lost acknowledgement still restores it.
+  assert.match(operator, /applyState\(await action\("projection_black"\)\);\s*black = true;\s*await waitForBlackout\(\);\s*\}\s*const start = await readCameraSettings/);
+  // No search while the eyedropper holds the projector black.
+  assert.match(operator, /if \(!track \|\| tuning \|\| scanBusy \|\| pickBusy \|\| !cameraCaps/);
   assert.match(operator, /if \(black\) \{\s*await restoreProjection\(\);\s*channel\.postMessage\(\{ type: "resume" \}\);/);
   // A failed scan also brings the projection back instead of leaving it black.
   assert.match(operator, /notice\(error\.message, "error"\);\s*await restoreProjection\(\);/);
@@ -238,4 +241,14 @@ test("describeCamera and settleMs speak in operator units", () => {
   assert.equal(describeCamera({}), "");
   assert.equal(settleMs({ exposureTime: 800 }), 490);
   assert.equal(settleMs({}), 250);
+});
+
+test("a camera that never delivers a frame ends in a retry, not an endless spinner", async () => {
+  const { withTimeout } = await import("../ui/ui-core.mjs");
+  assert.equal(await withTimeout(Promise.resolve("ok"), 50, "nunca"), "ok");
+  await assert.rejects(withTimeout(Promise.reject(new Error("propio")), 50, "nunca"), /propio/);
+  await assert.rejects(withTimeout(new Promise(() => {}), 20, "La cámara no entrega imágenes."),
+    (error) => error.name === "TimeoutError" && /no entrega imágenes/.test(error.message));
+  const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
+  assert.match(operator, /await withTimeout\(video\.play\(\), CAMERA_FRAMES_MS,/);
 });

@@ -3,12 +3,26 @@
 /** The operator's last chosen camera (by label), else the Logitech C920, else the first. */
 export function preferredCamera(devices, remembered = "") {
   const cameras = devices.filter((device) => device.kind === "videoinput");
-  return cameras.find((device) => remembered && device.label === remembered)
+  const wanted = remembered?.trim();
+  return cameras.find((device) => wanted && device.label?.trim() === wanted)
     ?? cameras.find((device) => /c920|logitech/i.test(device.label))
     ?? cameras[0] ?? null;
 }
 
 export const CAMERA_KEY = "postit-wall:camera";
+
+/**
+ * Rejects with `message` when `promise` has not settled after `ms`. A stream
+ * that never delivers a frame leaves video.play() pending forever, and the
+ * panel would sit on "Conectando la cámara" with no way to retry.
+ */
+export function withTimeout(promise, ms, message) {
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(message), { name: "TimeoutError" })), ms);
+  });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+}
 
 /** An iPhone used as a webcam through Continuity Camera. */
 export function isPhoneCamera(label) {
@@ -138,6 +152,29 @@ export function roleLights(preview) {
   }));
 }
 
+/**
+ * What the first preview after a color change says about it, compared with
+ * the preview before: null when nothing got worse, else a sentence for the
+ * panel. A light that just goes off is easy to miss; this names the cause.
+ */
+export function pickVerdict(role, hex, before, after) {
+  const now = roleLights(after);
+  if (!now[role].state) return null;
+  const label = ROLE_LABELS[role];
+  if (now[role].state === "off") {
+    return `Con ${hex} no veo ningún post-it de ${label}. Si ya está en la pared, tocá su centro o elegí otro color.`;
+  }
+  if (now[role].state === "warn") {
+    return `Con ${hex} veo ${now[role].count} post-its de ${label} y van ${NEEDED[role]}: el color se parece al de otro post-it o a la pared.`;
+  }
+  const was = roleLights(before);
+  const lost = PALETTE_ROLES.filter((other) => other !== role && was[other].state === "on" && now[other].state !== "on");
+  if (lost.length) {
+    return `Con ${hex} para ${label} dejé de ver bien ${lost.map((other) => ROLE_LABELS[other]).join(" y ")}: los colores se parecen. Elegí otro tono.`;
+  }
+  return null;
+}
+
 /** Where a frame lands inside a box with object-fit: contain. */
 export function containTransform(boxWidth, boxHeight, frameWidth, frameHeight) {
   const scale = Math.min(boxWidth / frameWidth, boxHeight / frameHeight);
@@ -158,13 +195,55 @@ export function framePointFromClick(clientX, clientY, rect, frameWidth, frameHei
 }
 
 /** Top-left corner of a size×size patch around a point, kept inside the frame. */
+/** Side of the square the eyedropper reads around a click, in frame pixels. */
+export const SAMPLE_SIZE = 11;
+
 export function patchOrigin(point, frameWidth, frameHeight, size = 5) {
   const half = Math.floor(size / 2);
   const clamp = (value, top) => Math.max(0, Math.min(top - size, Math.round(value) - half));
   return { x: clamp(point.x, frameWidth), y: clamp(point.y, frameHeight) };
 }
 
-/** Mean color of RGBA pixels as #rrggbb: what the eyedropper reads. */
+/**
+ * The eyedropper's color: the median of the more saturated half of a patch.
+ * A click near a note's edge mixes in the pale wall; those pixels are the
+ * least saturated, so they drop out instead of washing the color.
+ */
+export function noteColorHex(rgba) {
+  const pixels = rgba?.length / 4;
+  if (!Number.isInteger(pixels) || pixels < 1) throw new TypeError("Se esperaban píxeles RGBA.");
+  const samples = [];
+  for (let index = 0; index < rgba.length; index += 4) {
+    const [red, green, blue] = [rgba[index], rgba[index + 1], rgba[index + 2]];
+    const high = Math.max(red, green, blue);
+    samples.push({ red, green, blue, saturation: high ? (high - Math.min(red, green, blue)) / high : 0 });
+  }
+  samples.sort((a, b) => b.saturation - a.saturation);
+  const kept = samples.slice(0, Math.ceil(samples.length / 2));
+  const median = (key) => {
+    const values = kept.map((sample) => sample[key]).sort((a, b) => a - b);
+    const middle = values.length >> 1;
+    return values.length % 2 ? values[middle] : Math.round((values[middle - 1] + values[middle]) / 2);
+  };
+  return `#${["red", "green", "blue"].map((key) => median(key).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** A picked color this pale risks matching the wall, skin or wood. */
+export function weakColor(hex) {
+  const [red, green, blue] = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
+  const high = Math.max(red, green, blue);
+  return !high || (high - Math.min(red, green, blue)) / high < 0.35;
+}
+
+/**
+ * A board scanned with one camera does not fit another: a different active
+ * camera invalidates it. The same camera after a reload does not.
+ */
+export function invalidatesBoard(boardCamera, activeCamera) {
+  return Boolean(boardCamera && activeCamera && boardCamera !== activeCamera);
+}
+
+/** Mean color of RGBA pixels as #rrggbb. */
 export function averageHex(rgba) {
   const pixels = rgba?.length / 4;
   if (!Number.isInteger(pixels) || pixels < 1) throw new TypeError("Se esperaban píxeles RGBA.");

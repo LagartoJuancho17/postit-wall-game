@@ -118,6 +118,14 @@ class WebHttpIntegrationTests(unittest.TestCase):
             with self.subTest(origin=origin):
                 self.assertEqual(self.request("POST", "/api/action", action, {**write, "Origin": origin})[0], 403)
 
+    def test_frame_upload_records_the_camera_from_an_encoded_header(self) -> None:
+        self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)
+        status, state = self.request("POST", "/api/frame", self.jpeg(), {
+            "Content-Type": "image/jpeg", "X-Postit-Client": "1",
+            "X-Postit-Camera": "C%C3%A1mara%20de%20iPhone%20de%20Tob%C3%ADas"})
+        self.assertEqual(status, 200)
+        self.assertEqual(state["camera"]["label"], "Cámara de iPhone de Tobías")
+
     def test_frame_upload_rejects_invalid_and_oversize_data(self) -> None:
         self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)
         headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}

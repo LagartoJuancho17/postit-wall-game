@@ -19,7 +19,7 @@ bind=False)` crea el handler sin llamar a `bind`.
 | `GET /projector` | Lienzo emergente del proyector. |
 | `GET /api/state` | Estado actual, geometría en píxeles de cámara y proyector. |
 | `GET /api/tick` | Avance por reloj monotónico de la física a pasos de 1/120 s. |
-| `POST /api/frame` | Bytes `image/jpeg` de una captura oscura; primera lectura o relectura. |
+| `POST /api/frame` | Bytes `image/jpeg` de una captura oscura; primera lectura o relectura. El encabezado opcional `X-Postit-Camera` (nombre de la cámara, codificado con `encodeURIComponent`, hasta 200 caracteres) queda en `camera.label` del estado si la lectura funciona. |
 | `POST /api/preview` | Bytes `image/jpeg` del video en vivo; devuelve lo detectado por rol sin cambiar el juego. |
 | `POST /api/action` | Objeto JSON con una acción de la tabla siguiente. |
 | `GET /api/camera?vendor=046d&product=082d` | Controles de la cámara USB en el vocabulario de Chrome: `{"available", "device", "capabilities", "settings"}`, o `{"available": false, "reason"}`. Sin ids usa la única cámara USB conectada. |
@@ -34,7 +34,7 @@ un límite de 12 megapíxeles, comprobado **antes** de decodificarlo.
 | --- | --- | --- |
 | `projection_open` | `width`, `height` en píxeles reales del canvas | Abre o redimensiona; al cambiar tamaño invalida la calibración. |
 | `projection_close` | ninguno | Oscurece y pausa el intento activo. |
-| `camera_changed` | ninguno | Invalida capturas, calibración y tablero tras cambiar de cámara. |
+| `camera_changed` | ninguno | Invalida capturas, calibración y tablero tras cambiar de cámara, y borra `camera.label`. El panel lo envía solo si la cámara activa no es la que escaneó el tablero: recargar con la misma cámara conserva todo. |
 | `projection_black` | ninguno | Prepara una lectura oscura. |
 | `calibrate` | ninguno | Empieza la alineación manual de cuatro cruces con los fucsias. |
 | `calibration_move` | `x`, `y` | Mueve la cruz activa. |
@@ -52,7 +52,8 @@ un límite de 12 megapíxeles, comprobado **antes** de decodificarlo.
 | `projection_restore` | ninguno | Tras un negro sin tablero nuevo (escaneo fallido o búsqueda de cámara), vuelve a mostrar juego, calibración o negro según corresponda. |
 
 Antes de `/api/frame`, la interfaz envía `projection_black`, espera la
-confirmación de que la ventana pintó negro y deja 150 ms para que el proyector
+confirmación de que la ventana pintó negro y deja 180 ms (1 s con una cámara
+automática, `scanSettleMs()`) para que el proyector
 y la webcam se estabilicen. El backend exige que la ventana esté abierta y el
 modo sea `black`. La primera captura produce `camera_board`, con coordenadas
 de cámara. Tras cuatro puntos manuales, `board` contiene la misma geometría

@@ -109,6 +109,37 @@ class CameraPresetTests(unittest.TestCase):
                 self.assertEqual(self.events()[-1]["event"], "camera_presets_ignored")
 
 
+class ScannedCameraTests(unittest.TestCase):
+    """The board remembers which camera scanned it, so a reload keeps it."""
+
+    def test_scan_records_the_camera_and_resets_forget_it(self) -> None:
+        game = GameController(log_path=None)
+        self.assertIsNone(game.snapshot()["camera"]["label"])
+        game.action({"action": "projection_open", "width": 1280, "height": 800})
+        state = game.scan_jpeg(_frame(430), "HD Pro Webcam C920 (046d:082d)")
+        self.assertEqual(state["camera"]["label"], "HD Pro Webcam C920 (046d:082d)")
+        self.assertIsNone(game.action({"action": "camera_changed"})["camera"]["label"])
+        game.action({"action": "projection_black"})
+        game.scan_jpeg(_frame(430), "Cámara de iPhone de Tobías")
+        resized = game.action({"action": "projection_open", "width": 1024, "height": 768})
+        self.assertIsNone(resized["camera"]["label"])
+
+    def test_a_failed_scan_keeps_the_previous_camera(self) -> None:
+        game = GameController(log_path=None)
+        game.action({"action": "projection_open", "width": 1280, "height": 800})
+        game.scan_jpeg(_frame(430), "C920")
+        game.action({"action": "projection_black"})
+        with self.assertRaises(RequestError):
+            game.scan_jpeg(_frame(430, {"start": 105, "goal": 176, "bumper": 28, "marker": 140}), "Otra")
+        self.assertEqual(game.snapshot()["camera"]["label"], "C920")
+
+    def test_an_unreasonable_label_is_refused(self) -> None:
+        game = GameController(log_path=None)
+        game.action({"action": "projection_open", "width": 1280, "height": 800})
+        with self.assertRaises(RequestError):
+            game.scan_jpeg(_frame(430), "x" * 201)
+
+
 class ProjectionRestoreTests(unittest.TestCase):
     """A blackout without a new board (failed scan, camera search) must end."""
 

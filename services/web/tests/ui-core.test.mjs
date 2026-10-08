@@ -196,6 +196,11 @@ test("the camera the operator picked wins over the C920 after a reload", () => {
   const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
   assert.match(operator, /rememberCamera\(cameraSelect\.selectedOptions\[0\]\?\.textContent\);\s*startCamera\(cameraSelect\.value, false\);/);
   assert.match(operator, /const preferred = preferredCamera\(cameras, rememberedCamera\(\)\);/);
+  // The list shows trimmed labels, so the remembered one is compared trimmed.
+  assert.equal(preferredCamera([c920, { ...phone, label: "Cámara de iPhone de Tobias " }], "Cámara de iPhone de Tobias")?.deviceId, "p");
+  // Regression: a retry after a failed start opened the default camera, not
+  // the remembered one, and that discarded the board scanned with it.
+  assert.match(operator, /\$\("retry-camera"\)\.addEventListener\("click", \(\) => startCamera\(cameraSelect\.value \|\| "", !cameraSelect\.value\)\);/);
 });
 
 test("cameraName falls back to a numbered name when the label is hidden", () => {

@@ -83,7 +83,15 @@ test("projector reports its size and acknowledges black before frame upload", ()
   assert.match(operator, /action\(["']projection_black["']\)[\s\S]*?await waitForBlackout\(\)[\s\S]*?jpegFromVideo\(\)[\s\S]*?fetch\(["']\/api\/frame["']/);
 });
 
-test("switching camera tells the backend to discard the old alignment", () => {
-  assert.match(operator, /const previousId\s*=\s*stream\?/);
-  assert.match(operator, /if\s*\(previousId\s*&&\s*activeId\s*!==\s*previousId\)\s*\{\s*applyState\(await action\(["']camera_changed["']\)\)/);
+test("a different camera discards the old alignment; a reload with the same one keeps it", () => {
+  // Regression: the startup hop (default camera -> preferred one) used to send
+  // camera_changed, so reloading the page wiped scan and calibration.
+  assert.doesNotMatch(operator, /previousId/);
+  assert.match(operator, /if \(invalidatesBoard\(latest\?\.camera\?\.label, label\)\) applyState\(await action\("camera_changed"\)\);/);
+  assert.match(operator, /"X-Postit-Camera": encodeURIComponent\(currentTrack\(\)\?\.label \|\| ""\)/);
+});
+
+test("the server-unreachable notice clears once the server answers again", () => {
+  assert.match(operator, /if \(connectionNotice && localNotice === connectionNotice\) clearNotice\(\);/);
+  assert.match(operator, /notice\(`No se puede conectar con el servidor local: \$\{error\.message\}`, "error"\);\s*connectionNotice = localNotice;/);
 });

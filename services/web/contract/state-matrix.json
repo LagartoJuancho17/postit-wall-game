@@ -20,6 +20,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -438,6 +439,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -854,6 +856,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -1270,6 +1273,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -1521,6 +1525,7 @@
     },
     "camera": {
      "height": 0,
+     "label": null,
      "status": "browser",
      "width": 0
     },
@@ -1769,6 +1774,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -2185,6 +2191,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -2601,6 +2608,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -2852,6 +2860,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },
@@ -3100,6 +3109,7 @@
     },
     "camera": {
      "height": 0,
+     "label": null,
      "status": "browser",
      "width": 0
     },
@@ -3348,6 +3358,7 @@
     },
     "camera": {
      "height": 720,
+     "label": null,
      "status": "browser",
      "width": 960
     },

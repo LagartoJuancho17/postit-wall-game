@@ -1,7 +1,6 @@
 import {
   attemptPhase,
   attemptView,
-  averageHex,
   bestTrial,
   CAMERA_GROUPS,
   CAMERA_KEY,
@@ -12,6 +11,7 @@ import {
   containTransform,
   controlsFor,
   describeCamera,
+  invalidatesBoard,
   driftedModes,
   fixedPart,
   lockConstraints,
@@ -27,18 +27,23 @@ import {
   isThemeShortcut,
   isTypingTarget,
   normalizeAngle,
+  noteColorHex,
   PALETTE_ROLES,
   patchOrigin,
+  pickVerdict,
   preferredCamera,
   projectorTheme,
   ROLE_LABELS,
   roleLights,
+  SAMPLE_SIZE,
   scanSettleMs,
   SETUP_STAGES,
   setupGuide,
   statusText,
   THEME_KEY,
   usbIdsFromLabel,
+  weakColor,
+  withTimeout,
 } from "./ui-core.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -49,8 +54,8 @@ const channel = new BroadcastChannel("postit-wall");
 const PROJECTOR_URL = "/projector";
 const PREVIEW_EVERY_MS = 250;
 const PREVIEW_MAX_AGE_MS = 1500;
-const SAMPLE_SIZE = 7;
 const PALETTE_ERROR_MS = 8000;
+const CAMERA_FRAMES_MS = 8000;
 const PALETTE_NOTE = "Tocá el gotero y después el post-it en la imagen, o elegí el color en el cuadrado. La luz se enciende cuando la cámara lo detecta.";
 const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
 
@@ -61,6 +66,10 @@ let state = null;
 let scanBusy = false;
 let cameraBusy = false;
 let polling = false;
+let connectionNotice = null;
+let pickBusy = false;
+// The color just set, judged by the first preview taken after it.
+let pickCheck = null;
 let localNotice = null;
 let requestId = 0;
 const pendingBlackouts = new Map();
@@ -197,7 +206,6 @@ async function updateCameraList(selectedId = "") {
 async function startCamera(deviceId = "", preferExternal = false) {
   if (cameraBusy) return;
   cameraBusy = true;
-  const previousId = stream?.getVideoTracks()[0]?.getSettings().deviceId || "";
   $("camera-placeholder").hidden = false;
   $("retry-camera").hidden = true;
   $("camera-placeholder").querySelector("strong").textContent = "Conectando la cámara";
@@ -219,11 +227,9 @@ async function startCamera(deviceId = "", preferExternal = false) {
     };
     stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
-    await video.play();
+    await withTimeout(video.play(), CAMERA_FRAMES_MS,
+      "La cámara no entrega imágenes. Revisá que esté conectada y que ninguna otra app la use, y reintentá.");
     const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId || deviceId;
-    if (previousId && activeId !== previousId) {
-      applyState(await action("camera_changed"));
-    }
     await updateCameraList(activeId);
     const cameras = (await navigator.mediaDevices.enumerateDevices())
       .filter((device) => device.kind === "videoinput");
@@ -239,6 +245,7 @@ async function startCamera(deviceId = "", preferExternal = false) {
     $("connection-pill").textContent = cameraName(cameras.find((device) => device.deviceId === activeId));
     $("connection-pill").dataset.tone = "ready";
     clearNotice();
+    await forgetBoardOfOtherCamera(currentTrack()?.label);
     render();
     setupCameraLock();
   } catch (error) {
@@ -259,6 +266,18 @@ async function startCamera(deviceId = "", preferExternal = false) {
   } finally {
     cameraBusy = false;
     render();
+  }
+}
+
+// Only once the camera has settled (startup may hop from the default camera
+// to the preferred one) and only if the board came from a different camera:
+// reloading with the same camera keeps the scan and the calibration.
+async function forgetBoardOfOtherCamera(label) {
+  try {
+    const latest = state ?? await responseJSON(await fetch("/api/state", { cache: "no-store" }));
+    if (invalidatesBoard(latest?.camera?.label, label)) applyState(await action("camera_changed"));
+  } catch (error) {
+    notice(error.message, "error");
   }
 }
 
@@ -329,6 +348,7 @@ async function previewTick() {
     return;
   }
   previewBusy = true;
+  const sentAt = performance.now();
   try {
     const response = await fetch("/api/preview", {
       method: "POST",
@@ -340,6 +360,11 @@ async function previewTick() {
       preview = null;
     } else {
       preview = { ...(await responseJSON(response)), at: performance.now() };
+      if (pickCheck && sentAt > pickCheck.at) {
+        const message = pickVerdict(pickCheck.role, pickCheck.hex, pickCheck.before, preview);
+        if (message) paletteError = { message, at: performance.now() };
+        pickCheck = null;
+      }
     }
   } catch {
     preview = null; // best effort; the scan itself still reports real errors
@@ -357,13 +382,20 @@ function sampleHex(point) {
   const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(video, 0, 0);
   const origin = patchOrigin(point, video.videoWidth, video.videoHeight, SAMPLE_SIZE);
-  return averageHex(ctx.getImageData(origin.x, origin.y, SAMPLE_SIZE, SAMPLE_SIZE).data);
+  return noteColorHex(ctx.getImageData(origin.x, origin.y, SAMPLE_SIZE, SAMPLE_SIZE).data);
 }
 
 async function setColor(role, hex) {
   paletteError = null;
   try {
+    const before = freshPreview();
     applyState(await action("palette_set", { role, hex }));
+    pickCheck = { role, hex, before, at: performance.now() };
+    if (weakColor(hex)) {
+      paletteError = { at: performance.now(), message:
+        `El color de ${ROLE_LABELS[role]} es muy pálido (${hex}): puede confundirse con la pared, la piel o la madera. Tocá el centro del post-it.` };
+      render();
+    }
   } catch (error) {
     paletteError = { message: error.message, at: performance.now() };
     const current = state?.palette?.roles?.[role]?.hex;
@@ -554,7 +586,7 @@ async function tryCamera(track, settings) {
 // sweep, then the neighbors of the best. Scored by the scan's own detector.
 async function tuneCamera() {
   const track = currentTrack();
-  if (!track || tuning || scanBusy || !cameraCaps || !cameraSupport(cameraCaps).any) return;
+  if (!track || tuning || scanBusy || pickBusy || !cameraCaps || !cameraSupport(cameraCaps).any) return;
   const plan = searchPlan(cameraCaps);
   const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   tuning = { done: 0, total: plan.exposureTime.length * plan.colorTemperature.length
@@ -565,8 +597,8 @@ async function tuneCamera() {
   try {
     if (projectorReady && attemptPhase(state?.game) !== "running") {
       applyState(await action("projection_black"));
-      await waitForBlackout();
       black = true;
+      await waitForBlackout();
     }
     const start = await readCameraSettings(track);
     const focus = Number.isFinite(start.focusDistance) ? { focusDistance: start.focusDistance } : {};
@@ -617,6 +649,38 @@ async function restoreProjection() {
   }
 }
 
+// Colors are read the way the scan reads them: with the projector black,
+// so neither the game drawing nor the light background tints the note.
+async function pickColor(role, point) {
+  const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
+  const darken = projectorReady && attemptPhase(state?.game) !== "running";
+  let black = false;
+  pickBusy = true;
+  render();
+  try {
+    if (darken) {
+      notice("Apagando el proyector para tomar el color…", "busy");
+      applyState(await action("projection_black"));
+      black = true;
+      await waitForBlackout();
+      await sleep(scanSettleMs(cameraFixed));
+    }
+    const hex = sampleHex(point);
+    clearNotice();
+    await setColor(role, hex);
+  } catch (error) {
+    clearNotice();
+    paletteError = { message: error.message, at: performance.now() };
+  } finally {
+    if (black) {
+      await restoreProjection();
+      channel.postMessage({ type: "resume" });
+    }
+    pickBusy = false;
+    render();
+  }
+}
+
 function togglePick(role) {
   paletteError = null;
   pickRole = pickRole === role ? null : role;
@@ -624,7 +688,7 @@ function togglePick(role) {
 }
 
 async function scanBoard() {
-  if (scanBusy || tuning) return;
+  if (scanBusy || tuning || pickBusy) return;
   if (!controlsFor(state, Boolean(stream), popupReady && state?.projection?.open).scan) return;
   scanBusy = true;
   render();
@@ -637,7 +701,8 @@ async function scanBoard() {
     const jpeg = await jpegFromVideo();
     const response = await fetch("/api/frame", {
       method: "POST",
-      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
+      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
+        "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || "") },
       body: jpeg,
     });
     applyState(await responseJSON(response));
@@ -750,7 +815,7 @@ function drawCameraOverlay() {
 function renderPalette(cameraReady) {
   const palette = state?.palette;
   const editable = Boolean(palette) && previewSupported;
-  if (pickRole && (!editable || !cameraReady)) pickRole = null;
+  if (pickRole && (!editable || !cameraReady || tuning || scanBusy)) pickRole = null;
   const lights = roleLights(freshPreview());
   for (const role of PALETTE_ROLES) {
     const swatch = $(`color-${role}`);
@@ -763,7 +828,7 @@ function renderPalette(cameraReady) {
     $(`light-${role}`).dataset.state = lights[role].state;
     $(`seen-${role}`).textContent = lights[role].text;
     $(`seen-${role}`).dataset.state = lights[role].state;
-    $(`pick-${role}`).disabled = !editable || !cameraReady;
+    $(`pick-${role}`).disabled = !editable || !cameraReady || Boolean(tuning) || scanBusy || pickBusy;
     $(`pick-${role}`).setAttribute("aria-pressed", String(pickRole === role));
   }
   $("palette-reset").disabled = !editable || !palette.custom;
@@ -791,13 +856,13 @@ function render() {
   const projectionReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const controls = controlsFor(state, cameraReady, projectionReady);
   const guide = setupGuide(state, cameraReady, projectionReady);
-  $("scan-button").disabled = scanBusy || Boolean(tuning) || !controls.scan;
-  $("calibrate-button").disabled = scanBusy || Boolean(tuning) || !controls.calibrate;
+  $("scan-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.scan;
+  $("calibrate-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.calibrate;
   const lock = tuning ? { tone: "busy", text: `Buscando ajuste fijo de cámara ${tuning.done}/${tuning.total}…` } : cameraLock;
   $("camera-lock").textContent = lock.text;
   $("camera-lock").title = lock.detail ? `${lock.text}\n\nChrome informa: ${lock.detail}` : lock.text;
   $("camera-lock").dataset.tone = lock.tone;
-  $("camera-tune").disabled = !cameraReady || Boolean(tuning) || scanBusy || !cameraSupport(cameraCaps).any
+  $("camera-tune").disabled = !cameraReady || Boolean(tuning) || scanBusy || pickBusy || !cameraSupport(cameraCaps).any
     || !state || !("camera_presets" in state) || attemptPhase(state?.game) === "running";
   $("camera-tune").textContent = state?.camera_presets?.[cameraLabel] ? "Buscar otra vez" : "Buscar ajuste fijo";
   $("launch-button").disabled = !controls.launch;
@@ -864,7 +929,9 @@ channel.onmessage = (event) => {
 };
 
 $("open-projector").addEventListener("click", openProjector);
-$("retry-camera").addEventListener("click", () => startCamera(cameraSelect.value || "", false));
+// After a failed start the list is still empty: retry the way the page
+// starts, so the remembered camera (and the board scanned with it) comes back.
+$("retry-camera").addEventListener("click", () => startCamera(cameraSelect.value || "", !cameraSelect.value));
 cameraSelect.addEventListener("change", () => {
   rememberCamera(cameraSelect.selectedOptions[0]?.textContent);
   startCamera(cameraSelect.value, false);
@@ -890,13 +957,13 @@ $("palette-reset").addEventListener("click", () => {
   sendAction("palette_reset");
 });
 $("camera-stage").addEventListener("click", (event) => {
-  if (!pickRole || !stream || !video.videoWidth) return;
+  if (!pickRole || pickBusy || scanBusy || tuning || !stream || !video.videoWidth) return;
   const point = framePointFromClick(event.clientX, event.clientY,
     $("camera-stage").getBoundingClientRect(), video.videoWidth, video.videoHeight);
   if (!point) return;
   const role = pickRole;
   pickRole = null;
-  setColor(role, sampleHex(point));
+  pickColor(role, point);
 });
 
 document.addEventListener("keydown", (event) => {
@@ -974,10 +1041,14 @@ async function pollState() {
   polling = true;
   try {
     const response = await fetch("/api/state", { cache: "no-store" });
-    applyState(await responseJSON(response));
+    const next = await responseJSON(response);
+    if (connectionNotice && localNotice === connectionNotice) clearNotice();
+    connectionNotice = null;
+    applyState(next);
     if (popup && popup.closed) popupReady = false;
   } catch (error) {
     notice(`No se puede conectar con el servidor local: ${error.message}`, "error");
+    connectionNotice = localNotice;
   } finally {
     polling = false;
   }
