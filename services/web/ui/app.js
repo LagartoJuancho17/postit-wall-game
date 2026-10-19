@@ -9,7 +9,6 @@ import {
   cameraName,
   cameraToSwitchTo,
   cameraSupport,
-  containTransform,
   controlsFor,
   describeCamera,
   invalidatesBoard,
@@ -47,6 +46,7 @@ import {
   withTimeout,
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
+import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS } from "./live-view.mjs";
 
 const api = createApi("panel");
 
@@ -57,11 +57,10 @@ const overlay = $("camera-overlay");
 const channel = new BroadcastChannel("postit-wall");
 const PROJECTOR_URL = "/projector";
 const PREVIEW_EVERY_MS = 250;
-const PREVIEW_MAX_AGE_MS = 1500;
+const PREVIEW_MAX_AGE_MS = LIVE_MAX_AGE_MS;
 const PALETTE_ERROR_MS = 8000;
 const CAMERA_FRAMES_MS = 8000;
 const PALETTE_NOTE = "Tocá el gotero y después el post-it en la imagen, o elegí el color en el cuadrado. La luz se enciende cuando la cámara lo detecta.";
-const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
 
 let stream = null;
 let popup = null;
@@ -78,6 +77,7 @@ let localNotice = null;
 let requestId = 0;
 const pendingBlackouts = new Map();
 let preview = null;
+let previewGeneration = 0;
 let previewBusy = false;
 let previewTimer = null;
 let previewSupported = true;
@@ -168,9 +168,11 @@ function cameraError(error) {
 }
 
 function stopCamera() {
+  previewGeneration += 1;
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
   video.srcObject = null;
+  preview = null;
 }
 
 // The camera the operator picked stays picked across reloads.
@@ -275,7 +277,7 @@ async function startCamera(deviceId = "", preferExternal = false) {
 
 // Only once the camera has settled (startup may hop from the default camera
 // to the preferred one) and only if the board came from a different camera:
-// reloading with the same camera keeps the scan and the calibration.
+// reloading with the same camera keeps the active attempt.
 async function forgetBoardOfOtherCamera(label) {
   try {
     const latest = state ?? await responseJSON(await api("/api/state", { cache: "no-store" }));
@@ -347,23 +349,28 @@ function freshPreview() {
 // Live detection: the scan's own detector and palette, run on the backend.
 async function previewTick() {
   previewTimer = null;
-  if (previewBusy || scanBusy || tuning || document.hidden || !stream || !video.videoWidth) {
+  if (previewBusy || scanBusy || tuning || !stream || !video.videoWidth || currentTrack()?.readyState === "ended") {
     schedulePreview();
     return;
   }
   previewBusy = true;
+  const generation = previewGeneration;
   const sentAt = performance.now();
   try {
     const response = await api("/api/preview", {
       method: "POST",
-      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
+      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
+        "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || "") },
       body: await jpegFromVideo(.8),
     });
+    if (generation !== previewGeneration) return;
     if (response.status === 404) {
       previewSupported = false; // server started before live detection existed
       preview = null;
     } else {
-      preview = { ...(await responseJSON(response)), at: performance.now() };
+      const result = await responseJSON(response);
+      if (generation !== previewGeneration) return;
+      preview = { ...result, at: performance.now() };
       if (pickCheck && sentAt > pickCheck.at) {
         const message = pickVerdict(pickCheck.role, pickCheck.hex, pickCheck.before, preview);
         if (message) paletteError = { message, at: performance.now() };
@@ -371,7 +378,7 @@ async function previewTick() {
       }
     }
   } catch {
-    preview = null; // best effort; the scan itself still reports real errors
+    if (generation === previewGeneration) preview = null; // best effort; the scan itself still reports real errors
   } finally {
     previewBusy = false;
     render();
@@ -395,6 +402,9 @@ async function setColor(role, hex) {
     const before = freshPreview();
     applyState(await action("palette_set", { role, hex }));
     pickCheck = { role, hex, before, at: performance.now() };
+    previewGeneration += 1;
+    preview = null; // changed colors must not relabel old polygons in the panel
+    render();
     if (weakColor(hex)) {
       paletteError = { at: performance.now(), message:
         `El color de ${ROLE_LABELS[role]} es muy pálido (${hex}): puede confundirse con la pared, la piel o la madera. Tocá el centro del post-it.` };
@@ -538,7 +548,7 @@ async function setupCameraLock() {
     cameraFixed = false;
     cameraLock = { tone: "warn", detail: `Chrome: ${chromeDiagnosis} · USB: ${usbReason}`,
       text: isPhoneCamera(track.label)
-        ? "La cámara del celular queda en automático: no se puede fijar. Apagá Encuadre centrado y Retrato (Centro de control → Efectos de video) y no muevas el celular después de calibrar."
+        ? "La cámara del celular queda en automático: no se puede fijar. Apagá Encuadre centrado y Retrato (Centro de control → Efectos de video) y mantené el celular fijo durante cada intento."
         : `Ni Chrome ni el control USB pueden fijar esta cámara (${usbReason}).` };
     render();
     return;
@@ -697,10 +707,6 @@ async function scanBoard() {
   scanBusy = true;
   render();
   try {
-    notice("Apagando el proyector para leer los colores…", "busy");
-    applyState(await action("projection_black"));
-    await waitForBlackout();
-    await new Promise((resolve) => setTimeout(resolve, scanSettleMs(cameraFixed)));
     notice("Leyendo los post-its…", "busy");
     const jpeg = await jpegFromVideo();
     const response = await api("/api/frame", {
@@ -723,9 +729,13 @@ async function scanBoard() {
 }
 
 async function sendAction(name, extra = {}) {
+  const resetsColors = name === "palette_reset";
+  if (resetsColors) { previewGeneration += 1; preview = null; }
   try {
     clearNotice();
-    applyState(await action(name, extra));
+    const next = await action(name, extra);
+    if (resetsColors) { previewGeneration += 1; preview = null; }
+    applyState(next);
   } catch (error) {
     notice(error.message, "error");
   }
@@ -757,63 +767,7 @@ function drawCameraOverlay() {
   const ctx = overlay.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  const colors = Object.fromEntries(PALETTE_ROLES.map((role) =>
-    [role, state?.palette?.roles?.[role]?.hex || FALLBACK_COLORS[role]]));
-  const trace = (fit, shape) => {
-    ctx.beginPath();
-    shape.points.forEach((point, index) => {
-      const x = fit.offsetX + point.x * fit.scale;
-      const y = fit.offsetY + point.y * fit.scale;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-  };
-  const outline = (fit, shape, color) => {
-    if (!shape?.points?.length) return;
-    trace(fit, shape);
-    ctx.lineWidth = 2.6;
-    ctx.strokeStyle = color;
-    ctx.shadowColor = "#00130e";
-    ctx.shadowBlur = 5;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  };
-  // A detected note lights up: a halo in its role color, a white rim on top.
-  const glow = (fit, shape, color) => {
-    if (!shape?.points?.length) return;
-    ctx.save();
-    trace(fit, shape);
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 18;
-    ctx.globalAlpha = .3;
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#ffffff";
-    ctx.stroke();
-    ctx.restore();
-  };
-
-  const board = state?.camera_board;
-  const frameWidth = state?.camera?.width || video.videoWidth;
-  const frameHeight = state?.camera?.height || video.videoHeight;
-  if (board && frameWidth && frameHeight) {
-    const fit = containTransform(width, height, frameWidth, frameHeight);
-    outline(fit, board.playfield, "#70dce0");
-    outline(fit, board.start, colors.start);
-    outline(fit, board.goal, colors.goal);
-    board.bumpers?.forEach((shape) => outline(fit, shape, colors.bumper));
-    board.markers?.forEach((shape) => outline(fit, shape, colors.marker));
-  }
-  const live = freshPreview();
-  if (live?.width && live?.height) {
-    const fit = containTransform(width, height, live.width, live.height);
-    for (const role of PALETTE_ROLES) {
-      live.roles?.[role]?.notes?.forEach((shape) => glow(fit, shape, colors[role]));
-    }
-  }
+  drawLiveDetection(ctx, freshPreview(), state?.palette, width, height);
 }
 
 function renderPalette(cameraReady) {
@@ -861,7 +815,6 @@ function render() {
   const controls = controlsFor(state, cameraReady, projectionReady);
   const guide = setupGuide(state, cameraReady, projectionReady);
   $("scan-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.scan;
-  $("calibrate-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.calibrate;
   const lock = tuning ? { tone: "busy", text: `Buscando ajuste fijo de cámara ${tuning.done}/${tuning.total}…` } : cameraLock;
   $("camera-lock").textContent = lock.text;
   $("camera-lock").title = lock.detail ? `${lock.text}\n\nChrome informa: ${lock.detail}` : lock.text;
@@ -896,7 +849,7 @@ function render() {
   $("count-start").textContent = scanned ? String(counts.start) : "—";
   $("count-goal").textContent = scanned ? String(counts.goal) : "—";
   $("count-bumpers").textContent = scanned ? String(counts.bumpers) : "—";
-  $("count-markers").textContent = scanned ? `${counts.markers}/4` : "—";
+  $("count-markers").textContent = scanned ? String(counts.markers) : "—";
 
   const game = state?.game ?? {};
   const attempt = attemptView(game);
@@ -941,7 +894,6 @@ cameraSelect.addEventListener("change", () => {
   startCamera(cameraSelect.value, false);
 });
 $("scan-button").addEventListener("click", scanBoard);
-$("calibrate-button").addEventListener("click", () => sendAction("calibrate"));
 $("launch-button").addEventListener("click", () => sendAction("launch"));
 $("resume-button").addEventListener("click", () => sendAction("resume"));
 $("reset-button").addEventListener("click", () => sendAction("reset"));
@@ -958,6 +910,7 @@ $("theme-dark").addEventListener("click", () => setProjectorTheme("dark"));
 $("theme-light").addEventListener("click", () => setProjectorTheme("light"));
 $("palette-reset").addEventListener("click", () => {
   paletteError = null;
+  preview = null;
   sendAction("palette_reset");
 });
 $("camera-stage").addEventListener("click", (event) => {
@@ -992,9 +945,6 @@ document.addEventListener("keydown", (event) => {
   if (key === "s") {
     event.preventDefault();
     scanBoard();
-  } else if (key === "c" && !$("calibrate-button").disabled) {
-    event.preventDefault();
-    sendAction("calibrate");
   } else if (key === "r" && !$("reset-button").disabled) {
     event.preventDefault();
     sendAction("reset");

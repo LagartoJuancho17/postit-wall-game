@@ -8,10 +8,7 @@ import unittest
 
 import cv2
 
-from contracts import Point
-from services.runtime.tests.fixtures import (
-    MARKER_CENTERS, camera_frame, known_mapping, mapped,
-)
+from services.runtime.tests.fixtures import camera_frame
 from services.web.backend.server import GameController, create_server
 
 
@@ -135,37 +132,29 @@ class WebHttpIntegrationTests(unittest.TestCase):
                            b"\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00")
         self.assertEqual(self.request("POST", "/api/frame", huge_dimensions, headers)[0], 413)
 
-    def test_http_flow_calibrates_four_markers_and_rescans_between_attempts(self) -> None:
+    def test_http_live_flow_starts_without_scan_or_calibration_and_resets_latest_board(self) -> None:
         self.assertEqual(self.request("GET", "/api/state")[0], 200)
         self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)
-        status, state = self.request("POST", "/api/frame", self.jpeg(), {
-            "Content-Type": "image/jpeg", "X-Postit-Client": "1"
-        })
+        headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}
+        status, preview = self.request("POST", "/api/preview", self.jpeg(), headers)
         self.assertEqual(status, 200)
-        self.assertEqual(len(state["camera_board"]["markers"]), 4)
-        self.assertIsNone(state["board"])
-
-        self.assertEqual(self.action("calibrate")[0], 200)
-        for marker in MARKER_CENTERS:
-            target = mapped(Point(*marker), known_mapping())
-            status, state = self.action("calibration_confirm", x=target.x, y=target.y)
-            self.assertEqual(status, 200)
-        self.assertEqual(state["calibration"]["status"], "ready")
+        status, state = self.request("GET", "/api/state")
+        self.assertEqual(status, 200)
+        self.assertEqual(state["live_detection"], preview)
         self.assertEqual(state["game"]["status"], "ready")
+        self.assertNotIn("calibration", state)
+        self.assertEqual(state["board"], state["camera_board"])
         self.assertEqual(len(state["board"]["bumpers"]), 1)
+        self.assertEqual(self.action("calibrate")[0], 400)
 
         self.assertEqual(self.action("launch")[1]["game"]["status"], "running")
-        self.assertEqual(self.request("POST", "/api/frame", self.jpeg(), {
-            "Content-Type": "image/jpeg", "X-Postit-Client": "1"
-        })[0], 409)
-        self.assertEqual(self.action("reset")[1]["game"]["status"], "ready")
+        self.assertEqual(self.request("POST", "/api/frame", self.jpeg(), headers)[0], 409)
         before = state["board"]["bumpers"][0]["points"]
-        self.assertEqual(self.action("projection_black")[0], 200)
-        status, updated = self.request("POST", "/api/frame",
-                                       self.jpeg(green_center=(515, 245)), {
-                                           "Content-Type": "image/jpeg",
-                                           "X-Postit-Client": "1",
-                                       })
+        status, _ = self.request("POST", "/api/preview", self.jpeg(green_center=(515, 245)), headers)
+        self.assertEqual(status, 200)
+        running = self.request("GET", "/api/state")[1]
+        self.assertEqual(running["board"]["bumpers"][0]["points"], before)
+        status, updated = self.action("reset")
         self.assertEqual(status, 200)
         after = updated["board"]["bumpers"][0]["points"]
         self.assertGreater(abs(after[0]["x"] - before[0]["x"]), 100)
@@ -184,7 +173,9 @@ class WebHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual({role: data["count"] for role, data in preview["roles"].items()},
                          {"start": 1, "goal": 1, "bumper": 1, "marker": 4})
-        self.assertEqual(self.request("GET", "/api/state")[1]["phase"], "waiting_camera")
+        state = self.request("GET", "/api/state")[1]
+        self.assertEqual(state["phase"], "ready")
+        self.assertEqual(state["live_detection"], preview)
 
     def test_palette_actions_over_http(self) -> None:
         status, state = self.action("palette_set", role="goal", hex="#2ec4b6")
@@ -219,32 +210,41 @@ class WebHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(self.request("POST", "/api/camera", auto, {
             "Content-Type": "application/json", "X-Postit-Client": "1"})[0], 400)
 
-    def test_camera_or_projector_change_invalidates_old_mapping(self) -> None:
+    def test_camera_change_clears_detection_and_projector_resize_keeps_board(self) -> None:
         headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}
         self.assertEqual(self.action("projection_open", width=1280, height=800)[0], 200)
-        self.assertEqual(self.request("POST", "/api/frame", self.jpeg(), headers)[0], 200)
-        self.assertEqual(self.action("calibrate")[0], 200)
-        for marker in MARKER_CENTERS:
-            target = mapped(Point(*marker), known_mapping())
-            status, state = self.action("calibration_confirm", x=target.x, y=target.y)
-            self.assertEqual(status, 200)
-        self.assertEqual(state["calibration"]["status"], "ready")
+        status, state = self.request("POST", "/api/frame", self.jpeg(), headers)
+        self.assertEqual(status, 200)
+        self.assertEqual(state["phase"], "ready")
+        status, resized = self.action("projection_open", width=1024, height=768)
+        self.assertEqual(status, 200)
+        self.assertEqual(resized["board"], state["board"])
+        self.assertEqual(resized["live_detection"], state["live_detection"])
+        self.assertEqual(resized["projection"]["mode"], "live")
 
         status, changed = self.action("camera_changed")
         self.assertEqual(status, 200)
         self.assertIsNone(changed["camera_board"])
         self.assertIsNone(changed["board"])
-        self.assertEqual(changed["calibration"]["status"], "none")
-        self.assertEqual(changed["projection"]["mode"], "black")
+        self.assertIsNone(changed["live_detection"])
+        self.assertEqual(changed["projection"]["mode"], "live")
         self.assertEqual(self.action("launch")[0], 409)
 
-        self.assertEqual(self.request("POST", "/api/frame", self.jpeg(), headers)[0], 200)
-        status, resized = self.action("projection_open", width=1024, height=768)
+    def test_preview_records_camera_label_and_partial_overlay_even_when_board_invalid(self) -> None:
+        headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1",
+                   "X-Postit-Camera": "C%C3%A1mara%20de%20iPhone%20de%20Tob%C3%ADas"}
+        status, preview = self.request("POST", "/api/preview", self.jpeg(), headers)
         self.assertEqual(status, 200)
-        self.assertIsNone(resized["camera_board"])
-        self.assertIsNone(resized["board"])
-        self.assertEqual(resized["calibration"]["status"], "none")
-        self.assertEqual(resized["projection"]["mode"], "black")
+        self.assertEqual(self.request("GET", "/api/state")[1]["camera"]["label"],
+                         "Cámara de iPhone de Tobías")
+        from services.web.tests.test_live_detection import jpeg
+        status, preview = self.request("POST", "/api/preview", jpeg(start=False), headers)
+        self.assertEqual(status, 200)
+        self.assertEqual(preview["roles"]["bumper"]["count"], 1)
+        state = self.request("GET", "/api/state")[1]
+        self.assertEqual(state["live_detection"], preview)
+        self.assertIsNone(state["board"])
+        self.assertEqual(self.action("launch")[0], 409)
 
 
 if __name__ == "__main__":

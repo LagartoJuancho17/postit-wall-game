@@ -1,7 +1,7 @@
 /**
  * Gate test: the in-browser backend answers the panel's HTTP calls with the
  * routes, checks and statuses of the Python handler, and the full operator
- * journey (scan → calibrate → launch → win) works through those routes.
+ * journey (preview → launch → win) works through those routes.
  * The JPEG decoder is replaced by golden frames; the rest is the real code.
  */
 
@@ -10,7 +10,6 @@ import test from "node:test";
 
 import { BrowserBackend } from "../backend.mjs";
 import { GameController, RequestError } from "../controller.mjs";
-import { quadrilateralCenter } from "../calibration.mjs";
 import { frameMat, loadCv, loadGolden } from "./golden.mjs";
 
 const golden = loadGolden();
@@ -63,7 +62,7 @@ test("refusals carry the Python statuses, messages and the current state", () =>
     [post("/api/action", "{nope"), 400, "JSON inválido."],
     [post("/api/action", "[1]"), 400, "La acción debe ser un objeto JSON."],
     [post("/api/action", "null"), 400, "La acción debe ser un objeto JSON."],
-    [post("/api/action", { action: "launch" }), 409, "Abrí el proyector, escaneá y calibrá antes de lanzar."],
+    [post("/api/action", { action: "launch" }), 409, "Abrí el proyector y mostrale a la cámara un inicio y una llegada."],
     [post("/api/camera", { settings: { exposureTime: 1 } }), 502,
       "La cámara no aceptó el ajuste por USB: la versión web no tiene control USB."],
   ];
@@ -87,14 +86,14 @@ test("headers work as a plain object, a Headers instance or pairs", () => {
 test("the whole operator journey works through the routes", async () => {
   const { backend, act, frame, clock, controller, events, decoded } = setup();
   const closed = await frame("/api/frame", "wall_430");
-  assert.equal(closed.status, 409);
-  assert.equal(closed.body.error, "Abrí la ventana del proyector con J antes de escanear.");
+  assert.equal(closed.status, 200);
+  assert.equal(closed.body.phase, "ready");
   assert.equal(act("projection_open", { width: 1280, height: 800 }).status, 200);
   act("projection_black");
   const label = "Cámara de iPhone de Tobias";
   const scanned = await frame("/api/frame", "wall_430", { ...JPEG, "X-Postit-Camera": encodeURIComponent(label) });
   assert.equal(scanned.status, 200, scanned.body.error);
-  assert.equal(scanned.body.phase, "scanned");
+  assert.equal(scanned.body.phase, "ready");
   assert.equal(scanned.body.camera.label, label);
   assert.deepEqual([scanned.body.camera.width, scanned.body.camera.height], [960, 720]);
 
@@ -104,13 +103,8 @@ test("the whole operator journey works through the routes", async () => {
     { start: 1, goal: 1, bumper: 1, marker: 4 });
   assert.equal(preview.body.quality.ready, true);
 
-  act("calibrate");
-  let answer;
-  for (const marker of controller.cameraBoard.markers) {
-    const p = quadrilateralCenter(marker);
-    answer = act("calibration_confirm", { x: p.x + 80, y: p.y + 30 });
-  }
-  assert.equal(answer.body.phase, "ready");
+  assert.equal(controller.snapshot().phase, "ready");
+  assert.equal(controller.snapshot().projection.mode, "live");
   act("aim", { degrees: 0 });
   assert.equal(act("launch").body.phase, "running");
   let state;
@@ -123,7 +117,7 @@ test("the whole operator journey works through the routes", async () => {
   assert.ok(state.game.elapsed_s > 1.5 && state.game.elapsed_s < 2.5, state.game.elapsed_s);
   assert.deepEqual(decoded, ["wall_430", "wall_430", "wall_430"]);
   const names = events.map((e) => e.event);
-  for (const event of ["board_scanned", "calibration_completed", "attempt_started", "attempt_finished"]) {
+  for (const event of ["board_scanned", "live_board_ready", "attempt_started", "attempt_finished"]) {
     assert.ok(names.includes(event), `${event} is logged`);
   }
 });

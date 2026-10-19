@@ -20,7 +20,9 @@ test("every element the scripts look up exists in its page", () => {
   // A renamed id makes $() return null and the whole panel dies on load.
   const operatorIds = [...operator.matchAll(/\$\(["']([^"']+)["']\)/g)].map((m) => m[1]);
   const projectorIds = [...projector.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map((m) => m[1]);
-  assert.ok(operatorIds.length > 20 && projectorIds.length > 5);
+  assert.ok(operatorIds.length > 20);
+  assert.deepEqual(new Set(projectorIds), new Set(["projector-canvas", "fullscreen-button", "projector-toast", "projector-state"]));
+  assert.doesNotMatch(operatorPage + projectorPage, /calibrat|confirm-target/i);
   const operatorPageIds = idsIn(operatorPage);
   const projectorPageIds = idsIn(projectorPage);
   for (const id of operatorIds) assert.ok(operatorPageIds.has(id), `index.html lacks #${id}`);
@@ -77,10 +79,12 @@ test("operator keydown directly opens the same projector route as the button", (
   assert.match(operator, /document\.addEventListener\(["']keydown["'],\s*\(event\)\s*=>\s*\{\s*if\s*\(isProjectorShortcut\(event\)\)\s*\{\s*event\.preventDefault\(\);\s*openProjector\(\)/);
 });
 
-test("projector reports its size and acknowledges black before frame upload", () => {
+test("projector reports its size and still supports a camera-adjustment blackout", () => {
   assert.match(projector, /action\(["']projection_open["'],\s*viewport\)/);
   assert.match(projector, /data\.type\s*===\s*["']blackout["'][\s\S]*?blackoutForced\s*=\s*true;[\s\S]*?requestAnimationFrame\([\s\S]*?blackout_ack/);
-  assert.match(operator, /action\(["']projection_black["']\)[\s\S]*?await waitForBlackout\(\)[\s\S]*?jpegFromVideo\(\)[\s\S]*?api\(["']\/api\/frame["']/);
+  assert.match(operator, /await waitForBlackout\(\)/);
+  const scan = operator.slice(operator.indexOf("async function scanBoard()"), operator.indexOf("async function sendAction"));
+  assert.doesNotMatch(scan, /projection_black|waitForBlackout/);
 });
 
 test("a different camera discards the old alignment; a reload with the same one keeps it", () => {

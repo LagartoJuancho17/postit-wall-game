@@ -173,7 +173,7 @@ export class BrowserBackend {
   }
 
   async frameRoute(path, blob, label) {
-    if (path === "/api/frame") this.controller.scanLabel(label);
+    this.controller.scanLabel(label);
     let cv;
     try {
       cv = await this.cvReady;
@@ -184,7 +184,7 @@ export class BrowserBackend {
     try {
       if (path === "/api/frame") return { status: 200, body: this.controller.scan(frame, label) };
       const started = this.now();
-      const body = this.controller.preview(frame);
+      const body = this.controller.preview(frame, label);
       this.recordTiming(this.now() - started, frame);
       return { status: 200, body };
     } finally {

@@ -11,8 +11,7 @@ from services.web.contract.matrix import (_PROBES, MATRIX_PATH, PHASES, PREVIEWS
 REGENERATE = "Regenerá con: ./.venv/bin/python -m services.web.contract.matrix"
 # Fields the UI branches on. Values must match exactly, not just their type.
 _ENUM_PATHS = (("phase",), ("game", "status"), ("game", "paused"),
-               ("projection", "open"), ("projection", "mode"),
-               ("calibration", "status"))
+               ("projection", "open"), ("projection", "mode"))
 
 
 def _dig(value: dict, path: tuple[str, ...]) -> object:
@@ -51,8 +50,8 @@ class StateMatrixContractTests(unittest.TestCase):
         expected = {
             "projector_closed": ("waiting_camera", "none", False, False),
             "waiting_camera": ("waiting_camera", "none", False, True),
-            "scanned": ("scanned", "none", False, True),
-            "calibrating": ("calibrating", "none", False, True),
+            "partial_live": ("waiting_camera", "none", False, True),
+            "no_markers": ("ready", "ready", False, True),
             "ready": ("ready", "ready", False, True),
             "ready_closed": ("ready", "ready", False, False),
             "running": ("running", "running", False, True),
@@ -86,11 +85,12 @@ class StateMatrixContractTests(unittest.TestCase):
                   for name, s in samples.items()}
         full = {"start": 1, "goal": 1, "bumper": 1, "marker": 4}
         self.assertEqual({name: s["scan_ok"] for name, s in samples.items()},
-                         {"full_wall": True, "missing_start": False, "extra_corner": False,
+                         {"full_wall": True, "no_markers": True, "missing_start": False, "extra_corner": True,
                           "recolored_default_colors": False, "recolored_picked_colors": True})
         self.assertEqual(counts["extra_corner"], {**full, "marker": 5})
         full = {"start": 1, "goal": 1, "bumper": 1, "marker": 4}
         self.assertEqual(counts["full_wall"], full)
+        self.assertEqual(counts["no_markers"], {**full, "marker": 0})
         self.assertEqual(counts["missing_start"], {**full, "start": 0})
         self.assertEqual(counts["recolored_default_colors"],
                          {"start": 1, "goal": 0, "bumper": 0, "marker": 5})
@@ -99,7 +99,7 @@ class StateMatrixContractTests(unittest.TestCase):
     def test_probes_on_copies_never_leak_into_the_phase(self) -> None:
         # The matrix probes copies to stay inside the 2 s gate; a probe that
         # changed the original would corrupt every later probe of that phase.
-        for name in ("scanned", "ready", "paused_open"):
+        for name in ("partial_live", "no_markers", "ready", "paused_open"):
             wall = _reach(name)
             before = wall.controller.snapshot()
             for probe in _PROBES.values():

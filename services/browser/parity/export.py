@@ -84,6 +84,13 @@ def build_frames() -> Frames:
     no_start = _image(430)
     no_start[315:386, 145:216] = 220
     frames.add_jpeg("missing_start", no_start)
+    no_markers = _image(430)
+    for x, y in ((90, 90), (870, 90), (870, 630), (90, 630)):
+        no_markers[y - 25:y + 26, x - 25:x + 26] = 220
+    frames.add_jpeg("no_markers", no_markers)
+    duplicate_start = _image(430)
+    duplicate_start[430:491, 150:211] = duplicate_start[350, 180]
+    frames.add_jpeg("duplicate_start", duplicate_start)
     extra = _image(430)
     cv2.rectangle(extra, (458, 578), (502, 622), (200, 60, 200), -1)
     frames.add_jpeg("extra_corner", extra)
@@ -306,17 +313,12 @@ PRESET = {"exposureMode": "manual", "exposureTime": 156, "whiteBalanceMode": "ma
           "colorTemperature": 4500, "focusMode": "manual", "focusDistance": 0}
 
 
-def _confirm_corners(frame: str, dx: float = 80, dy: float = 30) -> list[dict[str, Any]]:
-    return [{"op": "confirm_corner", "index": i, "dx": dx, "dy": dy} for i in range(4)]
-
-
 def controller_scripts() -> dict[str, list[dict[str, Any]]]:
     def act(name, **data):
         return {"op": "action", "payload": {"action": name, **data}}
     open_ = act("projection_open", width=1280, height=800)
     play = [{"op": "tick", "advance": 0.1} for _ in range(30)]
-    ready = [open_, act("projection_black"), {"op": "scan", "frame": "wall_430", "camera": "Cámara de iPhone de Tobias"},
-             act("calibrate"), *_confirm_corners("wall_430")]
+    ready = [{"op": "preview", "frame": "wall_430", "camera": "Cámara de iPhone de Tobias"}, open_]
     return {
         "win": [*ready, act("aim", degrees=0), act("launch"), *play, {"op": "state"}],
         "lose": [*ready, act("aim", degrees=180), act("launch"), *play],
@@ -333,19 +335,20 @@ def controller_scripts() -> dict[str, list[dict[str, Any]]]:
                    open_, {"op": "scan", "frame": "wall_430", "camera": None},
                    act("projection_restore"), act("calibrate"),
                    act("calibration_move", x=10, y=10), act("calibration_confirm")],
-        "calibration_moves": [open_, act("projection_black"), {"op": "scan", "frame": "wall_430", "camera": None},
-                              act("calibrate"), act("calibration_move", x=-1, y=5),
-                              act("calibration_move", x=1280, y=5), act("calibration_move", x=400.25, y=300.5),
-                              act("calibration_confirm"), act("calibration_move", x=900, y=200),
-                              act("calibration_confirm", x=901, y=201),
-                              act("calibration_confirm", x=900, y=650), act("projection_close"),
-                              open_, act("calibration_confirm", x=350, y=640), {"op": "state"}],
-        "bad_calibration": [open_, act("projection_black"), {"op": "scan", "frame": "wall_430", "camera": None},
-                            act("calibrate"), act("calibration_confirm", x=100, y=100),
-                            act("calibration_confirm", x=101, y=101), act("calibration_confirm", x=102, y=102),
-                            act("calibration_confirm", x=103, y=103), act("calibrate"),
-                            act("calibration_confirm", x=5, y=5), act("calibration_confirm", x=1275, y=5),
-                            act("calibration_confirm", x=1275, y=795), act("calibration_confirm", x=5, y=795)],
+        "live_updates": [*ready, {"op": "preview", "frame": "wall_540"},
+                         {"op": "state"}, {"op": "preview", "frame": "missing_start"},
+                         act("launch"), act("reset"), {"op": "preview", "frame": "duplicate_start"},
+                         {"op": "preview", "frame": "no_markers"}, act("launch"),
+                         {"op": "preview", "frame": "wall_540"}, {"op": "state"}, act("pause"),
+                         {"op": "preview", "frame": "missing_start"}, act("reset"),
+                         {"op": "preview", "frame": "no_markers"}, act("reset"),
+                         act("projection_open", width=1920, height=1080), {"op": "state"}],
+        "stale_detection": [*ready, {"op": "tick", "advance": 1.5}, {"op": "state"},
+                            {"op": "tick", "advance": 0.001}, act("launch"), act("reset"),
+                            {"op": "preview", "frame": "no_markers"}, act("launch"), act("pause"),
+                            {"op": "tick", "advance": 1.501}, {"op": "state"},
+                            {"op": "preview", "frame": "wall_430", "camera": "Different Camera"},
+                            {"op": "state"}],
         "pause_resume": [*ready, act("launch"), {"op": "tick", "advance": 0.1}, {"op": "tick", "advance": 0.1},
                          act("projection_black"), act("pause"), {"op": "tick", "advance": 0.1}, act("pause"),
                          act("projection_black"), {"op": "scan", "frame": "wall_540", "camera": None},
@@ -416,7 +419,7 @@ def run_script(steps: list[dict[str, Any]], frames: Frames) -> list[dict[str, An
                                        else _jpeg(frames.images[entry["frame"]]), entry["camera"])
             elif op == "preview":
                 value = game.preview_jpeg(frames.jpegs[entry["frame"]] if entry["frame"] in frames.jpegs
-                                          else _jpeg(frames.images[entry["frame"]]))
+                                          else _jpeg(frames.images[entry["frame"]]), entry.get("camera"))
             elif op == "tick":
                 now[0] += entry["advance"]
                 value = game.tick()
@@ -425,10 +428,6 @@ def run_script(steps: list[dict[str, Any]], frames: Frames) -> list[dict[str, An
             elif op == "pick":
                 value = game.action({"action": "palette_set", "role": entry["role"],
                                      "hex": _sample(frames.images[entry["frame"]], entry["role"])})
-            elif op == "confirm_corner":
-                point = quadrilateral_center(game.camera_board.markers[entry["index"]])
-                value = game.action({"action": "calibration_confirm",
-                                     "x": point.x + entry["dx"], "y": point.y + entry["dy"]})
             else:
                 raise AssertionError(op)
             results.append({"ok": True, "value": _snapshot(value) if "revision" in value else value})

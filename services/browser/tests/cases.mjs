@@ -4,7 +4,7 @@
  * same thing. Each function returns `{ name, problems }` per case.
  */
 
-import { estimateHomography, quadrilateralCenter, transformPoint } from "../calibration.mjs";
+import { estimateHomography, transformPoint } from "../calibration.mjs";
 import { GameController, RequestError } from "../controller.mjs";
 import { pyRound } from "../numbers.mjs";
 import { buildPalette, hsvFromHex, paletteJson, ruleFromHex } from "../palette.mjs";
@@ -128,7 +128,7 @@ export function replay(cv, golden, steps) {
         let value;
         if (entry.op === "action") value = controller.action(entry.payload);
         else if (entry.op === "scan") value = controller.scan(frame(entry.frame), entry.camera);
-        else if (entry.op === "preview") value = controller.preview(frame(entry.frame));
+        else if (entry.op === "preview") value = controller.preview(frame(entry.frame), entry.camera ?? null);
         else if (entry.op === "tick") {
           now += entry.advance;
           value = controller.tick();
@@ -136,9 +136,6 @@ export function replay(cv, golden, steps) {
         else if (entry.op === "pick") {
           value = controller.action({ action: "palette_set", role: entry.role,
             hex: sampleHex(frame(entry.frame), entry.role) });
-        } else if (entry.op === "confirm_corner") {
-          const point = quadrilateralCenter(controller.cameraBoard.markers[entry.index]);
-          value = controller.action({ action: "calibration_confirm", x: point.x + entry.dx, y: point.y + entry.dy });
         } else throw new Error(`unknown op ${entry.op}`);
         results.push({ ok: true, value: "revision" in value ? snapshotOf(value) : value });
       } catch (error) {

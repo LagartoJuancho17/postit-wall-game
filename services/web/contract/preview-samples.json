@@ -45,7 +45,7 @@
      "clipped": 0.0016,
      "dark": 0.0,
      "note_saturation": 225.2,
-     "ready": false,
+     "ready": true,
      "sharpness": 5.59
     },
     "roles": {
@@ -103,7 +103,7 @@
      },
      "marker": {
       "count": 5,
-      "expected": 4,
+      "expected": null,
       "notes": [
        {
         "points": [
@@ -236,7 +236,7 @@
     },
     "width": 960
    },
-   "scan_ok": false
+   "scan_ok": true
   },
   "full_wall": {
    "palette": {
@@ -341,7 +341,7 @@
      },
      "marker": {
       "count": 4,
-      "expected": 4,
+      "expected": null,
       "notes": [
        {
         "points": [
@@ -559,7 +559,7 @@
      },
      "marker": {
       "count": 4,
-      "expected": 4,
+      "expected": null,
       "notes": [
        {
         "points": [
@@ -653,6 +653,143 @@
    },
    "scan_ok": false
   },
+  "no_markers": {
+   "palette": {
+    "custom": false,
+    "roles": {
+     "bumper": {
+      "custom": false,
+      "hex": "#6cc678",
+      "hue_high": 90,
+      "hue_low": 40,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "goal": {
+      "custom": false,
+      "hex": "#ff9b49",
+      "hue_high": 19,
+      "hue_low": 5,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "marker": {
+      "custom": false,
+      "hex": "#d75ab9",
+      "hue_high": 179,
+      "hue_low": 125,
+      "min_saturation": 75,
+      "min_value": 55
+     },
+     "start": {
+      "custom": false,
+      "hex": "#f7d84b",
+      "hue_high": 39,
+      "hue_low": 20,
+      "min_saturation": 75,
+      "min_value": 55
+     }
+    }
+   },
+   "preview": {
+    "height": 720,
+    "quality": {
+     "brightness": 0.863,
+     "clipped": 0.0003,
+     "dark": 0.0,
+     "note_saturation": 224.5,
+     "ready": true,
+     "sharpness": 1.13
+    },
+    "roles": {
+     "bumper": {
+      "count": 1,
+      "expected": null,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 394.0,
+          "y": 211.0
+         },
+         {
+          "x": 395.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 260.0
+         },
+         {
+          "x": 465.0,
+          "y": 210.0
+         }
+        ]
+       }
+      ]
+     },
+     "goal": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 750.0,
+          "y": 320.0
+         },
+         {
+          "x": 750.0,
+          "y": 380.0
+         },
+         {
+          "x": 810.0,
+          "y": 380.0
+         },
+         {
+          "x": 811.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     },
+     "marker": {
+      "count": 0,
+      "expected": null,
+      "notes": []
+     },
+     "start": {
+      "count": 1,
+      "expected": 1,
+      "notes": [
+       {
+        "points": [
+         {
+          "x": 150.0,
+          "y": 320.0
+         },
+         {
+          "x": 150.0,
+          "y": 380.0
+         },
+         {
+          "x": 209.0,
+          "y": 381.0
+         },
+         {
+          "x": 211.0,
+          "y": 321.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "width": 960
+   },
+   "scan_ok": true
+  },
   "recolored_default_colors": {
    "palette": {
     "custom": false,
@@ -714,7 +851,7 @@
      },
      "marker": {
       "count": 5,
-      "expected": 4,
+      "expected": null,
       "notes": [
        {
         "points": [
@@ -952,7 +1089,7 @@
      },
      "marker": {
       "count": 4,
-      "expected": 4,
+      "expected": null,
       "notes": [
        {
         "points": [
@@ -1068,5 +1205,5 @@
    "scan_ok": true
   }
  },
- "version": 1
+ "version": 2
 }

@@ -8,17 +8,16 @@
  * the palette, camera presets and event log persist in the page's storage.
  *
  * Frames arrive as BGR cv.Mat (the browser glue decodes the JPEG); `cv` is
- * needed for scans, previews and calibration only, and is passed in.
+ * needed for live detection and optional scans, and is passed in.
  */
 
-import { estimateHomography, quadrilateralCenter, transformBoard } from "./calibration.mjs";
 import { isPlainObject, pyJsonLength, pyMod, pyRound, pyTruthy } from "./numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
 import { GameStatus, launch, readyState, step } from "./physics.mjs";
-import { detectBoard, EXPECTED_NOTES, inspectFrame } from "./vision.mjs";
+import { boardFromNotes, inspectFrame } from "./vision.mjs";
 
-const MARKER_LABELS = ["superior izquierdo", "superior derecho", "inferior derecho", "inferior izquierdo"];
-const START_TARGET_FRACTIONS = [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]];
+const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
+const LIVE_DETECTION_MAX_AGE_S = 1.5;
 const CAMERA_MODES = ["whiteBalanceMode", "exposureMode", "focusMode"];
 const CAMERA_VALUES = ["colorTemperature", "exposureTime", "focusDistance",
   "brightness", "contrast", "saturation", "sharpness", "gain"];
@@ -125,17 +124,6 @@ function storageSet(storage, key, value) {
   }
 }
 
-/** The mapped board, validated at the web runtime's service boundary. */
-function prepareProjectorBoard(cameraBoard, matrix, width, height) {
-  const board = transformBoard(cameraBoard, matrix);
-  const polygons = [board.playfield, board.start, board.goal, ...board.bumpers];
-  if (!polygons.every((polygon) => polygon.every((p) => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height))) {
-    throw new Error("Hay post-its fuera del área proyectada. Recalibrá el montaje.");
-  }
-  readyState(board);
-  return board;
-}
-
 /**
  * Serialized game transitions. `clock()` returns seconds (monotonic);
  * `storage` is a Storage-like object or null; `log(entry)` receives every
@@ -156,22 +144,23 @@ export class GameController {
     this.loadCameraPresets();
     this.cameraBoard = null;
     this.board = null;
-    this.matrix = null;
     this.game = null;
     this.projectorOpen = false;
     this.projectorWidth = 0;
     this.projectorHeight = 0;
-    this.projectionMode = "black";
-    this.calibrationTargets = [];
-    this.calibrationTarget = null;
+    this.projectionMode = "live";
     this.aimDegrees = -45.0;
     this.attempts = 0;
     this.paused = false;
     this.lastTick = null;
     this.accumulator = 0.0;
+    this.boardWidth = 0;
+    this.boardHeight = 0;
     this.frameWidth = 0;
     this.frameHeight = 0;
     this.frameCamera = null;
+    this.liveDetection = null;
+    this.liveDetectionAt = null;
     this.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J.";
     this.revision = 0;
   }
@@ -244,41 +233,30 @@ export class GameController {
   }
 
   phase() {
-    if (this.calibrationTarget !== null) return "calibrating";
     if (this.game !== null) {
       if (this.paused && this.game.status === GameStatus.RUNNING) return "paused";
       return this.game.status;
     }
-    if (this.cameraBoard !== null) return "scanned";
     return "waiting_camera";
   }
 
   snapshot() {
+    this.expireDetection();
     const { game } = this;
-    let target = null;
-    if (this.calibrationTarget !== null) {
-      target = { ...pointJson(this.calibrationTarget), index: this.calibrationTargets.length + 1,
-        label: MARKER_LABELS[this.calibrationTargets.length] };
-    }
     return {
       revision: this.revision,
       phase: this.phase(),
       message: this.message,
       camera: { status: "browser", width: this.frameWidth, height: this.frameHeight, label: this.frameCamera },
+      live_detection: this.liveDetection === null ? null : JSON.parse(JSON.stringify(this.liveDetection)),
       camera_board: boardJson(this.cameraBoard),
       board: boardJson(this.board),
       palette: this.paletteJson(),
       camera_presets: JSON.parse(JSON.stringify(this.cameraPresets)),
-      calibration: {
-        status: this.calibrationTarget !== null ? "collecting" : this.matrix !== null ? "ready" : "none",
-        index: this.calibrationTargets.length,
-        total: 4,
-        detail: this.calibrationTarget !== null ? "Alineá la cruz con cada post-it de esquina."
-          : this.matrix !== null ? "Manual: comprobá la alineación de los contornos." : "Sin calibrar",
-        error_px: null,
-      },
       game: {
         status: game ? game.status : "none",
+        width: this.boardWidth,
+        height: this.boardHeight,
         position: game ? pointJson(game.position) : null,
         bounces: game ? game.bounce_count : 0,
         elapsed_s: game ? pyRound(game.elapsed_s, 3) : 0.0,
@@ -291,45 +269,32 @@ export class GameController {
         mode: this.projectionMode,
         width: this.projectorWidth,
         height: this.projectorHeight,
-        target,
       },
     };
   }
 
-  newTarget() {
-    const [fx, fy] = START_TARGET_FRACTIONS[this.calibrationTargets.length];
-    this.calibrationTarget = { x: this.projectorWidth * fx, y: this.projectorHeight * fy };
-  }
-
-  projectorPoint(payload) {
-    if (this.calibrationTarget === null) throw new RequestError("Primero iniciá la calibración.", HTTP.CONFLICT);
-    const x = finiteNumber(payload.x ?? null, "x");
-    const y = finiteNumber(payload.y ?? null, "y");
-    if (!(x >= 0 && x < this.projectorWidth && y >= 0 && y < this.projectorHeight)) {
-      throw new RequestError("La cruz debe quedar dentro de la ventana del proyector.");
+  expireDetection() {
+    if (this.liveDetectionAt !== null && this.clock() - this.liveDetectionAt > LIVE_DETECTION_MAX_AGE_S) {
+      this.clearDetection();
+      this.changed("Esperando detección en vivo de la cámara.");
+      this.log("live_detection_expired");
     }
-    return { x, y };
   }
 
-  resetBoard() {
+  clearDetection() {
+    this.liveDetection = null;
+    this.liveDetectionAt = null;
     this.cameraBoard = null;
-    this.board = null;
-    this.matrix = null;
-    this.game = null;
-    this.frameWidth = 0;
-    this.frameHeight = 0;
-    this.frameCamera = null;
-    this.calibrationTargets = [];
-    this.calibrationTarget = null;
-    this.paused = false;
-    this.projectionMode = "black";
-  }
-
-  restoredMode() {
-    return this.calibrationTarget ? "calibration" : this.board ? "game" : "black";
+    if (this.game === null || this.game.status === GameStatus.READY) {
+      this.board = null;
+      this.game = null;
+      this.boardWidth = 0;
+      this.boardHeight = 0;
+    }
   }
 
   action(payload) {
+    this.expireDetection();
     const name = payload.action;
     if (typeof name !== "string") throw new RequestError("Falta action.");
     const running = () => this.game && this.game.status === GameStatus.RUNNING;
@@ -344,23 +309,25 @@ export class GameController {
       this.projectorWidth = width;
       this.projectorHeight = height;
       this.projectorOpen = true;
-      if (changedSize) {
-        this.resetBoard();
-        this.changed("Cambió el tamaño del proyector. Escaneá y calibrá otra vez.");
-        this.log("projection_resized", { width, height });
-      } else {
-        this.projectionMode = this.restoredMode();
-        this.changed("Ventana del proyector abierta.");
-      }
+      this.projectionMode = "live";
+      this.changed("Ventana del proyector abierta. Mostrando detección en vivo.");
+      if (changedSize) this.log("projection_resized", { width, height });
     } else if (name === "camera_changed") {
-      this.resetBoard();
+      this.board = null;
+      this.game = null;
+      this.clearDetection();
+      this.frameWidth = 0;
+      this.frameHeight = 0;
+      this.frameCamera = null;
+      this.paused = false;
       this.lastTick = null;
       this.accumulator = 0.0;
-      this.changed("Cambió la cámara. Escaneá y calibrá otra vez.");
+      this.projectionMode = "live";
+      this.changed("Cambió la cámara. Esperando detección en vivo.");
       this.log("camera_changed");
     } else if (name === "projection_close") {
       this.projectorOpen = false;
-      this.projectionMode = "black";
+      this.projectionMode = "live";
       if (running()) this.paused = true;
       this.lastTick = null;
       this.changed("Ventana del proyector cerrada. La partida quedó pausada.");
@@ -371,65 +338,8 @@ export class GameController {
       this.projectionMode = "black";
       this.changed("Proyección en negro. Ahora podés capturar la pared.");
     } else if (name === "projection_restore") {
-      // After a blackout that produced no new board (a failed scan or a
-      // camera search), show again what the projector was showing.
-      if (this.projectorOpen) {
-        this.projectionMode = this.restoredMode();
-        this.revision += 1;
-      }
-    } else if (name === "calibrate") {
-      if (!this.projectorOpen) throw new RequestError("Abrí la ventana del proyector con J.", HTTP.CONFLICT);
-      if (this.cameraBoard === null) {
-        throw new RequestError("Primero escaneá los post-its con la proyección negra.", HTTP.CONFLICT);
-      }
-      if (running() && !this.paused) {
-        throw new RequestError("Terminá o pausá el intento antes de recalibrar.", HTTP.CONFLICT);
-      }
-      this.matrix = null;
-      this.board = null;
-      this.game = null;
-      this.paused = false;
-      this.calibrationTargets = [];
-      this.newTarget();
-      this.projectionMode = "calibration";
-      this.changed("Alineá la cruz 1/4 con el post-it de esquina superior izquierdo.");
-      this.log("calibration_started", { mode: "manual" });
-    } else if (name === "calibration_move") {
-      this.calibrationTarget = this.projectorPoint(payload);
+      this.projectionMode = "live";
       this.revision += 1;
-    } else if (name === "calibration_confirm") {
-      const point = "x" in payload || "y" in payload ? this.projectorPoint(payload) : this.calibrationTarget;
-      if (point === null || this.cameraBoard === null) {
-        throw new RequestError("Primero iniciá la calibración.", HTTP.CONFLICT);
-      }
-      const targets = [...this.calibrationTargets, point];
-      if (targets.length === 4) {
-        let matrix;
-        let board;
-        try {
-          const cameraPoints = this.cameraBoard.markers.map(quadrilateralCenter);
-          matrix = estimateHomography(this.requireCv(), cameraPoints, targets);
-          board = prepareProjectorBoard(this.cameraBoard, matrix, this.projectorWidth, this.projectorHeight);
-        } catch (error) {
-          if (error instanceof RequestError) throw error;
-          throw new RequestError(`Calibración inválida: ${error.message}`);
-        }
-        this.matrix = matrix;
-        this.board = board;
-        this.game = readyState(board);
-        this.calibrationTargets = [];
-        this.calibrationTarget = null;
-        this.projectionMode = "game";
-        this.accumulator = 0.0;
-        this.lastTick = null;
-        this.changed("Calibración lista. Revisá los contornos sobre la pared.");
-        this.log("calibration_completed", { mode: "manual", bumpers: board.bumpers.length,
-          width: this.projectorWidth, height: this.projectorHeight });
-      } else {
-        this.calibrationTargets = targets;
-        this.newTarget();
-        this.changed(`Alineá la cruz ${targets.length + 1}/4 con el post-it de esquina ${MARKER_LABELS[targets.length]}.`);
-      }
     } else if (name === "aim" || name === "aim_left" || name === "aim_right") {
       if (this.game === null || this.game.status !== GameStatus.READY) {
         throw new RequestError("La dirección solo se cambia antes del lanzamiento.", HTTP.CONFLICT);
@@ -439,30 +349,33 @@ export class GameController {
       this.aimDegrees = pyMod(aim + 180, 360) - 180;
       this.revision += 1;
     } else if (name === "launch") {
-      if (!this.projectorOpen || this.board === null || this.game === null) {
-        throw new RequestError("Abrí el proyector, escaneá y calibrá antes de lanzar.", HTTP.CONFLICT);
+      if (!this.projectorOpen || this.cameraBoard === null || this.board === null || this.game === null) {
+        throw new RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.", HTTP.CONFLICT);
       }
       if (this.game.status !== GameStatus.READY) {
         throw new RequestError("Reiniciá el intento antes de volver a lanzar.", HTTP.CONFLICT);
       }
-      const speed = Math.min(this.projectorWidth, this.projectorHeight) * 0.4;
+      const speed = Math.min(this.boardWidth, this.boardHeight) * 0.4;
       this.game = launch(this.board, this.aimDegrees, speed);
       this.attempts += 1;
       this.paused = false;
       this.lastTick = this.clock();
       this.accumulator = 0.0;
-      this.projectionMode = "game";
+      this.projectionMode = "live";
       this.changed("Pelota lanzada.");
       this.log("attempt_started", { attempt: this.attempts, angle_degrees: pyRound(this.aimDegrees, 1),
         speed_px_s: pyRound(speed, 1) });
     } else if (name === "reset") {
-      if (this.board === null) throw new RequestError("Primero escaneá y calibrá el tablero.", HTTP.CONFLICT);
+      if (this.cameraBoard === null) throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);
+      this.board = this.cameraBoard;
+      this.boardWidth = this.frameWidth;
+      this.boardHeight = this.frameHeight;
       this.game = readyState(this.board);
       this.paused = false;
       this.lastTick = null;
       this.accumulator = 0.0;
-      this.projectionMode = this.projectorOpen ? "game" : "black";
-      this.changed("Intento reiniciado. Podés mover post-its y volver a escanear.");
+      this.projectionMode = "live";
+      this.changed("Intento reiniciado con los post-its de la vista en vivo.");
       this.log("attempt_reset");
     } else if (name === "pause") {
       if (this.game === null || this.game.status !== GameStatus.RUNNING) {
@@ -487,15 +400,15 @@ export class GameController {
       this.palette = palette;
       this.savePalette();
       const rule = palette[role];
-      this.changed(`Color de ${ROLE_LABELS[role]} actualizado.` +
-        (this.cameraBoard !== null ? " Escaneá otra vez para aplicarlo al tablero." : ""));
+      this.clearDetection();
+      this.changed(`Color de ${ROLE_LABELS[role]} actualizado.`);
       this.log("palette_changed", { role, hex: rule.hex, hue_low: rule.hue_low, hue_high: rule.hue_high });
     } else if (name === "palette_reset") {
       this.paletteChoices = Object.fromEntries(ROLES.map((r) => [r, null]));
       this.palette = DEFAULT_PALETTE;
       this.savePalette();
-      this.changed("Colores originales restaurados." +
-        (this.cameraBoard !== null ? " Escaneá otra vez para aplicarlos al tablero." : ""));
+      this.clearDetection();
+      this.changed("Colores originales restaurados.");
       this.log("palette_reset");
     } else if (name === "camera_preset_save") {
       let label;
@@ -544,7 +457,7 @@ export class GameController {
       }
       this.paused = false;
       this.lastTick = this.clock();
-      this.projectionMode = "game";
+      this.projectionMode = "live";
       this.changed("Intento reanudado.");
     } else {
       throw new RequestError(`Acción desconocida: ${name}`);
@@ -573,23 +486,69 @@ export class GameController {
       "La cámara no aceptó el ajuste por USB: la versión web no tiene control USB.", HTTP.BAD_GATEWAY);
   }
 
-  /** Live detection for the camera panel; never changes the game. */
-  preview(frame) {
-    let result;
-    try {
-      result = inspectFrame(this.requireCv(), frame, this.palette);
-    } catch (error) {
-      throw new RequestError(error.message);
-    }
-    return {
+  /** A live frame prepares idle boards, while active attempts keep their geometry. */
+  readFrame(frame, label) {
+    const result = inspectFrame(this.requireCv(), frame, this.palette);
+    const detection = {
       width: frame.cols,
       height: frame.rows,
       roles: Object.fromEntries(ROLES.map((role) => [role, {
-        count: result.notes[role].length, expected: EXPECTED_NOTES[role],
+        count: result.notes[role].length, expected: LIVE_EXPECTED_NOTES[role],
         notes: result.notes[role].map(polygonJson),
       }])),
       quality: result.quality,
     };
+    let candidate = null;
+    let error = null;
+    try {
+      candidate = boardFromNotes(result.notes, frame.cols, frame.rows);
+      readyState(candidate);
+    } catch (exc) {
+      error = exc.message;
+      candidate = null;
+    }
+    detection.quality.ready = candidate !== null;
+    if (label !== null && this.frameCamera !== null && label !== this.frameCamera) {
+      this.board = null;
+      this.game = null;
+      this.boardWidth = 0;
+      this.boardHeight = 0;
+      this.paused = false;
+      this.lastTick = null;
+      this.accumulator = 0.0;
+    }
+    const previous = this.cameraBoard;
+    this.liveDetection = detection;
+    this.liveDetectionAt = this.clock();
+    this.frameWidth = frame.cols;
+    this.frameHeight = frame.rows;
+    if (label !== null) this.frameCamera = label;
+    this.cameraBoard = candidate;
+    if (this.game === null || this.game.status === GameStatus.READY) {
+      this.board = candidate;
+      this.game = candidate === null ? null : readyState(candidate);
+      this.boardWidth = candidate === null ? 0 : frame.cols;
+      this.boardHeight = candidate === null ? 0 : frame.rows;
+    }
+    if (previous === null && candidate !== null) {
+      this.changed("Post-its detectados. Listo para lanzar.");
+      this.log("live_board_ready", { bumpers: candidate.bumpers.length, camera_width: frame.cols, camera_height: frame.rows });
+    } else if (previous !== null && candidate === null) {
+      this.changed(error || "No se detecta un tablero válido.");
+      this.log("live_board_invalid", { reason: error });
+    } else {
+      this.revision += 1;
+    }
+    return { detection, error };
+  }
+
+  preview(frame, camera = null) {
+    const label = this.scanLabel(camera);
+    try {
+      return JSON.parse(JSON.stringify(this.readFrame(frame, label).detection));
+    } catch (error) {
+      throw new RequestError(error.message);
+    }
   }
 
   /** Check the camera label before decoding, as the Python server does. */
@@ -602,43 +561,29 @@ export class GameController {
     }
   }
 
-  /** Read the board; `camera` names the camera, so another camera discards it. */
+  /** Optional explicit refresh/reset, without blackout or calibration. */
   scan(frame, camera = null) {
     const label = this.scanLabel(camera);
-    if (!this.projectorOpen) {
-      throw new RequestError("Abrí la ventana del proyector con J antes de escanear.", HTTP.CONFLICT);
-    }
-    if (this.projectionMode !== "black") {
-      throw new RequestError("Poné la proyección en negro antes de escanear.", HTTP.CONFLICT);
-    }
     if (this.game !== null && this.game.status === GameStatus.RUNNING && !this.paused) {
       throw new RequestError("Terminá o pausá el intento antes de escanear.", HTTP.CONFLICT);
     }
-    let cameraBoard;
-    let board;
-    let game;
+    let error;
     try {
-      cameraBoard = detectBoard(this.requireCv(), frame, this.palette);
-      board = this.matrix !== null
-        ? prepareProjectorBoard(cameraBoard, this.matrix, this.projectorWidth, this.projectorHeight) : null;
-      game = board !== null ? readyState(board) : null;
-    } catch (error) {
-      throw new RequestError(error.message);
+      ({ error } = this.readFrame(frame, label));
+    } catch (exc) {
+      throw new RequestError(exc.message);
     }
-    this.cameraBoard = cameraBoard;
-    this.board = board;
-    this.game = game;
-    this.frameHeight = frame.rows;
-    this.frameWidth = frame.cols;
-    this.frameCamera = label;
+    if (this.cameraBoard === null) throw new RequestError(error || "No se detecta un tablero válido.");
+    this.board = this.cameraBoard;
+    this.boardWidth = this.frameWidth;
+    this.boardHeight = this.frameHeight;
+    this.game = readyState(this.board);
     this.paused = false;
     this.accumulator = 0.0;
     this.lastTick = null;
-    this.calibrationTargets = [];
-    this.calibrationTarget = null;
-    this.projectionMode = board !== null ? "game" : "black";
-    this.changed(board === null ? "Tablero leído. Iniciá la calibración." : "Tablero actualizado. Listo para otro intento.");
-    this.log("board_scanned", { bumpers: cameraBoard.bumpers.length, calibrated: board !== null,
+    this.projectionMode = "live";
+    this.changed("Tablero actualizado con la detección en vivo.");
+    this.log("board_scanned", { bumpers: this.cameraBoard.bumpers.length,
       camera_width: this.frameWidth, camera_height: this.frameHeight });
     return this.snapshot();
   }

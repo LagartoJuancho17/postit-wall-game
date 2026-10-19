@@ -155,6 +155,21 @@ function candidatesByRole(cv, hsv, palette) {
   return Object.fromEntries(ROLES.map((role) => [role, findCandidates(cv, hsv, palette[role])]));
 }
 
+/** Live web boards use camera pixels; corner colors are optional. */
+export function boardFromNotes(notes, width, height) {
+  for (const role of ["start", "goal"]) {
+    if (notes[role].length !== 1) {
+      throw new Error(`Post-its de ${ROLE_LABELS[role]}: se esperaba 1; se detectaron ${notes[role].length}.`);
+    }
+  }
+  return {
+    playfield: [{ x: 0, y: 0 }, { x: width, y: 0 },
+      { x: width, y: height }, { x: 0, y: height }],
+    start: notes.start[0], goal: notes.goal[0],
+    bumpers: notes.bumper, markers: notes.marker,
+  };
+}
+
 function boardFrom(cv, found) {
   for (const role of ["marker", "start", "goal"]) {
     if (found[role].length !== EXPECTED_NOTES[role]) {

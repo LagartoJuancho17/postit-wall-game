@@ -232,7 +232,7 @@ test("the phone camera is recognized and an automatic camera waits longer before
   assert.equal(scanSettleMs(true), 180);
   assert.equal(scanSettleMs(false), 1000);
   const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
-  assert.match(operator, /setTimeout\(resolve, scanSettleMs\(cameraFixed\)\)/);
+  assert.match(operator, /sleep\(scanSettleMs\(cameraFixed\)\)/);
 });
 
 test("describeCamera and settleMs speak in operator units", () => {

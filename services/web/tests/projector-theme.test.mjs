@@ -73,8 +73,9 @@ test("the projector draws only theme colors and blacks out for scans", () => {
   assert.match(projector, /ctx\.fillStyle = projectorBackground\(theme, blackoutForced\);/);
   assert.match(projector, /data\.type === "theme"\) \{\s*theme = projectorTheme\(data\.theme\);\s*draw\(\);/);
   assert.match(projector, /window\.addEventListener\("storage", \(event\) => \{\s*if \(event\.key !== THEME_KEY\) return;/);
-  // F works in the projector window too, also during calibration.
-  assert.match(projector, /if \(isThemeShortcut\(event\)\) \{[\s\S]*?\}\s*if \(state\?\.projection\?\.mode !== "calibration"/);
+  // F keeps working in the live projector after calibration was removed.
+  assert.match(projector, /if \(isThemeShortcut\(event\)\) \{[\s\S]*?setTheme\(theme === "dark" \? "light" : "dark"\);/);
+  assert.doesNotMatch(projector, /calibrat|drawBoard|drawTarget/);
   assert.match(css, /body\.projector-page\[data-blackout="true"\] \{ background: #000; \}/);
 });
 

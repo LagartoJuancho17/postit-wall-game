@@ -1,13 +1,14 @@
 """Loopback-only HTTP server for a browser-owned camera and projector window.
 
-The browser captures the webcam with getUserMedia. Only a JPEG snapshot taken
-while the projector is black crosses into Python. This module never opens a
-camera or a desktop window, so macOS attributes camera permission to the
+The browser captures the webcam with getUserMedia. JPEG previews cross into
+Python for shared live post-it detection. This module never opens a camera
+or a desktop window, so macOS attributes camera permission to the
 browser displaying the control panel.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import mimetypes
@@ -23,10 +24,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import cv2
 import numpy as np
 
-from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon, quadrilateral_center
-from services.calibration import estimate_homography, transform_board
+from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon
 from services.physics import GameState, GameStatus, launch, ready_state, step
-from services.vision import (DEFAULT_PALETTE, EXPECTED_NOTES, build_palette, detect_board,
+from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
 from services.uvc import UvcBridge, UvcError
 from services.vision.palette import normalize_hex
@@ -38,10 +38,8 @@ from .camera import camera_label as _camera_label
 MAX_BODY_BYTES = 8 * 1024 * 1024
 LOCAL_NAMES = ("127.0.0.1", "localhost")  # the panel may be opened with either
 MAX_FRAME_PIXELS = 12_000_000
-_MARKER_LABELS = (
-    "superior izquierdo", "superior derecho", "inferior derecho", "inferior izquierdo"
-)
-_START_TARGET_FRACTIONS = ((0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.2, 0.8))
+LIVE_DETECTION_MAX_AGE_S = 1.5
+LIVE_EXPECTED_NOTES = {"start": 1, "goal": 1, "bumper": None, "marker": None}
 
 
 class RequestError(ValueError):
@@ -132,14 +130,18 @@ def _finite_number(value: object, label: str) -> float:
     return number
 
 
-def _prepare_projector_board(camera_board: Board, matrix: Any,
-                             width: int, height: int) -> Board:
-    """Validate the mapped board at this web runtime's service boundary."""
-    board = transform_board(camera_board, matrix)
-    polygons = (board.playfield, board.start, board.goal, *board.bumpers)
-    if not all(0 <= point.x < width and 0 <= point.y < height
-               for polygon in polygons for point in polygon.points):
-        raise ValueError("Hay post-its fuera del área proyectada. Recalibrá el montaje.")
+def _live_board(notes: dict[str, tuple[Polygon, ...]], width: int, height: int) -> Board:
+    """Use camera pixels directly; corners do not define the playable area."""
+    for role in ("start", "goal"):
+        if len(notes[role]) != 1:
+            raise ValueError(f"Post-its de {ROLE_LABELS[role]}: se esperaba 1; "
+                             f"se detectaron {len(notes[role])}.")
+    board = Board(
+        playfield=Polygon((Point(0, 0), Point(width, 0),
+                           Point(width, height), Point(0, height))),
+        start=notes["start"][0], goal=notes["goal"][0],
+        bumpers=notes["bumper"], markers=notes["marker"],
+    )
     ready_state(board)
     return board
 
@@ -164,14 +166,15 @@ class GameController:
         self._load_camera_presets()
         self.camera_board: Board | None = None
         self.board: Board | None = None
-        self.matrix = None
         self.game: GameState | None = None
         self.projector_open = False
         self.projector_width = 0
         self.projector_height = 0
-        self.projection_mode = "black"
-        self._calibration_targets: list[Point] = []
-        self._calibration_target: Point | None = None
+        self.projection_mode = "live"
+        self.live_detection: dict[str, Any] | None = None
+        self._last_detection: float | None = None
+        self.board_width = 0
+        self.board_height = 0
         self.aim_degrees = -45.0
         self.attempts = 0
         self.paused = False
@@ -251,23 +254,15 @@ class GameController:
         }
 
     def _phase(self) -> str:
-        if self._calibration_target is not None:
-            return "calibrating"
         if self.game is not None:
             if self.paused and self.game.status == GameStatus.RUNNING:
                 return "paused"
             return self.game.status.value
-        if self.camera_board is not None:
-            return "scanned"
         return "waiting_camera"
 
     def _snapshot_unlocked(self) -> dict[str, Any]:
+        self._expire_detection_unlocked()
         game = self.game
-        target = None
-        if self._calibration_target is not None:
-            target = {**_point_json(self._calibration_target),
-                      "index": len(self._calibration_targets) + 1,
-                      "label": _MARKER_LABELS[len(self._calibration_targets)]}
         return {
             "revision": self.revision,
             "phase": self._phase(),
@@ -278,18 +273,11 @@ class GameController:
             "board": _board_json(self.board),
             "palette": self._palette_json(),
             "camera_presets": json.loads(json.dumps(self.camera_presets)),
-            "calibration": {
-                "status": ("collecting" if self._calibration_target is not None else
-                           "ready" if self.matrix is not None else "none"),
-                "index": len(self._calibration_targets), "total": 4,
-                "detail": ("Alineá la cruz con cada post-it de esquina."
-                           if self._calibration_target is not None else
-                           "Manual: comprobá la alineación de los contornos."
-                           if self.matrix is not None else "Sin calibrar"),
-                "error_px": None,
-            },
+            "live_detection": copy.deepcopy(self.live_detection),
             "game": {
                 "status": game.status.value if game else "none",
+                "width": self.board_width,
+                "height": self.board_height,
                 "position": _point_json(game.position) if game else None,
                 "bounces": game.bounce_count if game else 0,
                 "elapsed_s": round(game.elapsed_s, 3) if game else 0.0,
@@ -302,7 +290,6 @@ class GameController:
                 "mode": self.projection_mode,
                 "width": self.projector_width,
                 "height": self.projector_height,
-                "target": target,
             },
         }
 
@@ -310,23 +297,84 @@ class GameController:
         with self._lock:
             return self._snapshot_unlocked()
 
-    def _new_target(self) -> None:
-        index = len(self._calibration_targets)
-        fx, fy = _START_TARGET_FRACTIONS[index]
-        self._calibration_target = Point(self.projector_width * fx,
-                                         self.projector_height * fy)
+    def _expire_detection_unlocked(self) -> None:
+        if (self._last_detection is not None and
+                self._clock() - self._last_detection > LIVE_DETECTION_MAX_AGE_S):
+            self._clear_detection_unlocked()
+            self._changed("Esperando detección en vivo de la cámara.")
+            self._log("live_detection_expired")
 
-    def _projector_point(self, payload: dict[str, Any]) -> Point:
-        if self._calibration_target is None:
-            raise RequestError("Primero iniciá la calibración.", HTTPStatus.CONFLICT)
-        x = _finite_number(payload.get("x"), "x")
-        y = _finite_number(payload.get("y"), "y")
-        if not (0 <= x < self.projector_width and 0 <= y < self.projector_height):
-            raise RequestError("La cruz debe quedar dentro de la ventana del proyector.")
-        return Point(x, y)
+    def _clear_detection_unlocked(self) -> None:
+        self.live_detection = None
+        self._last_detection = None
+        self.camera_board = None
+        if self.game is None or self.game.status == GameStatus.READY:
+            self.board = None
+            self.game = None
+            self.board_width = self.board_height = 0
+
+    def _read_frame_unlocked(self, frame: np.ndarray,
+                             label: str | None) -> tuple[dict[str, Any], str | None]:
+        notes = find_notes(frame, self.palette)
+        height, width = frame.shape[:2]
+        preview = {
+            "width": width,
+            "height": height,
+            "roles": {role: {"count": len(notes[role]), "expected": LIVE_EXPECTED_NOTES[role],
+                             "notes": [_polygon_json(polygon) for polygon in notes[role]]}
+                      for role in ROLES},
+            "quality": frame_quality(frame, self.palette, notes),
+        }
+        error = None
+        try:
+            candidate = _live_board(notes, width, height)
+        except ValueError as exc:
+            candidate, error = None, str(exc)
+        preview["quality"]["ready"] = candidate is not None
+        if label is not None and self.frame_camera is not None and label != self.frame_camera:
+            # A camera source change cannot keep an attempt in an unrelated image plane.
+            self.board = self.game = None
+            self.board_width = self.board_height = 0
+            self.paused = False
+            self._last_tick = None
+            self._accumulator = 0.0
+        previous = self.camera_board
+        self.live_detection = preview
+        self._last_detection = self._clock()
+        self.frame_width, self.frame_height = width, height
+        if label is not None:
+            self.frame_camera = label
+        self.camera_board = candidate
+        # An attempt keeps its collision geometry, including while paused or
+        # displaying its result. Only the overlay follows the moving notes.
+        if self.game is None or self.game.status == GameStatus.READY:
+            self.board = candidate
+            self.game = ready_state(candidate) if candidate is not None else None
+            self.board_width = width if candidate is not None else 0
+            self.board_height = height if candidate is not None else 0
+        if previous is None and candidate is not None:
+            self._changed("Post-its detectados. Listo para lanzar.")
+            self._log("live_board_ready", bumpers=len(candidate.bumpers),
+                      camera_width=width, camera_height=height)
+        elif previous is not None and candidate is None:
+            self._changed(error or "No se detecta un tablero válido.")
+            self._log("live_board_invalid", reason=error)
+        else:
+            self.revision += 1
+        return preview, error
+
+    @staticmethod
+    def _frame_label(label: str | None) -> str | None:
+        if label is not None:
+            try:
+                return _camera_label(label)
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
+        return None
 
     def action(self, payload: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
+            self._expire_detection_unlocked()
             action = payload.get("action")
             if not isinstance(action, str):
                 raise RequestError("Falta action.")
@@ -341,43 +389,24 @@ class GameController:
                                                    self.projector_height)
                 self.projector_width, self.projector_height = width, height
                 self.projector_open = True
+                self.projection_mode = "live"
+                self._changed("Ventana del proyector abierta. Mostrando detección en vivo.")
                 if changed_size:
-                    self.matrix = None
-                    self.camera_board = None
-                    self.board = None
-                    self.game = None
-                    self.frame_width = 0
-                    self.frame_height = 0
-                    self.frame_camera = None
-                    self._calibration_targets = []
-                    self._calibration_target = None
-                    self.paused = False
-                    self.projection_mode = "black"
-                    self._changed("Cambió el tamaño del proyector. Escaneá y calibrá otra vez.")
                     self._log("projection_resized", width=width, height=height)
-                else:
-                    self.projection_mode = ("calibration" if self._calibration_target else
-                                            "game" if self.board else "black")
-                    self._changed("Ventana del proyector abierta.")
             elif action == "camera_changed":
-                self.camera_board = None
-                self.board = None
-                self.matrix = None
-                self.game = None
-                self.frame_width = 0
-                self.frame_height = 0
+                self.board = self.game = None
+                self._clear_detection_unlocked()
+                self.frame_width = self.frame_height = 0
                 self.frame_camera = None
-                self._calibration_targets = []
-                self._calibration_target = None
                 self.paused = False
                 self._last_tick = None
                 self._accumulator = 0.0
-                self.projection_mode = "black"
-                self._changed("Cambió la cámara. Escaneá y calibrá otra vez.")
+                self.projection_mode = "live"
+                self._changed("Cambió la cámara. Esperando detección en vivo.")
                 self._log("camera_changed")
             elif action == "projection_close":
                 self.projector_open = False
-                self.projection_mode = "black"
+                self.projection_mode = "live"
                 if self.game and self.game.status == GameStatus.RUNNING:
                     self.paused = True
                 self._last_tick = None
@@ -389,66 +418,8 @@ class GameController:
                 self.projection_mode = "black"
                 self._changed("Proyección en negro. Ahora podés capturar la pared.")
             elif action == "projection_restore":
-                # After a blackout that produced no new board (a failed scan or
-                # a camera search), show again what the projector was showing.
-                if self.projector_open:
-                    self.projection_mode = ("calibration" if self._calibration_target else
-                                            "game" if self.board else "black")
-                    self.revision += 1
-            elif action == "calibrate":
-                if not self.projector_open:
-                    raise RequestError("Abrí la ventana del proyector con J.", HTTPStatus.CONFLICT)
-                if self.camera_board is None:
-                    raise RequestError("Primero escaneá los post-its con la proyección negra.",
-                                       HTTPStatus.CONFLICT)
-                if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
-                    raise RequestError("Terminá o pausá el intento antes de recalibrar.",
-                                       HTTPStatus.CONFLICT)
-                self.matrix = None
-                self.board = None
-                self.game = None
-                self.paused = False
-                self._calibration_targets = []
-                self._new_target()
-                self.projection_mode = "calibration"
-                self._changed("Alineá la cruz 1/4 con el post-it de esquina superior izquierdo.")
-                self._log("calibration_started", mode="manual")
-            elif action == "calibration_move":
-                self._calibration_target = self._projector_point(payload)
+                self.projection_mode = "live"
                 self.revision += 1
-            elif action == "calibration_confirm":
-                point = (self._projector_point(payload)
-                         if "x" in payload or "y" in payload else self._calibration_target)
-                if point is None or self.camera_board is None:
-                    raise RequestError("Primero iniciá la calibración.", HTTPStatus.CONFLICT)
-                targets = [*self._calibration_targets, point]
-                if len(targets) == 4:
-                    camera_points = [quadrilateral_center(p)
-                                     for p in self.camera_board.markers]
-                    try:
-                        matrix = estimate_homography(camera_points, targets)
-                        board = _prepare_projector_board(
-                            self.camera_board, matrix,
-                            self.projector_width, self.projector_height)
-                    except (ValueError, RuntimeError) as exc:
-                        raise RequestError(f"Calibración inválida: {exc}") from exc
-                    self.matrix = matrix
-                    self.board = board
-                    self.game = ready_state(board)
-                    self._calibration_targets = []
-                    self._calibration_target = None
-                    self.projection_mode = "game"
-                    self._accumulator = 0.0
-                    self._last_tick = None
-                    self._changed("Calibración lista. Revisá los contornos sobre la pared.")
-                    self._log("calibration_completed", mode="manual",
-                              bumpers=len(board.bumpers), width=self.projector_width,
-                              height=self.projector_height)
-                else:
-                    self._calibration_targets = targets
-                    self._new_target()
-                    self._changed(f"Alineá la cruz {len(targets)+1}/4 con el post-it "
-                                  f"de esquina {_MARKER_LABELS[len(targets)]}.")
             elif action in ("aim", "aim_left", "aim_right"):
                 if self.game is None or self.game.status != GameStatus.READY:
                     raise RequestError("La dirección solo se cambia antes del lanzamiento.",
@@ -458,31 +429,35 @@ class GameController:
                 self.aim_degrees = (aim + 180) % 360 - 180
                 self.revision += 1
             elif action == "launch":
-                if not self.projector_open or self.board is None or self.game is None:
-                    raise RequestError("Abrí el proyector, escaneá y calibrá antes de lanzar.",
+                if (not self.projector_open or self.camera_board is None or
+                        self.board is None or self.game is None):
+                    raise RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.",
                                        HTTPStatus.CONFLICT)
                 if self.game.status != GameStatus.READY:
                     raise RequestError("Reiniciá el intento antes de volver a lanzar.",
                                        HTTPStatus.CONFLICT)
-                speed = min(self.projector_width, self.projector_height) * 0.4
+                speed = min(self.board_width, self.board_height) * 0.4
                 self.game = launch(self.board, self.aim_degrees, speed)
                 self.attempts += 1
                 self.paused = False
                 self._last_tick = self._clock()
                 self._accumulator = 0.0
-                self.projection_mode = "game"
+                self.projection_mode = "live"
                 self._changed("Pelota lanzada.")
                 self._log("attempt_started", attempt=self.attempts,
                           angle_degrees=round(self.aim_degrees, 1), speed_px_s=round(speed, 1))
             elif action == "reset":
-                if self.board is None:
-                    raise RequestError("Primero escaneá y calibrá el tablero.", HTTPStatus.CONFLICT)
+                if self.camera_board is None:
+                    raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",
+                                       HTTPStatus.CONFLICT)
+                self.board = self.camera_board
+                self.board_width, self.board_height = self.frame_width, self.frame_height
                 self.game = ready_state(self.board)
                 self.paused = False
                 self._last_tick = None
                 self._accumulator = 0.0
-                self.projection_mode = "game" if self.projector_open else "black"
-                self._changed("Intento reiniciado. Podés mover post-its y volver a escanear.")
+                self.projection_mode = "live"
+                self._changed("Intento reiniciado con los post-its de la vista en vivo.")
                 self._log("attempt_reset")
             elif action == "pause":
                 if self.game is None or self.game.status != GameStatus.RUNNING:
@@ -503,18 +478,16 @@ class GameController:
                 self.palette_choices, self.palette = choices, palette
                 self._save_palette()
                 rule = palette.rule(role)
-                self._changed(f"Color de {ROLE_LABELS[role]} actualizado."
-                              + (" Escaneá otra vez para aplicarlo al tablero."
-                                 if self.camera_board is not None else ""))
+                self._clear_detection_unlocked()
+                self._changed(f"Color de {ROLE_LABELS[role]} actualizado.")
                 self._log("palette_changed", role=role, hex=rule.hex,
                           hue_low=rule.hue_low, hue_high=rule.hue_high)
             elif action == "palette_reset":
                 self.palette_choices = {role: None for role in ROLES}
                 self.palette = DEFAULT_PALETTE
                 self._save_palette()
-                self._changed("Colores originales restaurados."
-                              + (" Escaneá otra vez para aplicarlos al tablero."
-                                 if self.camera_board is not None else ""))
+                self._clear_detection_unlocked()
+                self._changed("Colores originales restaurados.")
                 self._log("palette_reset")
             elif action == "camera_preset_save":
                 try:
@@ -556,7 +529,7 @@ class GameController:
                                        HTTPStatus.CONFLICT)
                 self.paused = False
                 self._last_tick = self._clock()
-                self.projection_mode = "game"
+                self.projection_mode = "live"
                 self._changed("Intento reanudado.")
             else:
                 raise RequestError(f"Acción desconocida: {action}")
@@ -581,71 +554,44 @@ class GameController:
             raise RequestError(f"La cámara no aceptó el ajuste por USB: {exc}",
                                HTTPStatus.BAD_GATEWAY) from exc
 
-    def preview_jpeg(self, data: bytes) -> dict[str, Any]:
-        """Live detection for the camera panel; never changes the game.
+    def preview_jpeg(self, data: bytes, camera: str | None = None) -> dict[str, Any]:
+        """Publish every visible note and update the next playable camera board.
 
-        Uses the scan's detector and the current palette, but no count is
-        required, so a partial wall still shows what is visible.
+        Partial walls are still broadcast to the projector. Running attempts
+        retain the board they launched on, so moving a note never teleports a ball.
         """
+        label = self._frame_label(camera)
         frame = _decode_jpeg(data)
         with self._lock:
-            palette = self.palette
-        try:
-            notes = find_notes(frame, palette)
-        except ValueError as exc:
-            raise RequestError(str(exc)) from exc
-        height, width = frame.shape[:2]
-        return {
-            "width": width,
-            "height": height,
-            "roles": {role: {"count": len(notes[role]), "expected": EXPECTED_NOTES[role],
-                             "notes": [_polygon_json(polygon) for polygon in notes[role]]}
-                      for role in ROLES},
-            "quality": frame_quality(frame, palette, notes),
-        }
-
-    def scan_jpeg(self, data: bytes, camera: str | None = None) -> dict[str, Any]:
-        """Read the board; ``camera`` names the camera, so a later start with
-        another camera knows this board does not fit it."""
-        if camera is not None:
             try:
-                camera = _camera_label(camera)
+                preview, _ = self._read_frame_unlocked(frame, label)
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
+            return copy.deepcopy(preview)
+
+    def scan_jpeg(self, data: bytes, camera: str | None = None) -> dict[str, Any]:
+        """Optional explicit refresh/reset, without blackout or calibration."""
+        label = self._frame_label(camera)
         frame = _decode_jpeg(data)
         with self._lock:
-            if not self.projector_open:
-                raise RequestError("Abrí la ventana del proyector con J antes de escanear.",
-                                   HTTPStatus.CONFLICT)
-            if self.projection_mode != "black":
-                raise RequestError("Poné la proyección en negro antes de escanear.",
-                                   HTTPStatus.CONFLICT)
             if self.game is not None and self.game.status == GameStatus.RUNNING and not self.paused:
                 raise RequestError("Terminá o pausá el intento antes de escanear.",
                                    HTTPStatus.CONFLICT)
             try:
-                camera_board = detect_board(frame, self.palette)
-                board = (_prepare_projector_board(camera_board, self.matrix,
-                                                  self.projector_width, self.projector_height)
-                         if self.matrix is not None else None)
-                game = ready_state(board) if board is not None else None
-            except (ValueError, RuntimeError) as exc:
+                _, error = self._read_frame_unlocked(frame, label)
+            except ValueError as exc:
                 raise RequestError(str(exc)) from exc
-            self.camera_board = camera_board
-            self.board = board
-            self.game = game
-            self.frame_height, self.frame_width = frame.shape[:2]
-            self.frame_camera = camera
+            if self.camera_board is None:
+                raise RequestError(error or "No se detecta un tablero válido.")
+            self.board = self.camera_board
+            self.board_width, self.board_height = self.frame_width, self.frame_height
+            self.game = ready_state(self.board)
             self.paused = False
             self._accumulator = 0.0
             self._last_tick = None
-            self._calibration_targets = []
-            self._calibration_target = None
-            self.projection_mode = "game" if board is not None else "black"
-            self._changed("Tablero leído. Iniciá la calibración." if board is None else
-                          "Tablero actualizado. Listo para otro intento.")
-            self._log("board_scanned", bumpers=len(camera_board.bumpers),
-                      calibrated=board is not None,
+            self.projection_mode = "live"
+            self._changed("Tablero actualizado con la detección en vivo.")
+            self._log("board_scanned", bumpers=len(self.board.bumpers),
                       camera_width=self.frame_width, camera_height=self.frame_height)
             return self._snapshot_unlocked()
 
@@ -774,7 +720,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
                     "/": "index.html", "/projector": "projector.html",
                     "/app.css": "app.css", "/app.js": "app.js",
                     "/projector.js": "projector.js", "/ui-core.mjs": "ui-core.mjs",
-                    "/api.mjs": "api.mjs",
+                    "/api.mjs": "api.mjs", "/live-view.mjs": "live-view.mjs",
                 }
                 if path == "/favicon.ico":
                     self.send_response(HTTPStatus.NO_CONTENT)
@@ -820,7 +766,8 @@ def create_server(port: int = 0, controller: GameController | None = None,
                     label = self.headers.get("X-Postit-Camera")
                     result = controller.scan_jpeg(body, unquote(label) if label else None)
                 elif path == "/api/preview":
-                    result = controller.preview_jpeg(body)
+                    label = self.headers.get("X-Postit-Camera")
+                    result = controller.preview_jpeg(body, unquote(label) if label else None)
                 else:
                     try:
                         payload = json.loads(body)

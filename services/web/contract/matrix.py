@@ -26,7 +26,6 @@ from typing import Any
 
 import cv2
 
-from contracts import quadrilateral_center
 from services.web.backend.eval import FRAME_HUES, _color, _frame, _image, sampled_hex
 from services.web.backend.server import GameController, RequestError
 
@@ -35,7 +34,7 @@ PREVIEWS_PATH = Path(__file__).with_name("preview-samples.json")
 RECOLORED = {"start": 105, "goal": 176, "bumper": 28, "marker": 140}
 PROJECTOR = (1280, 800)
 # Each UI control, expressed as the backend calls the browser makes for it.
-CONTROLS = ("scan", "calibrate", "launch", "aim", "reset", "resume")
+CONTROLS = ("scan", "launch", "aim", "reset", "resume")
 
 
 class _Wall:
@@ -52,14 +51,7 @@ class _Wall:
         self.act("projection_open", width=PROJECTOR[0], height=PROJECTOR[1])
 
     def scan(self) -> None:
-        self.act("projection_black")
         self.controller.scan_jpeg(_frame(430))
-
-    def calibrate(self) -> None:
-        self.act("calibrate")
-        for marker in self.controller.camera_board.markers:
-            point = quadrilateral_center(marker)
-            self.act("calibration_confirm", x=point.x + 80, y=point.y + 30)
 
     def launch(self, degrees: float) -> None:
         self.act("aim", degrees=degrees)
@@ -69,6 +61,7 @@ class _Wall:
         for _ in range(80):
             self.now += 0.1
             if self.controller.tick()["game"]["status"] != "running":
+                self.controller.preview_jpeg(_frame(430))
                 return
         raise AssertionError("attempt never finished")
 
@@ -77,19 +70,21 @@ def _waiting_camera(w: _Wall) -> None:
     w.open_projector()
 
 
-def _scanned(w: _Wall) -> None:
+def _partial_live(w: _Wall) -> None:
     w.open_projector()
-    w.scan()
+    image = _image(430)
+    image[315:386, 145:216] = 220
+    w.controller.preview_jpeg(_jpeg(image))
 
 
-def _calibrating(w: _Wall) -> None:
-    _scanned(w)
-    w.act("calibrate")
+def _no_markers(w: _Wall) -> None:
+    w.open_projector()
+    w.controller.preview_jpeg(_no_markers_frame())
 
 
 def _ready(w: _Wall) -> None:
-    _scanned(w)
-    w.calibrate()
+    w.open_projector()
+    w.controller.preview_jpeg(_frame(430))
 
 
 def _running(w: _Wall) -> None:
@@ -126,8 +121,8 @@ def _ready_closed(w: _Wall) -> None:
 PHASES: dict[str, Callable[[_Wall], None]] = {
     "projector_closed": lambda w: None,
     "waiting_camera": _waiting_camera,
-    "scanned": _scanned,
-    "calibrating": _calibrating,
+    "partial_live": _partial_live,
+    "no_markers": _no_markers,
     "ready": _ready,
     "ready_closed": _ready_closed,
     "running": _running,
@@ -139,7 +134,6 @@ PHASES: dict[str, Callable[[_Wall], None]] = {
 
 _PROBES: dict[str, Callable[[_Wall], None]] = {
     "scan": _Wall.scan,
-    "calibrate": lambda w: w.act("calibrate"),
     "launch": lambda w: w.act("launch"),
     "aim": lambda w: w.act("aim", degrees=0),
     "reset": lambda w: w.act("reset"),
@@ -185,13 +179,20 @@ def build_matrix() -> dict[str, Any]:
             else:
                 accepts[control] = True
         phases[name] = {"state": wall.controller.snapshot(), "accepts": accepts}
-    return {"version": 1, "projector": list(PROJECTOR), "phases": phases}
+    return {"version": 2, "projector": list(PROJECTOR), "phases": phases}
 
 
 def _jpeg(image) -> bytes:
     okay, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 96])
     assert okay
     return encoded.tobytes()
+
+
+def _no_markers_frame() -> bytes:
+    image = _image(430)
+    for x, y in ((90, 90), (870, 90), (870, 630), (90, 630)):
+        image[y - 26:y + 27, x - 26:x + 27] = 220
+    return _jpeg(image)
 
 
 def _controller(choices: dict[str, str]) -> GameController:
@@ -222,6 +223,7 @@ def build_previews() -> dict[str, Any]:
     picked = {role: sampled_hex(recolored, role) for role in ("marker", "start", "goal", "bumper")}
     samples = {
         "full_wall": ({}, _frame(430)),
+        "no_markers": ({}, _no_markers_frame()),
         "missing_start": ({}, _jpeg(no_start)),
         "extra_corner": ({}, _jpeg(extra_corner)),
         "recolored_default_colors": ({}, recolored),
@@ -233,7 +235,7 @@ def build_previews() -> dict[str, Any]:
         result[name] = {"palette": game.snapshot()["palette"],
                         "preview": game.preview_jpeg(frame),
                         "scan_ok": _scan_ok(choices, frame)}
-    return {"version": 1, "samples": result}
+    return {"version": 2, "samples": result}
 
 
 def shape(value: Any) -> Any:

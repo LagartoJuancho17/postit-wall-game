@@ -17,8 +17,7 @@ export function preferredCamera(devices, remembered = "") {
 /**
  * The camera to hop to when the list changes (the iPhone joins a few seconds
  * after the page loads, or the C920 is plugged in), or null to stay. It only
- * hops before a scan, since another camera discards the board and the
- * calibration, and never away from the camera the operator picked.
+ * hops before a scan, since another camera discards the board, and never away from the camera the operator picked.
  */
 export function cameraToSwitchTo({ devices, activeId = "", remembered = "", scanned = false, busy = false }) {
   if (scanned || busy) return null;
@@ -83,7 +82,7 @@ export function boardCounts(state) {
 }
 
 const ATTEMPT_VIEWS = {
-  none: { label: "Sin tablero", hint: "Escaneá y calibrá antes de lanzar." },
+  none: { label: "Sin tablero", hint: "Mostrá un inicio y una llegada a la cámara para lanzar." },
   ready: { label: "Listo", hint: "Ajustá la dirección y lanzá desde el post-it de inicio." },
   running: { label: "En juego", hint: "La pelota está en movimiento." },
   paused: {
@@ -110,30 +109,26 @@ export function controlsFor(state, cameraReady, popupReady) {
   const moving = phase === "running";
   const popup = Boolean(popupReady);
   const live = Boolean(cameraReady) && popup;
-  const hasCameraBoard = Boolean(state?.camera_board);
-  const calibrated = state?.calibration?.status === "ready";
+  const detected = Boolean(state?.camera_board && state?.live_detection);
   return {
     scan: live && !moving,
-    calibrate: live && hasCameraBoard && !moving,
-    launch: live && calibrated && phase === "ready",
-    reset: popup && phase !== "none",
-    aim: popup && phase === "ready",
+    launch: live && detected && phase === "ready",
+    reset: popup && detected && phase !== "none",
+    aim: popup && detected && phase === "ready",
     resume: popup && phase === "paused",
   };
 }
 
 /** Setup order of the page's step indicator (data-step in index.html). */
-export const SETUP_STAGES = ["camera", "projector", "scan", "play"];
+export const SETUP_STAGES = ["camera", "projector", "detect", "play"];
 
 const SETUP_GUIDES = {
   camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 o el iPhone debajo del video.",
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
-  scan: "Siguiente: escaneá con S. Tienen que verse 4 esquinas, 1 inicio y 1 llegada (los rebotes son opcionales): mirá las luces debajo del video.",
-  calibrate: "Siguiente: calibrá las 4 esquinas con C.",
-  align: "En la ventana del proyector, llevá la cruz al centro de cada post-it de esquina y confirmá con Enter.",
-  play: "La proyección se apaga un instante al escanear.",
+  detect: "Mostrá 1 inicio y 1 llegada a la cámara. Los rebotes y las esquinas son opcionales; la detección se actualiza sola.",
+  play: "Los contornos del proyector siguen la detección en vivo. Ajustá la dirección y lanzá.",
 };
-const STAGE_OF = { camera: "camera", projector: "projector", scan: "scan", calibrate: "scan", align: "scan", play: "play" };
+const STAGE_OF = { camera: "camera", projector: "projector", detect: "detect", play: "play" };
 
 /**
  * What unblocks the operator next, from the same inputs as controlsFor.
@@ -144,9 +139,7 @@ export function setupGuide(state, cameraReady, popupReady) {
   let step = "play";
   if (!cameraReady) step = "camera";
   else if (!popupReady) step = "projector";
-  else if (state?.calibration?.status === "collecting") step = "align";
-  else if (!state?.camera_board) step = "scan";
-  else if (state?.calibration?.status !== "ready") step = "calibrate";
+  else if (!state?.camera_board || !state?.live_detection) step = "detect";
   return {
     step,
     stage: STAGE_OF[step],
@@ -165,7 +158,7 @@ export function statusText(notice, state, guide) {
 /** Post-it roles in panel order, and how many a playable wall needs. */
 export const PALETTE_ROLES = ["start", "goal", "bumper", "marker"];
 export const ROLE_LABELS = { start: "inicio", goal: "llegada", bumper: "rebotes", marker: "esquinas" };
-const NEEDED = { start: 1, goal: 1, bumper: null, marker: 4 };
+const NEEDED = { start: 1, goal: 1, bumper: null, marker: null };
 
 /**
  * Detection light per role from a /api/preview response: "on" when the
@@ -442,7 +435,7 @@ export function presetScore(preview) {
   const quality = preview?.quality;
   if (!quality) return -Infinity;
   const roles = preview.roles ?? {};
-  const satisfied = ["start", "goal", "marker"].filter((role) => roles[role]?.count === NEEDED[role]).length;
+  const satisfied = ["start", "goal"].filter((role) => roles[role]?.count === NEEDED[role]).length;
   return (quality.ready ? 1000 : 0) + satisfied * 100 + ((roles.bumper?.count ?? 0) > 0 ? 10 : 0)
     + 0.2 * (quality.note_saturation ?? 0) - 400 * quality.clipped - 150 * quality.dark
     - 200 * Math.abs(quality.brightness - TARGET_BRIGHTNESS);

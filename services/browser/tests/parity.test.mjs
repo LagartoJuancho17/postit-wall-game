@@ -58,7 +58,7 @@ test("the golden set reaches every phase and both endings", () => {
   for (const script of Object.values(golden.controller)) {
     for (const result of script.results) phases.add((result.value ?? result.state)?.phase);
   }
-  for (const phase of ["waiting_camera", "scanned", "calibrating", "ready", "running", "paused", "won", "lost"]) {
+  for (const phase of ["waiting_camera", "ready", "running", "paused", "won", "lost"]) {
     assert.ok(phases.has(phase), `no golden step reaches ${phase}`);
   }
 });

@@ -1,24 +1,28 @@
 #!/bin/sh
-# Gate: deterministic local tests, under 2 s. The Python and Node lanes are
-# independent, so they run side by side; most of the time is interpreter
-# and OpenCV start-up, not the tests.
+# All deterministic gates, with independent web/core Python and Node lanes.
+# Full OpenCV browser parity and quality evals run in scripts/verify.sh.
 set -eu
 if [ -x .venv/bin/python ]; then
   PY=.venv/bin/python
 else
   PY=python3.12
 fi
-NODE_LOG=$(mktemp "${TMPDIR:-/tmp}/postit-gate-node.XXXXXX")
-trap 'rm -f "$NODE_LOG"' EXIT
-node --test services/web/tests/*.test.mjs >"$NODE_LOG" 2>&1 &
-NODE_PID=$!
-PY_STATUS=0
-PYTHONPATH=. "$PY" -m unittest discover -s . -p 'test_*.py' -q || PY_STATUS=$?
-NODE_STATUS=0
-wait "$NODE_PID" || NODE_STATUS=$?
-if [ "$NODE_STATUS" -ne 0 ]; then
-  cat "$NODE_LOG"
+POSTIT_GATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/postit-gate.XXXXXX")
+trap 'rm -f "$POSTIT_GATE_DIR/node" "$POSTIT_GATE_DIR/web" "$POSTIT_GATE_DIR/core"; rmdir "$POSTIT_GATE_DIR"' EXIT
+node --test services/web/tests/*.test.mjs >"$POSTIT_GATE_DIR/node" 2>&1 &
+POSTIT_NODE_PID=$!
+PYTHONPATH=. "$PY" scripts/gate_tests.py web >"$POSTIT_GATE_DIR/web" 2>&1 &
+POSTIT_WEB_PID=$!
+PYTHONPATH=. "$PY" scripts/gate_tests.py core >"$POSTIT_GATE_DIR/core" 2>&1 &
+POSTIT_CORE_PID=$!
+POSTIT_GATE_STATUS=0
+wait "$POSTIT_NODE_PID" || POSTIT_GATE_STATUS=1
+wait "$POSTIT_WEB_PID" || POSTIT_GATE_STATUS=1
+wait "$POSTIT_CORE_PID" || POSTIT_GATE_STATUS=1
+cat "$POSTIT_GATE_DIR/web" "$POSTIT_GATE_DIR/core"
+if [ "$POSTIT_GATE_STATUS" -ne 0 ]; then
+  cat "$POSTIT_GATE_DIR/node"
 else
-  grep -E '^ℹ (tests|pass|fail)' "$NODE_LOG" || true
+  rg '^ℹ (tests|pass|fail)' "$POSTIT_GATE_DIR/node" || true
 fi
-[ "$PY_STATUS" -eq 0 ] && [ "$NODE_STATUS" -eq 0 ]
+exit "$POSTIT_GATE_STATUS"

@@ -95,25 +95,27 @@ class PaletteActionTests(unittest.TestCase):
                 self.assertFalse(game.snapshot()["palette"]["custom"])
                 self.assertEqual(self.events()[-1]["event"], "palette_ignored")
 
-    def test_after_a_scan_the_message_asks_for_a_rescan(self) -> None:
+    def test_palette_change_clears_ready_board_until_next_live_preview(self) -> None:
         self.game.action({"action": "projection_open", "width": 1280, "height": 800})
         self.game.scan_jpeg(_frame(430))
         state = self.game.action({"action": "palette_set", "role": "bumper", "hex": "#2ec4b6"})
-        self.assertIn("Escaneá otra vez", state["message"])
+        self.assertEqual(state["message"], "Color de rebotes actualizado.")
+        self.assertIsNone(state["board"])
+        self.assertIsNone(state["live_detection"])
 
 
 class PreviewTests(unittest.TestCase):
-    def test_preview_counts_every_role_without_touching_the_game(self) -> None:
+    def test_preview_counts_every_role_and_publishes_the_live_board(self) -> None:
         game = GameController(log_path=None)
-        before = game.snapshot()
         preview = game.preview_jpeg(_frame(430))
         self.assertEqual((preview["width"], preview["height"]), (960, 720))
         counts = {role: preview["roles"][role]["count"] for role in ROLES}
         self.assertEqual(counts, {"start": 1, "goal": 1, "bumper": 1, "marker": 4})
-        self.assertEqual(preview["roles"]["marker"]["expected"], 4)
+        self.assertIsNone(preview["roles"]["marker"]["expected"])
         self.assertIsNone(preview["roles"]["bumper"]["expected"])
         self.assertEqual(len(preview["roles"]["start"]["notes"][0]["points"]), 4)
-        self.assertEqual(game.snapshot(), before)
+        self.assertEqual(game.snapshot()["live_detection"], preview)
+        self.assertEqual(game.snapshot()["phase"], "ready")
 
     def test_preview_rejects_data_that_is_not_a_jpeg(self) -> None:
         with self.assertRaises(RequestError):
@@ -129,13 +131,13 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(misread, {"start": 1, "goal": 0, "bumper": 0, "marker": 5})
         with self.assertRaises(RequestError) as caught:
             game.scan_jpeg(frame)
-        self.assertIn("esquinas", str(caught.exception))
+        self.assertIn("llegada", str(caught.exception))
 
         for role in ("marker", "start", "goal", "bumper"):
             game.action({"action": "palette_set", "role": role, "hex": sampled_hex(frame, role)})
         counts = {role: data["count"] for role, data in game.preview_jpeg(frame)["roles"].items()}
         self.assertEqual(counts, {"start": 1, "goal": 1, "bumper": 1, "marker": 4})
-        self.assertEqual(game.scan_jpeg(frame)["phase"], "scanned")
+        self.assertEqual(game.scan_jpeg(frame)["phase"], "ready")
 
 
 if __name__ == "__main__":

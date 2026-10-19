@@ -18,7 +18,7 @@
       </div>
       <div class="topbar-actions">
         <span id="connection-pill" class="connection-pill" data-tone="idle">Preparando cámara</span>
-        <div class="theme-switch" role="group" aria-label="Fondo del proyector" title="Fondo de la ventana del proyector (tecla F). Al escanear siempre se pone negra.">
+        <div class="theme-switch" role="group" aria-label="Fondo del proyector" title="Fondo de la ventana del proyector (tecla F).">
           <span class="theme-switch-label">Fondo <kbd>F</kbd></span>
           <button id="theme-dark" type="button" aria-pressed="true"><i class="theme-dot" data-theme="dark" aria-hidden="true"></i>Oscuro</button>
           <button id="theme-light" type="button" aria-pressed="false"><i class="theme-dot" data-theme="light" aria-hidden="true"></i>Claro</button>
@@ -33,10 +33,10 @@
       <div class="page-intro">
         <div>
           <h1>Tu pared, en directo.</h1>
-          <p>Mirás la cámara y preparás el intento acá. La pelota aparece en una ventana aparte para el proyector.</p>
+          <p>Mirás la cámara y preparás el intento acá. La detección en vivo y la pelota aparecen en la ventana del proyector.</p>
         </div>
         <div class="step-hint" aria-label="Orden de preparación">
-          <span data-step="camera">Cámara</span><b aria-hidden="true">→</b><span data-step="projector">Proyección</span><b aria-hidden="true">→</b><span data-step="scan">Escaneo</span><b aria-hidden="true">→</b><span data-step="play">Juego</span>
+          <span data-step="camera">Cámara</span><b aria-hidden="true">→</b><span data-step="projector">Proyección</span><b aria-hidden="true">→</b><span data-step="detect">Detección</span><b aria-hidden="true">→</b><span data-step="play">Juego</span>
         </div>
       </div>
 
@@ -45,7 +45,7 @@
           <div class="section-heading">
             <div>
               <h2 id="camera-heading">Vista de cámara</h2>
-              <p id="camera-description">La imagen no se refleja para que los puntos coincidan con la pared.</p>
+              <p id="camera-description">Los mismos contornos de colores aparecen en el proyector, sin video de cámara.</p>
             </div>
             <span id="video-resolution" class="meta-value">Sin imagen</span>
           </div>
@@ -97,7 +97,7 @@
               <span class="role-light" id="light-marker" aria-hidden="true"></span>
               <input class="role-swatch" id="color-marker" type="color" value="#d75ab9" aria-label="Color de los post-its de esquina" disabled>
               <span class="role-name">Esquinas</span>
-              <strong class="role-count" id="seen-marker" title="Detectados ahora / necesarios">—</strong>
+              <strong class="role-count" id="seen-marker" title="Detectados ahora (opcionales)">—</strong>
               <button class="role-pick" id="pick-marker" type="button" aria-pressed="false" aria-label="Tomar el color de esquinas tocando la imagen" title="Tomar el color tocando la imagen" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5"/><path d="m16.5 2.5 5 5-3 3-5-5z"/><path d="M13.5 6.5 4 16v4h4l9.5-9.5"/></svg></button>
             </div>
           </div>
@@ -112,12 +112,11 @@
             <div class="section-heading compact">
               <div>
                 <h2 id="setup-heading">Preparar la pared</h2>
-                <p id="setup-hint">La proyección se apaga un instante al escanear.</p>
+                <p id="setup-hint">La cámara detecta los post-its y actualiza la proyección automáticamente.</p>
               </div>
             </div>
             <div class="setup-actions">
-              <button id="scan-button" class="button button-primary" type="button" disabled>Escanear post-its <kbd>S</kbd></button>
-              <button id="calibrate-button" class="button button-secondary" type="button" disabled>Calibrar 4 esquinas <kbd>C</kbd></button>
+              <button id="scan-button" class="button button-primary" type="button" disabled>Actualizar post-its <kbd>S</kbd></button>
             </div>
             <div class="detected-notes" aria-label="Post-its detectados">
               <div><span class="note-dot" data-role="start"></span><span>Inicio</span><strong id="count-start">—</strong></div>
@@ -131,7 +130,7 @@
             <div class="section-heading compact">
               <div>
                 <h2 id="play-heading">Intento</h2>
-                <p id="attempt-hint">Escaneá y calibrá antes de lanzar.</p>
+                <p id="attempt-hint">Mostrá un inicio y una llegada a la cámara para lanzar.</p>
               </div>
               <span id="game-pill" class="game-pill">Sin tablero</span>
             </div>
@@ -157,7 +156,7 @@
             <span class="status-mark" aria-hidden="true"></span>
             <p id="status-message">Conectando la cámara…</p>
           </div>
-          <p class="footnote">Podés mover los post-its y volver a escanear entre intentos. Si movés la cámara o el proyector, calibrá otra vez.</p>
+          <p class="footnote">Los contornos siguen los post-its en vivo. Cada lanzamiento usa el recorrido detectado al comenzar el intento. Las esquinas son opcionales.</p>
         </aside>
       </div>
     </main>
