@@ -61,8 +61,12 @@ Si movés la cámara, la pared o el proyector, repetí la calibración.
 
 Un iPhone cerca de la Mac aparece como cámara (Cámara de continuidad), por
 ejemplo "Cámara de iPhone de Tobias". Elegilo en el selector **Cámara**
-debajo del video. El panel recuerda esa elección al recargar; sin elección
-guardada prefiere la C920. El tablero escaneado y la calibración quedan
+debajo del video. El panel recuerda esa elección al recargar. Sin elección
+guardada prefiere la C920, después el iPhone y recién después la cámara
+FaceTime de la Mac, que mira al operador y no a la pared. El iPhone suele
+aparecer unos segundos después de abrir la página. Si para entonces el panel
+ya arrancó con la FaceTime, pasa solo al iPhone, siempre que todavía no
+hayas escaneado ni elegido otra cámara a mano. El tablero escaneado y la calibración quedan
 asociados al nombre de la cámara: recargar la página con la misma cámara los
 conserva, y elegir otra los descarta porque cambia el encuadre. Si la cámara
 no entrega imágenes en 8 segundos, el panel lo dice y muestra **Reintentar

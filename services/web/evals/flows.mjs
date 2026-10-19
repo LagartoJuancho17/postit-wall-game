@@ -20,6 +20,11 @@
  *   scored by the real backend), the fixed-camera search picks a setting
  *   the scan accepts, without clipping, with white balance within 1000 K of
  *   the light and exposure within 2x of the ideal.
+ * - camera_choice: every order in which the FaceTime camera, the iPhone, its
+ *   Desk View and the C920 can appear (with or without an operator pick, a scan between
+ *   arrivals) ends on the wall-facing camera (C920, else iPhone) when nothing
+ *   was picked or scanned, never leaves a picked camera and never hops
+ *   after a scan (that would discard the board).
  * - projector_theme: in the dark and light projector backgrounds a scan
  *   still sees pure black, and every stroke keeps its contrast (4:1, the
  *   faint grid 2.5:1) against its background.
@@ -29,7 +34,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import {
-  bestTrial, contrastRatio, controlsFor, presetScore, PROJECTOR_THEMES, projectorBackground,
+  bestTrial, cameraToSwitchTo, contrastRatio, controlsFor, presetScore, PROJECTOR_THEMES, projectorBackground,
   roleLights, SCAN_BLACK, searchPlan, setupGuide, statusText,
 } from "../ui/ui-core.mjs";
 
@@ -156,6 +161,50 @@ function cameraCase() {
   return { case: "camera", passed: sameGrid && rooms.every((room) => room.passed), same_grid: sameGrid, rooms };
 }
 
+const DEVICES = {
+  facetime: { kind: "videoinput", deviceId: "f", label: "Cámara FaceTime HD" },
+  desk: { kind: "videoinput", deviceId: "d", label: "Cámara de Vista del Escritorio de iPhone de Tobias" },
+  phone: { kind: "videoinput", deviceId: "p", label: "Cámara de iPhone de Tobias" },
+  c920: { kind: "videoinput", deviceId: "b", label: "HD Pro Webcam C920 (046d:082d)" },
+};
+const WALL_ORDER = ["c920", "phone", "facetime", "desk"];
+
+function orders(items) {
+  if (items.length <= 1) return [items];
+  return items.flatMap((item, i) => orders([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
+}
+
+// Replays the page: the first device to arrive starts (startCamera prefers
+// the same way), every later arrival is a devicechange.
+function cameraChoiceCase() {
+  const problems = [];
+  let runs = 0;
+  for (const arrival of orders(Object.keys(DEVICES))) {
+    for (const picked of ["", ...Object.keys(DEVICES)]) {
+      for (const scanAfter of [null, 0, 1]) {
+        runs += 1;
+        const remembered = picked ? DEVICES[picked].label : "";
+        const present = [];
+        let active = "";
+        let scanned = false;
+        const run = `${arrival.join(">")} pick=${picked || "-"} scan=${scanAfter ?? "-"}`;
+        arrival.forEach((name, step) => {
+          present.push(DEVICES[name]);
+          const target = cameraToSwitchTo({ devices: present, activeId: active, remembered, scanned });
+          if (target && scanned) problems.push(`${run}: cambió de cámara después de escanear`);
+          if (target && picked && active === DEVICES[picked].deviceId) problems.push(`${run}: dejó la cámara elegida`);
+          if (target) active = target;
+          if (step === scanAfter) scanned = true;
+        });
+        const want = picked ? DEVICES[picked].deviceId
+          : DEVICES[WALL_ORDER.find((name) => present.includes(DEVICES[name]))].deviceId;
+        if (!scanned && active !== want) problems.push(`${run}: terminó en ${active}, esperaba ${want}`);
+      }
+    }
+  }
+  return { case: "camera_choice", passed: problems.length === 0, runs, problems };
+}
+
 function themeCase() {
   const problems = [];
   for (const [theme, colors] of Object.entries(PROJECTOR_THEMES)) {
@@ -179,6 +228,7 @@ export function runEval() {
     guidance,
     lightsCase(),
     cameraCase(),
+    cameraChoiceCase(),
     themeCase(),
   ];
   const passed = cases.filter((c) => c.passed).length;

@@ -14,6 +14,7 @@ import {
   normalizeAngle,
   pointInCanvas,
   preferredCamera,
+  cameraToSwitchTo,
   projectionSize,
   SETUP_STAGES,
   setupGuide,
@@ -184,6 +185,50 @@ test("preferredCamera picks the Logitech C920, else the first camera", () => {
   assert.equal(preferredCamera([mic, facetime]), facetime);
   assert.equal(preferredCamera([mic]), null);
   assert.equal(preferredCamera([]), null);
+});
+
+test("without a C920 the iPhone goes ahead of the Mac's FaceTime camera", () => {
+  const facetime = { kind: "videoinput", deviceId: "f", label: "Cámara FaceTime HD" };
+  const phone = { kind: "videoinput", deviceId: "p", label: "Cámara de iPhone de Tobias" };
+  const c920 = { kind: "videoinput", deviceId: "b", label: "HD Pro Webcam C920 (046d:082d)" };
+  assert.equal(preferredCamera([facetime, phone]), phone);
+  assert.equal(preferredCamera([facetime, phone, c920]), c920);
+  assert.equal(preferredCamera([facetime, phone], "Cámara FaceTime HD"), facetime);
+  assert.equal(preferredCamera([{ ...phone, label: "iPhone Continuity Camera" }, facetime]).deviceId, "p");
+  // Desk View is the same phone looking down at the desk, never the wall.
+  const desk = { kind: "videoinput", deviceId: "d", label: "Cámara de Vista del Escritorio de iPhone de Tobias" };
+  assert.equal(preferredCamera([facetime, desk, phone]), phone);
+  assert.equal(preferredCamera([facetime, desk]), facetime);
+  assert.equal(preferredCamera([desk, { ...facetime, label: "iPhone Desk View Camera" }]).deviceId, "d");
+  assert.equal(preferredCamera([facetime, desk], desk.label), desk);
+});
+
+test("cameraToSwitchTo hops to the iPhone that joins late, only before a scan", () => {
+  const facetime = { kind: "videoinput", deviceId: "f", label: "Cámara FaceTime HD" };
+  const phone = { kind: "videoinput", deviceId: "p", label: "Cámara de iPhone de Tobias" };
+  const c920 = { kind: "videoinput", deviceId: "b", label: "HD Pro Webcam C920 (046d:082d)" };
+  const mic = { kind: "audioinput", deviceId: "m", label: "Micrófono de iPhone" };
+  // The page fell back to FaceTime; the phone shows up afterwards.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone, mic], activeId: "f" }), "p");
+  // No camera running yet (it failed): the phone starts.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone], activeId: "" }), "p");
+  // Already on the preferred camera: stay.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone], activeId: "p" }), null);
+  // A scanned board belongs to the running camera: never hop.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone], activeId: "f", scanned: true }), null);
+  // Mid-scan or mid-start: never hop.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone], activeId: "f", busy: true }), null);
+  // The operator picked FaceTime: keep it.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone], activeId: "f", remembered: "Cámara FaceTime HD" }), null);
+  // The C920 plugged in while on the phone, nothing picked: the C920 wins.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone, c920], activeId: "p" }), "b");
+  // ...but not if the operator picked the phone.
+  assert.equal(cameraToSwitchTo({ devices: [facetime, phone, c920], activeId: "p", remembered: "Cámara de iPhone de Tobias" }), null);
+  // The phone leaves: stay on what runs (the stream ended; retry handles it).
+  assert.equal(cameraToSwitchTo({ devices: [facetime], activeId: "f" }), null);
+  assert.equal(cameraToSwitchTo({ devices: [] }), null);
+  const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
+  assert.match(operator, /addEventListener\?\.\("devicechange"[\s\S]*?cameraToSwitchTo\(/);
 });
 
 test("the camera the operator picked wins over the C920 after a reload", () => {

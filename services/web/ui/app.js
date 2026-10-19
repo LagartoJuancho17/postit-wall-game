@@ -7,6 +7,7 @@ import {
   boardCounts,
   cameraDiagnosis,
   cameraName,
+  cameraToSwitchTo,
   cameraSupport,
   containTransform,
   controlsFor,
@@ -153,8 +154,8 @@ function cameraError(error) {
   const messages = {
     NotAllowedError: "El navegador no tiene permiso de cámara. Permitilo en la barra de direcciones de Chrome y volvé a intentar.",
     PermissionDeniedError: "El navegador no tiene permiso de cámara. Permitilo en la barra de direcciones de Chrome y volvé a intentar.",
-    NotFoundError: "No se encontró ninguna cámara. Revisá la conexión USB de la Logitech C920.",
-    DevicesNotFoundError: "No se encontró ninguna cámara. Revisá la conexión USB de la Logitech C920.",
+    NotFoundError: "No se encontró ninguna cámara. Conectá la Logitech C920 por USB o acercá el iPhone a la Mac (Cámara de continuidad).",
+    DevicesNotFoundError: "No se encontró ninguna cámara. Conectá la Logitech C920 por USB o acercá el iPhone a la Mac (Cámara de continuidad).",
     NotReadableError: "La cámara está ocupada o macOS no puede abrirla. Cerrá otras apps que la usen y reintentá.",
     TrackStartError: "La cámara está ocupada o macOS no puede abrirla. Cerrá otras apps que la usen y reintentá.",
     SecurityError: "La cámara solo funciona en localhost o en una página segura.",
@@ -1011,8 +1012,23 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", drawCameraOverlay);
 window.addEventListener("beforeunload", stopCamera);
-navigator.mediaDevices?.addEventListener?.("devicechange", () => {
-  updateCameraList(stream?.getVideoTracks()[0]?.getSettings().deviceId).catch(() => {});
+// The iPhone joins the list a few seconds after it wakes up near the Mac,
+// often after the page already fell back to the FaceTime camera.
+navigator.mediaDevices?.addEventListener?.("devicechange", async () => {
+  const activeId = stream?.getVideoTracks()[0]?.getSettings().deviceId || "";
+  try {
+    await updateCameraList(activeId);
+    const target = cameraToSwitchTo({
+      devices: await navigator.mediaDevices.enumerateDevices(),
+      activeId,
+      remembered: rememberedCamera(),
+      scanned: Boolean(state?.camera_board || state?.board),
+      busy: cameraBusy || scanBusy,
+    });
+    if (target) await startCamera(target, false);
+  } catch {
+    // The selector still lists every camera; the operator can pick one.
+  }
 });
 
 // Over USB nothing tells the panel if the camera goes back to automatic

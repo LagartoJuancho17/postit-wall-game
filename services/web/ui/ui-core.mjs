@@ -1,12 +1,34 @@
 /** Pure view logic shared by the operator page and its tests. */
 
-/** The operator's last chosen camera (by label), else the Logitech C920, else the first. */
+/**
+ * The operator's last chosen camera (by label), else the Logitech C920, else
+ * the iPhone (Continuity Camera), else the first. The Mac's own FaceTime
+ * camera faces the operator, not the wall, so the phone goes ahead of it.
+ */
 export function preferredCamera(devices, remembered = "") {
   const cameras = devices.filter((device) => device.kind === "videoinput");
   const wanted = remembered?.trim();
   return cameras.find((device) => wanted && device.label?.trim() === wanted)
     ?? cameras.find((device) => /c920|logitech/i.test(device.label))
+    ?? cameras.find((device) => isPhoneCamera(device.label) && !isDeskView(device.label))
     ?? cameras[0] ?? null;
+}
+
+/**
+ * The camera to hop to when the list changes (the iPhone joins a few seconds
+ * after the page loads, or the C920 is plugged in), or null to stay. It only
+ * hops before a scan, since another camera discards the board and the
+ * calibration, and never away from the camera the operator picked.
+ */
+export function cameraToSwitchTo({ devices, activeId = "", remembered = "", scanned = false, busy = false }) {
+  if (scanned || busy) return null;
+  const cameras = devices.filter((device) => device.kind === "videoinput");
+  const active = cameras.find((device) => device.deviceId === activeId);
+  const wanted = remembered?.trim();
+  if (active && wanted && active.label?.trim() === wanted) return null;
+  const preferred = preferredCamera(cameras, remembered);
+  if (!preferred?.deviceId || preferred.deviceId === activeId) return null;
+  return preferred.deviceId;
 }
 
 export const CAMERA_KEY = "postit-wall:camera";
@@ -22,6 +44,14 @@ export function withTimeout(promise, ms, message) {
     timer = setTimeout(() => reject(Object.assign(new Error(message), { name: "TimeoutError" })), ms);
   });
   return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Continuity Camera's Desk View: the iPhone's ultra-wide cropped down onto the
+ * desk in front of the Mac. Same phone, but it never frames the wall.
+ */
+export function isDeskView(label) {
+  return /vista del escritorio|desk view/i.test(label ?? "");
 }
 
 /** An iPhone used as a webcam through Continuity Camera. */
@@ -96,7 +126,7 @@ export function controlsFor(state, cameraReady, popupReady) {
 export const SETUP_STAGES = ["camera", "projector", "scan", "play"];
 
 const SETUP_GUIDES = {
-  camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 debajo del video.",
+  camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 o el iPhone debajo del video.",
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
   scan: "Siguiente: escaneá con S. Tienen que verse 4 esquinas, 1 inicio y 1 llegada (los rebotes son opcionales): mirá las luces debajo del video.",
   calibrate: "Siguiente: calibrá las 4 esquinas con C.",
