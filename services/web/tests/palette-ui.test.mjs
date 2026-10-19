@@ -123,7 +123,7 @@ test("the panel wires pickers, eyedropper and live preview to the backend", () =
   assert.match(operator, /\$\("scan-button"\)\.disabled = scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.scan;/);
   assert.match(operator, /\$\("calibrate-button"\)\.disabled = scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.calibrate;/);
   assert.match(operator, /\$\("camera-tune"\)\.disabled = !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\|/);
-  assert.match(operator, /fetch\("\/api\/preview"/);
+  assert.match(operator, /api\("\/api\/preview"/);
   assert.match(operator, /if \(previewBusy \|\| scanBusy \|\| tuning \|\| document\.hidden/);
   assert.match(operator, /response\.status === 404\) \{\s*previewSupported = false;/);
 });
@@ -200,6 +200,6 @@ test("after a color change the panel says what the next preview lost", () => {
 
 test("the verdict comes from the first preview sent after the color was set", () => {
   assert.match(operator, /const before = freshPreview\(\);\s*applyState\(await action\("palette_set", \{ role, hex \}\)\);\s*pickCheck = \{ role, hex, before, at: performance\.now\(\) \};/);
-  assert.match(operator, /const sentAt = performance\.now\(\);\s*try \{\s*const response = await fetch\("\/api\/preview"/);
+  assert.match(operator, /const sentAt = performance\.now\(\);\s*try \{\s*const response = await api\("\/api\/preview"/);
   assert.match(operator, /if \(pickCheck && sentAt > pickCheck\.at\) \{\s*const message = pickVerdict\(pickCheck\.role, pickCheck\.hex, pickCheck\.before, preview\);\s*if \(message\) paletteError = \{ message, at: performance\.now\(\) \};\s*pickCheck = null;/);
 });

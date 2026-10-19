@@ -7,6 +7,9 @@ import {
   projectorTheme,
   THEME_KEY,
 } from "./ui-core.mjs";
+import { createApi } from "./api.mjs";
+
+const api = createApi("projector");
 
 const canvas = document.getElementById("projector-canvas");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -65,7 +68,7 @@ async function responseJSON(response) {
 }
 
 async function action(name, extra = {}) {
-  const response = await fetch("/api/action", {
+  const response = await api("/api/action", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
     body: JSON.stringify({ action: name, ...extra }),
@@ -322,7 +325,7 @@ window.addEventListener("storage", (event) => {
 
 window.addEventListener("pagehide", () => {
   channel.postMessage({ type: "closed" });
-  fetch("/api/action", {
+  api("/api/action", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
     body: JSON.stringify({ action: "projection_close" }),
@@ -334,7 +337,7 @@ async function tick() {
   if (tickBusy) return;
   tickBusy = true;
   try {
-    const response = await fetch("/api/tick", { cache: "no-store" });
+    const response = await api("/api/tick", { cache: "no-store" });
     applyState(await responseJSON(response));
   } catch (error) {
     showError(error);

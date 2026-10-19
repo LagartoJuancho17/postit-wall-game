@@ -80,7 +80,7 @@ test("operator keydown directly opens the same projector route as the button", (
 test("projector reports its size and acknowledges black before frame upload", () => {
   assert.match(projector, /action\(["']projection_open["'],\s*viewport\)/);
   assert.match(projector, /data\.type\s*===\s*["']blackout["'][\s\S]*?blackoutForced\s*=\s*true;[\s\S]*?requestAnimationFrame\([\s\S]*?blackout_ack/);
-  assert.match(operator, /action\(["']projection_black["']\)[\s\S]*?await waitForBlackout\(\)[\s\S]*?jpegFromVideo\(\)[\s\S]*?fetch\(["']\/api\/frame["']/);
+  assert.match(operator, /action\(["']projection_black["']\)[\s\S]*?await waitForBlackout\(\)[\s\S]*?jpegFromVideo\(\)[\s\S]*?api\(["']\/api\/frame["']/);
 });
 
 test("a different camera discards the old alignment; a reload with the same one keeps it", () => {

@@ -214,7 +214,7 @@ test("without Chrome controls the panel fixes the camera through the server over
   assert.match(operator, /\} else if \(!cameraSupport\(caps\)\.any\) \{\s*try \{\s*const usb = await usbCamera\(usbIds\);/);
   assert.doesNotMatch(operator, /usbCamera\(null\)|usbCamera\(\)/);
   assert.match(operator, /cameraDriver = "usb";/);
-  assert.match(operator, /if \(cameraDriver === "usb"\) \{[\s\S]*?fetch\("\/api\/camera", \{\s*method: "POST",[\s\S]*?settings: mergeSets\(sets\)/);
+  assert.match(operator, /if \(cameraDriver === "usb"\) \{[\s\S]*?api\("\/api\/camera", \{\s*method: "POST",[\s\S]*?settings: mergeSets\(sets\)/);
   // The search reads its starting point through the same route.
   assert.match(operator, /const start = await readCameraSettings\(track\);/);
   // A watchdog puts back a preset when the camera returns to automatic.

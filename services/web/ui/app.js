@@ -46,6 +46,9 @@ import {
   weakColor,
   withTimeout,
 } from "./ui-core.mjs";
+import { createApi } from "./api.mjs";
+
+const api = createApi("panel");
 
 const $ = (id) => document.getElementById(id);
 const video = $("camera-video");
@@ -137,7 +140,7 @@ async function responseJSON(response) {
 }
 
 async function action(name, extra = {}) {
-  const response = await fetch("/api/action", {
+  const response = await api("/api/action", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
     body: JSON.stringify({ action: name, ...extra }),
@@ -275,7 +278,7 @@ async function startCamera(deviceId = "", preferExternal = false) {
 // reloading with the same camera keeps the scan and the calibration.
 async function forgetBoardOfOtherCamera(label) {
   try {
-    const latest = state ?? await responseJSON(await fetch("/api/state", { cache: "no-store" }));
+    const latest = state ?? await responseJSON(await api("/api/state", { cache: "no-store" }));
     if (invalidatesBoard(latest?.camera?.label, label)) applyState(await action("camera_changed"));
   } catch (error) {
     notice(error.message, "error");
@@ -351,7 +354,7 @@ async function previewTick() {
   previewBusy = true;
   const sentAt = performance.now();
   try {
-    const response = await fetch("/api/preview", {
+    const response = await api("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
       body: await jpegFromVideo(.8),
@@ -440,7 +443,7 @@ async function readCapabilities(track) {
 // otherwise through the server, which talks to the camera over USB.
 async function usbCamera(ids) {
   const query = ids ? `?vendor=${ids.vendor}&product=${ids.product}` : "";
-  const response = await fetch(`/api/camera${query}`, { cache: "no-store" });
+  const response = await api(`/api/camera${query}`, { cache: "no-store" });
   if (response.status === 404) return { available: false, reason: "Reiniciá web.py para fijar la cámara por USB." };
   return responseJSON(response);
 }
@@ -454,7 +457,7 @@ async function applyCamera(track, settings) {
   const sets = lockConstraints(settings, cameraCaps);
   if (cameraDriver === "usb") {
     if (!sets.length) return readCameraSettings(track);
-    const response = await fetch("/api/camera", {
+    const response = await api("/api/camera", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
       body: JSON.stringify({ ...cameraUsb, settings: mergeSets(sets) }),
@@ -541,7 +544,7 @@ async function setupCameraLock() {
     return;
   }
   try {
-    applyState(await responseJSON(await fetch("/api/state", { cache: "no-store" })));
+    applyState(await responseJSON(await api("/api/state", { cache: "no-store" })));
   } catch {
     // The regular poll keeps trying.
   }
@@ -571,7 +574,7 @@ async function tryCamera(track, settings) {
   if (track !== currentTrack()) throw new Error("la cámara cambió durante la búsqueda");
   await applyCamera(track, settings);
   await sleep(settleMs(settings));
-  const response = await fetch("/api/preview", {
+  const response = await api("/api/preview", {
     method: "POST",
     headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
     body: await jpegFromVideo(.8),
@@ -700,7 +703,7 @@ async function scanBoard() {
     await new Promise((resolve) => setTimeout(resolve, scanSettleMs(cameraFixed)));
     notice("Leyendo los post-its…", "busy");
     const jpeg = await jpegFromVideo();
-    const response = await fetch("/api/frame", {
+    const response = await api("/api/frame", {
       method: "POST",
       headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
         "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || "") },
@@ -1056,7 +1059,7 @@ async function pollState() {
   if (polling) return;
   polling = true;
   try {
-    const response = await fetch("/api/state", { cache: "no-store" });
+    const response = await api("/api/state", { cache: "no-store" });
     const next = await responseJSON(response);
     if (connectionNotice && localNotice === connectionNotice) clearNotice();
     connectionNotice = null;
