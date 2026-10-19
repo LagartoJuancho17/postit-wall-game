@@ -61,20 +61,14 @@ test("all four note roles use their selected color and the live white rim", () =
   assert.equal(ctx.shadowBlur, 0);
 });
 
-test("light background keeps selected fills and gives every rim at least 4:1 contrast", () => {
+test("light projection keeps the live white rims without adding black borders", () => {
   const ctx = canvas();
   drawLiveDetection(ctx, preview, palette, 640, 480, "light");
   assert.deepEqual(ctx.draws.filter((draw) => draw.kind === "fill").map((draw) => draw.color), colors);
-  const luminance = (hex) => {
-    const channels = hex.slice(1).match(/../g).map((value) => parseInt(value, 16) / 255)
-      .map((value) => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
-    return channels.reduce((sum, value, i) => sum + value * [.2126, .7152, .0722][i], 0);
-  };
-  const background = luminance("#f3f2ec");
-  for (const stroke of ctx.draws.filter((draw) => draw.kind === "stroke")) {
-    const rim = luminance(stroke.color);
-    const contrast = (Math.max(background, rim) + .05) / (Math.min(background, rim) + .05);
-    assert.ok(contrast >= 4, `light rim ${stroke.color} has ${contrast.toFixed(2)}:1 contrast`);
+  const strokes = ctx.draws.filter((draw) => draw.kind === "stroke");
+  assert.equal(strokes.length, roles.length);
+  for (const stroke of strokes) {
+    assert.equal(stroke.color, "#ffffff", "the projector must keep the camera's white rim");
     assert.equal(stroke.alpha, 1);
   }
 });

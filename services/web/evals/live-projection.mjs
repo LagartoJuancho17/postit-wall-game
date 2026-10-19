@@ -25,14 +25,6 @@ function recordingCanvas() {
 }
 
 const results = [];
-function contrastRatio(a, b) {
-  const luminance = (hex) => hex.slice(1).match(/../g)
-    .map((value) => parseInt(value, 16) / 255)
-    .map((value) => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
-    .reduce((sum, value, i) => sum + value * [.2126, .7152, .0722][i], 0);
-  const [x, y] = [luminance(a), luminance(b)];
-  return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
-}
 function check(name, body) {
   try { body(); results.push({ name, passed: true }); }
   catch (error) { results.push({ name, passed: false, error: error.message }); }
@@ -48,8 +40,7 @@ for (const [name, { preview, palette }] of Object.entries(samples)) {
       assert.equal(ctx.draws.length, notes.length, "every detected note gets exactly one halo");
       assert.equal(ctx.strokes.length, notes.length, "every note has one visible rim");
       for (const stroke of ctx.strokes) {
-        assert.ok(contrastRatio(stroke.color, theme === "light" ? "#f3f2ec" : "#000000") >= 4,
-          "rim remains visible against the projector background");
+        assert.equal(stroke.color, "#ffffff", "no black borders in either projector theme");
       }
       for (let i = 0; i < notes.length; i++) {
         const { role, shape } = notes[i];

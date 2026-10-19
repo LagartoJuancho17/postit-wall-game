@@ -36,7 +36,7 @@ export function drawLiveDetection(ctx, preview, palette, width, height, theme = 
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.lineWidth = 2;
-      ctx.strokeStyle = theme === "light" ? projectorColors(theme).ball : "#ffffff";
+      ctx.strokeStyle = "#ffffff";
       ctx.stroke();
       ctx.restore();
     }

@@ -183,7 +183,8 @@ tolerancia.
 
 `PROJECTOR_THEMES` en `ui-core.mjs` define el fondo y la pelota de los temas
 `dark` (negro) y `light` (blanco suave `#f3f2ec`). Los halos de los post-its
-usan la paleta elegida en ambos temas, igual que la vista en vivo.
+usan la paleta elegida y bordes blancos en ambos temas, igual que la vista
+en vivo. La proyección clara no agrega rebordes negros.
 
 `projectorBackground(theme, forcedBlack)` devuelve `#000000` mientras la
 ventana está forzada a negro por el gotero o una búsqueda de cámara,

@@ -157,7 +157,7 @@ try {
   const markerEdge = (await state()).live_detection.roles.marker.notes[0].points;
   const edgeMidpoint = { x: (markerEdge[0].x + markerEdge[1].x) / 2, y: (markerEdge[0].y + markerEdge[1].y) / 2 };
   const lightRim = await pixelAtCamera(projector, edgeMidpoint);
-  assert.ok(lightRim.slice(0, 3).every((n) => n < 180), "light projector passes theme to the contrasting dark rim");
+  assert.ok(lightRim.slice(0, 3).every((n) => n > 200), "light projector keeps white rims without black borders");
   await projector.screenshot({ path: join(output, "projector-light.png") });
   await projector.keyboard.press("f");
   await until("projector F changes both views back to dark", async () =>
