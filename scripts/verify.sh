@@ -25,3 +25,10 @@ node services/web/evals/live-projection.mjs
 "$PY" -m services.web.evals.eyedropper
 # Closed loop: the real backend, a simulated camera and projector (~1 min).
 "$PY" -m services.simulation.feedback_eval --jobs 4 >/dev/null
+# Real Chrome (needs Chrome and Playwright; POSTIT_PLAYWRIGHT_MODULE points at
+# playwright/index.mjs when it is not installed here): the two windows with a
+# synthetic camera, and the closed loop on both backends (~4 min).
+if [ "${POSTIT_BROWSER:-0}" = 1 ]; then
+  node tests/live-browser.mjs >/dev/null
+  node tests/closed-loop-browser.mjs
+fi

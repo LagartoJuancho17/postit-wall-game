@@ -5,6 +5,7 @@
   "description": "Juego de pared con post-its",
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-static.mjs",
     "dev": "sh -c 'if [ -x .venv/bin/python ]; then exec .venv/bin/python web.py \"$@\"; else exec python3 web.py \"$@\"; fi' --",
     "start": "sh -c 'if [ -x .venv/bin/python ]; then exec .venv/bin/python web.py \"$@\"; else exec python3 web.py \"$@\"; fi' --",
     "test": "node --test services/web/tests/*.test.mjs",

@@ -35,10 +35,18 @@
 
   draw();
   setInterval(draw, 100); // captureStream only emits frames when the canvas paints
-  const stream = canvas.captureStream(15);
   const label = "Cámara simulada (pared de prueba)";
   const device = { kind: "videoinput", deviceId: "fake-wall", groupId: "fake", label, toJSON() { return this; } };
-  navigator.mediaDevices.getUserMedia = async () => stream;
+  // A fresh stream per request: the panel stops the tracks it no longer
+  // uses, and a stopped track never delivers frames again (it showed 2 × 2).
+  navigator.mediaDevices.getUserMedia = async () => {
+    const stream = canvas.captureStream(15);
+    const track = stream.getVideoTracks()[0];
+    Object.defineProperty(track, "label", { value: label });
+    const settings = track.getSettings.bind(track);
+    track.getSettings = () => ({ ...settings(), deviceId: device.deviceId });
+    return stream;
+  };
   navigator.mediaDevices.enumerateDevices = async () => [device];
   window.postitFakeCamera = {
     wall(next) {

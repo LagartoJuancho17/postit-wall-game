@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { containTransform, offsetConvexPolygon } from "../services/web/ui/ui-core.mjs";
-import { NEUTRAL, RIM_OFFSET_PX } from "../services/web/ui/live-view.mjs";
+import { FILL_INSET_PX, NEUTRAL, RIM_OFFSET_PX } from "../services/web/ui/live-view.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = process.env.POSTIT_BROWSER_OUTPUT || "/tmp/postit-live-browser";
@@ -91,11 +91,16 @@ function alignmentLayout(width, height) {
  * Runs in the projector page: the aligned scene with its fill allowed, drawn
  * by Chrome on a detached canvas, then every lit pixel classified by its
  * distance to the nearest mapped paper (max over the paper's edge lines,
- * positive outward). Fill: 5 px inside; rim: 3 px stroke centered 6 px out.
- * Pixel centers within 0.71 px of a boundary can be partly covered, so the
- * bands keep that margin: inside <= -4, gap (-4, 2.5), rim [2.5, 7.5].
+ * positive outward). Fill: `inset` px inside; rim: a 3 px stroke centered
+ * `rimOffset` px out (live-view.mjs). Pixel centers within 0.71 px of a
+ * boundary can be partly covered, so every band keeps that margin: inside
+ * <= -inset + 0.75, the dark gap up to the rim's inner edge - 0.75, and
+ * nothing beyond its outer edge + 0.75.
  */
-async function alignedRaster({ H, preview, palette, theme, width, height }) {
+async function alignedRaster({ H, preview, palette, theme, width, height, rimOffset, inset }) {
+  const insideEdge = -inset + 0.75;
+  const rimInner = rimOffset - 1.5 - 0.75;
+  const rimOuter = rimOffset + 1.5 + 0.75;
   const live = await import("/live-view.mjs");
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -138,10 +143,10 @@ async function alignedRaster({ H, preview, palette, theme, width, height }) {
       stats.lit += 1;
       const d = Math.min(...papers.map((poly) => edgeDistance(poly, px + 0.5, py + 0.5)));
       const hued = spread(color) > HUE_SPREAD;
-      if (d <= -4) stats.huedInside += hued ? 1 : 0;
+      if (d <= insideEdge) stats.huedInside += hued ? 1 : 0;
       else if (hued) stats.huedOutside += 1;
-      if (d > -4 && d < 2.5) stats.litInGap += 1;
-      if (d > 7.5) stats.litOutside += 1;
+      if (d > insideEdge && d < rimInner) stats.litInGap += 1;
+      if (d > rimOuter) stats.litOutside += 1;
     }
   }
   const rim = theme === "light" ? [0x2b, 0x2f, 0x2e] : [255, 255, 255];
@@ -153,7 +158,7 @@ async function alignedRaster({ H, preview, palette, theme, width, height }) {
       const b = poly[(i + 1) % poly.length];
       const length = Math.hypot(b.x - a.x, b.y - a.y);
       const out = { x: sign * (b.y - a.y) / length, y: -sign * (b.x - a.x) / length };
-      const at = pixel((a.x + b.x) / 2 + 5 * out.x, (a.y + b.y) / 2 + 5 * out.y);
+      const at = pixel((a.x + b.x) / 2 + rimOffset * out.x, (a.y + b.y) / 2 + rimOffset * out.y);
       stats.edges += 1;
       if (at.every((value, c) => Math.abs(value - rim[c]) <= 10)) stats.rimMidpoints += 1;
     });
@@ -384,10 +389,10 @@ try {
   const palette = (await state()).palette;
   for (const theme of ["dark", "light"]) {
     const raster = await projector.evaluate(alignedRaster, {
-      H: SKEW, preview: detection, palette, theme, width: 1280, height: 800,
+      H: SKEW, preview: detection, palette, theme, width: 1280, height: 800, rimOffset: RIM_OFFSET_PX, inset: FILL_INSET_PX,
     });
     assert.ok(raster.notes >= 4 && raster.fills === raster.notes, `${theme}: every real note filled once checked (${JSON.stringify(raster)})`);
-    assert.equal(raster.huedOutside, 0, `${theme}: no role hue outside the paper's 5 px inset`);
+    assert.equal(raster.huedOutside, 0, `${theme}: no role hue outside the paper's ${FILL_INSET_PX} px inset`);
     assert.equal(raster.litInGap, 0, `${theme}: nothing lit between the fill and the rim`);
     assert.equal(raster.litOutside, 0, `${theme}: nothing lit beyond the rims`);
     assert.ok(raster.rimMidpoints === raster.edges, `${theme}: rim color 6 px outside every edge midpoint`);

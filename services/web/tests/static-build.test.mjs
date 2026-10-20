@@ -19,7 +19,10 @@ test("static CLI respects an absolute output path and packages both live views",
       assert.ok(manifest.files[name]?.bytes > 0, name);
     }
     for (const name of ["index.html", "projector.html"]) {
-      assert.match(readFileSync(join(output, name), "utf8"), /data-backend="browser"/);
+      const html = readFileSync(join(output, name), "utf8");
+      assert.match(html, /data-backend="browser"/);
+      // A static host answers /favicon.ico with 404, a console error on every load.
+      assert.match(html, /<link rel="icon" href="data:image\/svg\+xml,/, `${name} declares its icon inline`);
     }
     // Every relative import in the package resolves to a packaged file: a
     // module missing from build-static.mjs would only fail in the browser.

@@ -1,0 +1,18 @@
+# Allow-list: the static build needs only these. Everything else (the
+# Python services, main.py, requirements.txt, runs/, .venv/) stays local,
+# so Vercel never mistakes the repo for a Python app.
+/*
+!/vercel.json
+!/package.json
+!/package-lock.json
+!/scripts
+/scripts/*
+!/scripts/build-static.mjs
+!/services
+/services/*
+!/services/web
+/services/web/*
+!/services/web/ui
+!/services/browser
+/services/browser/*
+!/services/browser/*.mjs
