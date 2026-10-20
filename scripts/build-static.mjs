@@ -21,8 +21,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const OPENCV_VERSION = "4.12.0";
 const UI_FILES = ["index.html", "projector.html", "app.css", "app.js", "projector.js", "ui-core.mjs", "live-view.mjs", "api.mjs", "align-run.mjs"];
-const BROWSER_FILES = ["backend.mjs", "calibration.mjs", "controller.mjs", "numbers.mjs", "palette.mjs",
-  "physics.mjs", "vision.mjs"];
+const BROWSER_FILES = ["alignment.mjs", "backend.mjs", "calibration.mjs", "controller.mjs", "numbers.mjs",
+  "palette.mjs", "physics.mjs", "vision.mjs"];
 
 function markBrowser(html, name) {
   const tag = /<html\b([^>]*)>/;

@@ -4,13 +4,14 @@
  * same thing. Each function returns `{ name, problems }` per case.
  */
 
-import { estimateHomography, transformPoint } from "../calibration.mjs";
-import { GameController, RequestError } from "../controller.mjs";
+import { alignmentCode, alignmentLayout, decodeAlignment, patternDots } from "../alignment.mjs";
+import { estimateHomography, offsetConvexPolygon, transformPoint } from "../calibration.mjs";
+import { GameController, placeProbes, RequestError } from "../controller.mjs";
 import { pyRound } from "../numbers.mjs";
-import { buildPalette, hsvFromHex, paletteJson, ruleFromHex } from "../palette.mjs";
+import { buildPalette, DEFAULT_PALETTE, hsvFromHex, paletteJson, ruleFromHex } from "../palette.mjs";
 import { launch, step } from "../physics.mjs";
-import { detectBoard, findNotes, frameQuality } from "../vision.mjs";
-import { boardFromGolden, boardToGolden, diff, frameMat, points } from "./golden.mjs";
+import { detectBoard, findNotes, frameQuality, grayFeature, refineQuad } from "../vision.mjs";
+import { boardFromGolden, boardToGolden, diff, frameMat, grayFrame, grayMat, points } from "./golden.mjs";
 
 export function attempt(fn) {
   try {
@@ -91,6 +92,68 @@ export function visionVerdicts(cv, golden, c) {
   }
 }
 
+/** Contract 2.4: refined corners within 1e-9 px of Python's, outcomes exact. */
+export function refineVerdicts(golden) {
+  const features = new Map();
+  return golden.refine.map((c, i) => {
+    if (!features.has(c.feature)) features.set(c.feature, grayFeature(grayFrame(golden, c.feature)));
+    const [quad, outcome] = refineQuad(features.get(c.feature), c.coarse);
+    return verdict(`refine ${i} ${c.feature}`, { quad, outcome }, { quad: c.quad, outcome: c.outcome }, 1e-9);
+  });
+}
+
+/** Contract 2.5: notes with and without our own rim's bridge. */
+export function bridgeVerdicts(cv, golden) {
+  return golden.bridge.flatMap((c) => {
+    const frame = frameMat(cv, golden, c.frame);
+    const bridge = grayMat(cv, golden, c.bridge);
+    try {
+      return [
+        verdict(`${c.frame} with bridge`, attempt(() => polygons(findNotes(cv, frame, DEFAULT_PALETTE, bridge))),
+          expected(c.with)),
+        verdict(`${c.frame} without`, attempt(() => polygons(findNotes(cv, frame, DEFAULT_PALETTE))),
+          expected(c.without)),
+      ];
+    } finally {
+      frame.delete();
+      bridge.delete();
+    }
+  });
+}
+
+export function offsetVerdicts(golden) {
+  return golden.offset.map((c, i) => {
+    const got = offsetConvexPolygon(c.points.map(([x, y]) => ({ x, y })), c.distance);
+    return verdict(`offset ${i}`, got && got.map((p) => [p.x, p.y]), c.result, 1e-9);
+  });
+}
+
+/** Contract 1.1-1.3: codes, layouts, pattern frames and full decodes. */
+export function alignmentVerdicts(cv, golden) {
+  const { codes, layouts, decodes } = golden.alignment;
+  const out = [verdict("codes", codes.map((_, id) => alignmentCode(id)), codes, 0)];
+  for (const c of layouts) {
+    const layout = alignmentLayout(...c.size);
+    out.push(verdict(`layout ${c.size.join("x")}`, layout, c.layout, 0));
+    const dots = Object.fromEntries(Object.keys(c.dots).map((key) => {
+      const [bit, inverse] = key.split(":").map(Number);
+      return [key, patternDots(layout, bit, inverse === 1)];
+    }));
+    out.push(verdict(`pattern dots ${c.size.join("x")}`, dots, c.dots, 0));
+  }
+  for (const c of decodes) {
+    const frames = new Map(Object.entries(c.frames).map(([key, name]) => [key, grayFrame(golden, name)]));
+    const result = decodeAlignment(cv, frames, alignmentLayout(...c.size));
+    out.push(verdict(`decode ${c.case}`, result, c.result, 1e-6));
+  }
+  return out;
+}
+
+export function probeVerdicts(golden) {
+  return golden.probes.map((c, i) => verdict(`probes ${i} ${c.frame} ${c.projector.join("x")}`,
+    placeProbes(c.detection, c.matrix, c.projector, c.camera), c.probes, 1e-9));
+}
+
 /** The eyedropper of services/browser/parity/export.py `_sample`. */
 const FRAME_CENTERS = { start: [180, 350], goal: [780, 350], bumper: [430, 235], marker: [90, 90] };
 export function sampleHex(frame, role) {
@@ -129,6 +192,9 @@ export function replay(cv, golden, steps) {
         if (entry.op === "action") value = controller.action(entry.payload);
         else if (entry.op === "scan") value = controller.scan(frame(entry.frame), entry.camera);
         else if (entry.op === "preview") value = controller.preview(frame(entry.frame), entry.camera ?? null);
+        else if (entry.op === "align_frame") {
+          value = controller.alignFrame(frame(entry.frame), entry.align, entry.camera ?? null);
+        } else if (entry.op === "check_frame") value = controller.checkFrame(frame(entry.frame), entry.kind);
         else if (entry.op === "tick") {
           now += entry.advance;
           value = controller.tick();

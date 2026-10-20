@@ -11,7 +11,7 @@
  * every 25 live previews log their detection time (`preview_timing`).
  */
 
-import { GameController, HTTP, RequestError } from "./controller.mjs";
+import { alignKey, GameController, HTTP, RequestError } from "./controller.mjs";
 
 export const OPENCV_URL = "/vendor/opencv-4.12.0.js";
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -139,7 +139,8 @@ export class BrowserBackend {
       if (headers.get("x-postit-client") !== "1") {
         throw new RequestError("Falta la cabecera X-Postit-Client: 1.", HTTP.FORBIDDEN);
       }
-      if (!["/api/action", "/api/frame", "/api/preview", "/api/camera"].includes(path)) {
+      if (!["/api/action", "/api/frame", "/api/preview", "/api/camera", "/api/align_frame",
+        "/api/check_frame"].includes(path)) {
         throw new RequestError("Ruta desconocida.", HTTP.NOT_FOUND);
       }
       const contentType = (headers.get("content-type") || "").split(";", 1)[0].trim();
@@ -147,9 +148,10 @@ export class BrowserBackend {
       if (contentType !== expected) {
         throw new RequestError(`Content-Type esperado: ${expected}.`, HTTP.UNSUPPORTED_MEDIA_TYPE);
       }
-      if (path === "/api/frame" || path === "/api/preview") {
+      if (path === "/api/frame" || path === "/api/preview" || path === "/api/align_frame" ||
+          path === "/api/check_frame") {
         const label = headers.get("x-postit-camera");
-        return this.frameRoute(path, init.body, label ? decodeURIComponent(label) : null)
+        return this.frameRoute(path, init.body, label ? decodeURIComponent(label) : null, headers)
           .catch((error) => this.error(error));
       }
       const text = typeof init.body === "string" ? init.body : "";
@@ -172,8 +174,11 @@ export class BrowserBackend {
     }
   }
 
-  async frameRoute(path, blob, label) {
-    this.controller.scanLabel(label);
+  async frameRoute(path, blob, label, headers = new Map()) {
+    // Header checks first, as the Python handler does before decoding.
+    if (path === "/api/check_frame") this.controller.checkKind(headers.get("x-postit-check") ?? null);
+    else this.controller.scanLabel(label);
+    if (path === "/api/align_frame") alignKey(headers.get("x-postit-align") ?? null);
     let cv;
     try {
       cv = await this.cvReady;
@@ -183,6 +188,12 @@ export class BrowserBackend {
     const frame = await this.decode(cv, blob);
     try {
       if (path === "/api/frame") return { status: 200, body: this.controller.scan(frame, label) };
+      if (path === "/api/align_frame") {
+        return { status: 200, body: this.controller.alignFrame(frame, headers.get("x-postit-align") ?? null, label) };
+      }
+      if (path === "/api/check_frame") {
+        return { status: 200, body: this.controller.checkFrame(frame, headers.get("x-postit-check") ?? null) };
+      }
       const started = this.now();
       const body = this.controller.preview(frame, label);
       this.recordTiming(this.now() - started, frame);

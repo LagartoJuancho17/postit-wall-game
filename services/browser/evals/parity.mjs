@@ -1,5 +1,8 @@
-/** Evaluate every synthetic frame and state transition against Python, threshold 100%. */
-import { controllerVerdicts, homographyVerdicts, paletteVerdicts, physicsVerdicts, visionVerdicts } from "../tests/cases.mjs";
+/** Evaluate every synthetic frame, refinement, alignment decode and state transition against Python, threshold 100%. */
+import {
+  alignmentVerdicts, bridgeVerdicts, controllerVerdicts, homographyVerdicts, offsetVerdicts, paletteVerdicts,
+  physicsVerdicts, probeVerdicts, refineVerdicts, visionVerdicts,
+} from "../tests/cases.mjs";
 import { loadCv, loadGolden } from "../tests/golden.mjs";
 
 const golden = loadGolden();
@@ -9,6 +12,11 @@ const cases = [
   ...homographyVerdicts(cv, golden),
   ...physicsVerdicts(golden),
   ...golden.vision.flatMap((frame) => visionVerdicts(cv, golden, frame)),
+  ...refineVerdicts(golden),
+  ...bridgeVerdicts(cv, golden),
+  ...offsetVerdicts(golden),
+  ...alignmentVerdicts(cv, golden),
+  ...probeVerdicts(golden),
   ...Object.keys(golden.controller).flatMap((name) => controllerVerdicts(cv, golden, name)),
 ];
 const failures = cases.filter((result) => result.problems.length);

@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  controllerVerdicts, homographyVerdicts, paletteVerdicts, physicsVerdicts, visionVerdicts,
+  alignmentVerdicts, bridgeVerdicts, controllerVerdicts, homographyVerdicts, offsetVerdicts, paletteVerdicts,
+  physicsVerdicts, probeVerdicts, refineVerdicts, visionVerdicts,
 } from "./cases.mjs";
 import { loadCv, loadGolden } from "./golden.mjs";
 
@@ -45,6 +46,32 @@ test("note detection, board and frame quality match Python (gate frames)", () =>
   const cases = golden.vision.filter((c) => GATE_FRAMES.has(`${c.frame}/${c.palette}`));
   assert.equal(cases.length, GATE_FRAMES.size, "every gate frame exists in the golden set");
   allAgree(cases.flatMap((c) => visionVerdicts(cv, golden, c)));
+});
+
+test("sub-pixel refinement matches Python corner for corner, every outcome (contract 2.4)", () => {
+  const outcomes = new Set(golden.refine.map((c) => c.outcome));
+  for (const outcome of ["refined", "few_points", "moved", "short_side"]) assert.ok(outcomes.has(outcome), outcome);
+  allAgree(refineVerdicts(golden));
+});
+
+test("our own rim joins a cut paper and never moves an outline, as in Python (contract 2.5)", () => {
+  allAgree(bridgeVerdicts(cv, golden));
+});
+
+test("polygon offsets match contracts/geometry.py", () => {
+  allAgree(offsetVerdicts(golden));
+});
+
+test("alignment codes, layouts, patterns and decodes match Python, every failure code", () => {
+  const codes = new Set(golden.alignment.decodes.map((c) => c.result.code));
+  for (const code of [null, "few_points", "inconsistent", "inaccurate", "low_coverage", "frames"]) {
+    assert.ok(codes.has(code), `no golden decode ends in ${code}`);
+  }
+  allAgree(alignmentVerdicts(cv, golden));
+});
+
+test("overlay-check probes land where Python puts them", () => {
+  allAgree(probeVerdicts(golden));
 });
 
 for (const name of Object.keys(golden.controller)) {

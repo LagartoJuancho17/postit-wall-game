@@ -241,8 +241,10 @@ def _refine_pass(feature: np.ndarray, start: list[tuple[float, float]],
     # while the fitted lines are right, so the reach scales with the note:
     # max(4 px, 15% of the shortest coarse side). Parity: squared distances
     # against reach * reach; side lengths with sqrt(dx*dx + dy*dy).
-    shortest = min(math.sqrt((reference[(i + 1) % 4][0] - reference[i][0]) ** 2
-                             + (reference[(i + 1) % 4][1] - reference[i][1]) ** 2) for i in range(4))
+    shortest = math.inf
+    for index in range(4):
+        (ax, ay), (bx, by) = reference[index], reference[(index + 1) % 4]
+        shortest = min(shortest, math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)))
     reach = max(REFINE_MAX_MOVE_PX, REFINE_MAX_MOVE_SHARE * shortest)
     for (qx, qy), (px, py) in zip(refined, reference):
         if (qx - px) * (qx - px) + (qy - py) * (qy - py) > reach * reach:

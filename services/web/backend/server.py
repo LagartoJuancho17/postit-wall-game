@@ -206,6 +206,15 @@ def _normalized_inverse(matrix) -> np.ndarray:
     return inverse / inverse[2, 2]
 
 
+def _mean(values: list[float]) -> float:
+    """Left-to-right mean: Python 3.12's sum() of floats is compensated, a JS
+    loop is not, and the browser backend must get the same bits."""
+    total = 0.0
+    for value in values:
+        total += value
+    return total / len(values)
+
+
 def _map(point: Point, matrix) -> Point | None:
     try:
         return transform_point(point, matrix)
@@ -626,11 +635,12 @@ class GameController:
                 if any(point is None for point in back):
                     continue
                 # Camera px per projector px around this note.
-                cx = sum(p.x for p in camera) / len(camera)
-                cy = sum(p.y for p in camera) / len(camera)
+                cx, cy = _mean([p.x for p in camera]), _mean([p.y for p in camera])
                 there = _map(Point(cx + 1.0, cy), to_projector)
                 here = _map(Point(cx, cy), to_projector)
-                stretch = math.hypot(there.x - here.x, there.y - here.y) if there and here else 1.0
+                # sqrt(dx*dx + dy*dy), not hypot: the JS backend gets the same bits.
+                stretch = (math.sqrt((there.x - here.x) * (there.x - here.x) + (there.y - here.y) * (there.y - here.y))
+                           if there and here else 1.0)
                 thickness = max(3, math.ceil((RIM_WIDTH_PX + 2 * RIM_MARGIN_PX) / max(stretch, 1e-6)))
                 stroke = np.array([[math.floor(p.x + 0.5), math.floor(p.y + 0.5)] for p in back], np.int32)
                 cv2.polylines(footprint, [stroke], True, 255, thickness, cv2.LINE_8)
@@ -992,8 +1002,8 @@ class GameController:
         for role in ROLES:
             kept[role] = []
             for polygon in overlay[role]:
-                cx = sum(point.x for point in polygon.points) / len(polygon.points)
-                cy = sum(point.y for point in polygon.points) / len(polygon.points)
+                cx = _mean([point.x for point in polygon.points])
+                cy = _mean([point.y for point in polygon.points])
                 mapped = _map(Point(cx, cy), self._align_matrix)
                 hits = [probe_role for probe_role, box in boxes if mapped is not None and
                         box[0] <= mapped.x <= box[2] and box[1] <= mapped.y <= box[3]]

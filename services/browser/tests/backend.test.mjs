@@ -136,6 +136,56 @@ test("a bad camera label is refused before the frame is decoded; decoder errors 
   assert.equal(tiny.body.error, "La imagen de la webcam es demasiado pequeña");
 });
 
+test("alignment and the overlay check work through the routes, as with the Python server", async () => {
+  const { act, frame, events } = setup();
+  const label = "Cámara de iPhone de Tobias";
+  const camera = { ...JPEG, "X-Postit-Camera": encodeURIComponent(label) };
+  assert.equal((await frame("/api/preview", "wall_430", camera)).status, 200);
+  act("projection_open", { width: 1280, height: 800 });
+  const started = act("align_start").body.alignment;
+  assert.equal(started.status, "collecting");
+  for (const { bit, inverse } of started.layout.frames) {
+    const answer = await frame("/api/align_frame", `cam_align_${bit}_${inverse ? 1 : 0}`,
+      { ...camera, "X-Postit-Align": `${bit}:${inverse ? 1 : 0}` });
+    assert.equal(answer.status, 200, answer.body.error);
+  }
+  const solved = act("align_solve").body;
+  assert.equal(solved.alignment.status, "ready", solved.alignment.detail);
+  assert.ok(solved.alignment.quality.holdout_p95_px < 1.0, JSON.stringify(solved.alignment.quality));
+  assert.equal(solved.game.space, "projector");
+  assert.deepEqual([solved.game.width, solved.game.height], [1280, 800]);
+  for (const [kind, name] of [["neutral", "wall_430"], ["overlay", "probe_hit"]]) {
+    const answer = await frame("/api/check_frame", name, { ...JPEG, "X-Postit-Check": kind });
+    assert.equal(answer.status, 200, answer.body.error);
+  }
+  const checked = act("check_solve").body.alignment.overlay;
+  assert.equal(checked.status, "fill_off");
+  assert.equal(checked.fill, false);
+  assert.match(checked.detail, /post-it de llegada; se proyectan solo bordes/);
+  const names = events.map((e) => e.event);
+  for (const event of ["alignment_started", "alignment_ready", "overlay_check"]) assert.ok(names.includes(event), event);
+});
+
+test("alignment headers are refused before the frame is decoded", async () => {
+  const { act, frame, decoded } = setup();
+  await frame("/api/preview", "wall_430");
+  act("projection_open", { width: 1280, height: 800 });
+  act("align_start");
+  decoded.length = 0;
+  for (const header of [undefined, "7:0", "0:2", "00:1"]) {
+    const headers = header === undefined ? JPEG : { ...JPEG, "X-Postit-Align": header };
+    const answer = await frame("/api/align_frame", "cam_dark", headers);
+    assert.equal(answer.status, 400);
+    assert.equal(answer.body.error, "Cabecera X-Postit-Align inválida.");
+  }
+  const kind = await frame("/api/check_frame", "wall_430", { ...JPEG, "X-Postit-Check": "sideways" });
+  assert.equal(kind.body.error, "Cabecera X-Postit-Check inválida.");
+  assert.deepEqual(decoded, []);
+  const early = await frame("/api/check_frame", "wall_430", { ...JPEG, "X-Postit-Check": "neutral" });
+  assert.equal(early.status, 409);
+  assert.equal(early.body.error, "Primero alineá el proyector.");
+});
+
 test("a failed OpenCV download is reported, not hung on", async () => {
   const controller = new GameController({ storage: null });
   const backend = new BrowserBackend({ controller, cv: Promise.reject(new Error("No se pudo descargar OpenCV.")),

@@ -150,3 +150,43 @@ export function transformBoard(board, matrix) {
     markers: board.markers.map(mapped),
   };
 }
+
+/**
+ * contracts/geometry.py `offset_convex_polygon`: every edge moved `distance`
+ * along its normal (positive outward, either winding), vertices at the
+ * miter intersections, no miter limit. Null when degenerate. Same operation
+ * order as Python; the length is Math.sqrt where Python writes `** 0.5`
+ * (both correctly rounded square roots).
+ */
+export function offsetConvexPolygon(points, distance) {
+  const pts = points.map((p) => [Number(p.x), Number(p.y)]);
+  const count = pts.length;
+  if (count < 3) return null;
+  let area2 = 0.0;
+  for (let index = 0; index < count; index += 1) {
+    const [x1, y1] = pts[index];
+    const [x2, y2] = pts[(index + 1) % count];
+    area2 += x1 * y2 - x2 * y1;
+  }
+  if (Math.abs(area2) < 1e-9) return null;
+  const sign = area2 > 0 ? 1.0 : -1.0;
+  const lines = [];
+  for (let index = 0; index < count; index += 1) {
+    const [x, y] = pts[index];
+    const dx = pts[(index + 1) % count][0] - x;
+    const dy = pts[(index + 1) % count][1] - y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return null;
+    lines.push([x + sign * dy / length * distance, y - sign * dx / length * distance, dx, dy]);
+  }
+  const result = [];
+  for (let index = 0; index < count; index += 1) {
+    const [x, y, dx, dy] = lines[index];
+    const [px, py, pdx, pdy] = lines[(index + count - 1) % count];
+    const denominator = pdx * dy - pdy * dx;
+    if (denominator === 0) return null;
+    const along = ((x - px) * dy - (y - py) * dx) / denominator;
+    result.push({ x: px + along * pdx, y: py + along * pdy });
+  }
+  return result;
+}

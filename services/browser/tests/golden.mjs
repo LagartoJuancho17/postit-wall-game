@@ -46,6 +46,21 @@ export function frameMat(cv, golden, name) {
   return mat;
 }
 
+/** A golden single-channel image as `{ width, height, data }` (raster order). */
+export function grayFrame(golden, name) {
+  const meta = golden.frames[name];
+  const data = new Uint8Array(gunzipSync(readFileSync(new URL(`frames/${name}.gray.gz`, GOLDEN))));
+  return { width: meta.width, height: meta.height, data };
+}
+
+/** A golden single-channel image as a CV_8UC1 cv.Mat; the caller deletes it. */
+export function grayMat(cv, golden, name) {
+  const { width, height, data } = grayFrame(golden, name);
+  const mat = new cv.Mat(height, width, cv.CV_8UC1);
+  mat.data.set(data);
+  return mat;
+}
+
 export const points = (list) => list.map(([x, y]) => ({ x, y }));
 
 export function boardFromGolden(data) {

@@ -8,6 +8,7 @@ if [ ! -x "$PY" ]; then
 fi
 "$PY" -m unittest discover -s . -p 'test_*.py' -q
 "$PY" -m services.calibration.evals.synthetic
+"$PY" -m services.calibration.evals.coded
 "$PY" -m services.vision.eval
 "$PY" -m services.physics.evals.scenarios
 "$PY" -m services.runtime.eval
@@ -22,3 +23,5 @@ node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs
 node services/web/evals/live-projection.mjs
 "$PY" -m services.web.evals.eyedropper
+# Closed loop: the real backend, a simulated camera and projector (~1 min).
+"$PY" -m services.simulation.feedback_eval --jobs 4 >/dev/null

@@ -5,6 +5,12 @@
  * input is a BGR `cv.Mat` (CV_8UC3), like the decoded JPEG Python receives;
  * the returned coordinates are camera pixels. Every OpenCV call is the one
  * the Python code makes, with the same arguments, on the same 4.12 release.
+ *
+ * Contract docs/alignment-and-color.md 2.4 (sub-pixel outlines, two passes)
+ * and 2.5 (our own rims join a paper's pieces, never move an outline) are
+ * mirrored operation by operation; the Python module's "parity" comments
+ * name every choice that decides the last bit (plain left-to-right sums,
+ * sqrt of dx*dx + dy*dy, the 7th smallest of 13 values as the median).
  */
 
 import { quadrilateralCenter } from "./calibration.mjs";
@@ -72,47 +78,309 @@ function polygonFromContour(cv, contour) {
   return cv.RotatedRect.points(cv.minAreaRect(contour)).map((p) => ({ x: p.x, y: p.y }));
 }
 
-function findCandidates(cv, hsv, rule) {
+// ------------------------------------------- sub-pixel outline refinement
+
+const REFINE_MIN_SIDE_PX = 8.0;      // step 2
+const REFINE_MIN_CONTRAST = 20.0;    // step 4
+const REFINE_MIN_POINTS = 3;         // step 6
+const REFINE_MIN_CROSS = 0.2;        // step 7
+const REFINE_MAX_MOVE_PX = 4.0;      // step 8
+const REFINE_MAX_MOVE_SHARE = 0.15;  // step 8
+const REFINE_AREA_RATIO = [0.85, 1.25];  // step 8
+// Step 4: s = -6.0, -5.75, ..., 6.0 (exact binary fractions).
+const REFINE_OFFSETS = Float64Array.from({ length: 49 }, (_, index) => -6.0 + 0.25 * index);
+const FIRST_PAIR = 12;  // pairs (i, i + 1) with s_i >= -3.0 and s_(i+1) <= 3.0
+const LAST_PAIR = 35;
+export const REFINE_OUTCOMES = Object.freeze(["refined", "short_side", "few_points", "parallel", "moved", "concave", "area"]);
+
+/**
+ * F, the feature image: `{ width, height, at(x, y) }` with integer pixel
+ * coordinates. `saturationFeature` reads channel 1 of an HSV Mat in place;
+ * tests pass a plain grayscale image.
+ */
+export function saturationFeature(hsv) {
+  const data = hsv.data;
+  const width = hsv.cols;
+  return { width, height: hsv.rows, at: (x, y) => data[(y * width + x) * 3 + 1] };
+}
+
+export function grayFeature({ width, height, data }) {
+  return { width, height, at: (x, y) => data[y * width + x] };
+}
+
+/** Step 1: F at real coordinates; clamp, floor, lerp in x then y. */
+function bilinear(feature, x, y) {
+  const cx = Math.min(Math.max(x, 0.0), feature.width - 1.0);
+  const cy = Math.min(Math.max(y, 0.0), feature.height - 1.0);
+  const x0 = Math.floor(cx);
+  const y0 = Math.floor(cy);
+  const fx = cx - x0;
+  const fy = cy - y0;
+  const x1 = Math.min(x0 + 1, feature.width - 1);
+  const y1 = Math.min(y0 + 1, feature.height - 1);
+  const f00 = feature.at(x0, y0);
+  const f01 = feature.at(x1, y0);
+  const f10 = feature.at(x0, y1);
+  const f11 = feature.at(x1, y1);
+  const top = f00 + fx * (f01 - f00);
+  const bottom = f10 + fx * (f11 - f10);
+  return top + fy * (bottom - top);
+}
+
+/** numpy.median of 13 values: the 7th smallest. */
+function median13(values) {
+  return Float64Array.from(values).sort()[6];
+}
+
+function twiceSignedArea(points) {
+  let total = 0.0;
+  for (let index = 0; index < 4; index += 1) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[(index + 1) % 4];
+    total += x1 * y2 - x2 * y1;
+  }
+  return total;
+}
+
+/** Steps 3-5 for the side from `a` to `b`: its sub-pixel edge points. */
+function edgePoints(feature, a, b, centroid) {
+  const [ax, ay] = a;
+  const [bx, by] = b;
+  const [cx, cy] = centroid;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  let nx = dy / length;
+  let ny = -dx / length;
+  if (nx * (ax - cx) + ny * (ay - cy) < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const count = Math.min(Math.max(pyRound(length / 4), 5), 25);
+  const xs = [];
+  const ys = [];
+  for (let j = 0; j < count; j += 1) {
+    const t = 0.15 + 0.7 * j / (count - 1);
+    const px = ax + t * dx;
+    const py = ay + t * dy;
+    const profile = new Float64Array(49);
+    for (let i = 0; i < 49; i += 1) {
+      profile[i] = bilinear(feature, px + REFINE_OFFSETS[i] * nx, py + REFINE_OFFSETS[i] * ny);
+    }
+    const inside = median13(profile.subarray(0, 13));
+    const outside = median13(profile.subarray(36, 49));
+    if (!(inside - outside >= REFINE_MIN_CONTRAST)) continue;
+    const level = (inside + outside) / 2;
+    let index = -1;
+    for (let i = FIRST_PAIR; i <= LAST_PAIR; i += 1) {
+      if (profile[i] > level && level >= profile[i + 1]) {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) continue;
+    const fi = profile[index];
+    const fnext = profile[index + 1];
+    const offset = REFINE_OFFSETS[index] + 0.25 * (fi - level) / (fi - fnext);
+    xs.push(px + offset * nx);
+    ys.push(py + offset * ny);
+  }
+  return [xs, ys];
+}
+
+/** Step 6: total least squares line (mean x, mean y, cos theta, sin theta). */
+function fitLine(xs, ys) {
+  const count = xs.length;
+  let sumX = 0.0;
+  for (const x of xs) sumX += x;
+  let sumY = 0.0;
+  for (const y of ys) sumY += y;
+  const meanX = sumX / count;
+  const meanY = sumY / count;
+  let sxx = 0.0;
+  for (const x of xs) sxx += (x - meanX) * (x - meanX);
+  let syy = 0.0;
+  for (const y of ys) syy += (y - meanY) * (y - meanY);
+  let sxy = 0.0;
+  for (let i = 0; i < count; i += 1) sxy += (xs[i] - meanX) * (ys[i] - meanY);
+  const theta = 0.5 * Math.atan2(2 * (sxy / count), sxx / count - syy / count);
+  return [meanX, meanY, Math.cos(theta), Math.sin(theta)];
+}
+
+/** Steps 2-8 sampling along `start`, step 8 judged against `reference` (P). */
+function refinePass(feature, start, reference) {
+  const centroid = [(start[0][0] + start[1][0] + start[2][0] + start[3][0]) / 4,
+    (start[0][1] + start[1][1] + start[2][1] + start[3][1]) / 4];
+  for (let index = 0; index < 4; index += 1) {
+    const [ax, ay] = start[index];
+    const [bx, by] = start[(index + 1) % 4];
+    if (Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) < REFINE_MIN_SIDE_PX) return [null, "short_side"];
+  }
+  const lines = [];
+  for (let index = 0; index < 4; index += 1) {
+    const [xs, ys] = edgePoints(feature, start[index], start[(index + 1) % 4], centroid);
+    if (xs.length < REFINE_MIN_POINTS) return [null, "few_points"];
+    lines.push(fitLine(xs, ys));
+  }
+  const refined = [];
+  for (let index = 0; index < 4; index += 1) {
+    const [m1x, m1y, d1x, d1y] = lines[(index + 3) % 4];
+    const [m2x, m2y, d2x, d2y] = lines[index];
+    const cross = d1x * d2y - d1y * d2x;
+    if (Math.abs(cross) < REFINE_MIN_CROSS) return [null, "parallel"];
+    const u = ((m2x - m1x) * d2y - (m2y - m1y) * d2x) / cross;
+    refined.push([m1x + u * d1x, m1y + u * d1y]);
+  }
+  let shortest = Infinity;
+  for (let index = 0; index < 4; index += 1) {
+    const [ax, ay] = reference[index];
+    const [bx, by] = reference[(index + 1) % 4];
+    shortest = Math.min(shortest, Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)));
+  }
+  const reach = Math.max(REFINE_MAX_MOVE_PX, REFINE_MAX_MOVE_SHARE * shortest);
+  for (let index = 0; index < 4; index += 1) {
+    const [qx, qy] = refined[index];
+    const [px, py] = reference[index];
+    if ((qx - px) * (qx - px) + (qy - py) * (qy - py) > reach * reach) return [null, "moved"];
+  }
+  const coarseArea = twiceSignedArea(reference);
+  for (let index = 0; index < 4; index += 1) {
+    const [x0, y0] = refined[(index + 3) % 4];
+    const [x1, y1] = refined[index];
+    const [x2, y2] = refined[(index + 1) % 4];
+    const turn = (x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1);
+    if (!((coarseArea > 0 && turn > 0) || (coarseArea < 0 && turn < 0))) return [null, "concave"];
+  }
+  const ratio = twiceSignedArea(refined) / coarseArea;
+  if (!(ratio >= REFINE_AREA_RATIO[0] && ratio <= REFINE_AREA_RATIO[1])) return [null, "area"];
+  return [refined, "refined"];
+}
+
+/**
+ * Contract 2.4 steps 2-9: the coarse quad `corners` ([x, y] × 4, pixel
+ * centers on integers) moved onto the sub-pixel edges of `feature`.
+ * Returns `[quad, outcome]`: the refined corners and "refined", or the
+ * coarse corners and why they were kept.
+ */
+export function refineQuad(feature, corners) {
+  if (!Array.isArray(corners) || corners.length !== 4) throw new Error("corners must be 4 points");
+  const points = corners.map(([x, y]) => [Number(x), Number(y)]);
+  if (points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) throw new Error("corners must be finite");
+  const [first, outcome] = refinePass(feature, points, points);
+  if (first === null) return [points, outcome];
+  // Step 9: once more along the first result, still judged against P.
+  const [second] = refinePass(feature, first, points);
+  return [second ?? first, "refined"];
+}
+
+// ------------------------------------------------------------ candidates
+
+const BRIDGE_KERNEL_SIZE = 5;
+
+function morphology(cv, source, operation) {
+  const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+  const out = new cv.Mat();
+  try {
+    cv.morphologyEx(source, out, operation, kernel, new cv.Point(-1, -1), 1, cv.BORDER_CONSTANT,
+      cv.morphologyDefaultBorderValue());
+    return out;
+  } finally {
+    kernel.delete();
+  }
+}
+
+/** close(open(mask, 3x3), 3x3): the usual cleanup. */
+function clean(cv, mask) {
+  const opened = morphology(cv, mask, cv.MORPH_OPEN);
+  try {
+    return morphology(cv, opened, cv.MORPH_CLOSE);
+  } finally {
+    opened.delete();
+  }
+}
+
+/**
+ * Contract 2.5: contours our own rim splits become one, their convex hull;
+ * a contour alone in its component of `joined` is kept as is. Takes the
+ * contour Mats (ownership) and returns Mats the caller deletes.
+ */
+function joined(cv, contours, raw, bridge) {
+  const kernel = cv.Mat.ones(BRIDGE_KERNEL_SIZE, BRIDGE_KERNEL_SIZE, cv.CV_8U);
+  const grown = new cv.Mat();
+  const labels = new cv.Mat();
+  let union = null;
+  let cleaned = null;
+  try {
+    cv.dilate(raw, grown, kernel, new cv.Point(-1, -1), 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+    cv.bitwise_and(grown, bridge, grown);
+    union = new cv.Mat();
+    cv.bitwise_or(raw, grown, union);
+    cleaned = clean(cv, union);
+    cv.connectedComponents(cleaned, labels, 8, cv.CV_32S);
+    const label = labels.data32S;
+    const width = raw.cols;
+    const groups = new Map();
+    for (const contour of contours) {
+      const key = label[contour.data32S[1] * width + contour.data32S[0]];
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(contour);
+    }
+    const out = [];
+    for (const members of groups.values()) {
+      if (members.length === 1) {
+        out.push(members[0]);
+        continue;
+      }
+      const flat = members.flatMap((member) => Array.from(member.data32S));
+      const stacked = cv.matFromArray(flat.length / 2, 1, cv.CV_32SC2, flat);
+      const hull = new cv.Mat();
+      cv.convexHull(stacked, hull, false, true);
+      stacked.delete();
+      members.forEach((member) => member.delete());
+      out.push(hull);
+    }
+    return out;
+  } finally {
+    [kernel, grown, labels, union, cleaned].forEach((mat) => mat?.delete());
+  }
+}
+
+function findCandidates(cv, hsv, rule, feature, bridge = null) {
   const width = hsv.cols;
   const height = hsv.rows;
-  const binary = mask(cv, hsv, rule);
-  const opened = new cv.Mat();
-  const closed = new cv.Mat();
-  const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-  const contours = new cv.MatVector();
+  const raw = mask(cv, hsv, rule);
+  const closed = clean(cv, raw);
+  const vector = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  const anchor = new cv.Point(-1, -1);
-  const border = cv.morphologyDefaultBorderValue();
+  let contours = [];
   try {
-    cv.morphologyEx(binary, opened, cv.MORPH_OPEN, kernel, anchor, 1, cv.BORDER_CONSTANT, border);
-    cv.morphologyEx(opened, closed, cv.MORPH_CLOSE, kernel, anchor, 1, cv.BORDER_CONSTANT, border);
     // At 1080p the floor is roughly 250 px². This rejects isolated hot
     // pixels without depending on a particular webcam resolution.
     const minArea = Math.max(80.0, width * height * 0.00012);
     // A note is a small part of a wall that also shows the whole field. A
     // bigger blob is a tinted wall or a large object, never a post-it.
     const maxArea = width * height * MAX_NOTE_FRACTION;
-    cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(closed, vector, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    for (let i = 0; i < vector.size(); i += 1) contours.push(vector.get(i));
+    if (bridge !== null) contours = joined(cv, contours, raw, bridge);
     const candidates = [];
-    for (let i = 0; i < contours.size(); i += 1) {
-      const contour = contours.get(i);
-      try {
-        const area = cv.contourArea(contour, false);
-        if (area < minArea || area > maxArea) continue;
-        const { size } = cv.minAreaRect(contour);
-        const shortSide = Math.min(size.width, size.height);
-        const longSide = Math.max(size.width, size.height);
-        if (shortSide < 5 || longSide / shortSide > 4.0) continue;
-        if (area / (size.width * size.height) < 0.55) continue;
-        const polygon = polygonFromContour(cv, contour);
-        candidates.push({ polygon, center: quadrilateralCenter(polygon), area });
-      } finally {
-        contour.delete();
-      }
+    for (const contour of contours) {
+      const area = cv.contourArea(contour, false);
+      if (area < minArea || area > maxArea) continue;
+      const { size } = cv.minAreaRect(contour);
+      const shortSide = Math.min(size.width, size.height);
+      const longSide = Math.max(size.width, size.height);
+      if (shortSide < 5 || longSide / shortSide > 4.0) continue;
+      if (area / (size.width * size.height) < 0.55) continue;
+      const coarse = polygonFromContour(cv, contour);
+      const [quad, outcome] = refineQuad(feature, coarse.map((p) => [p.x, p.y]));
+      const polygon = outcome === "refined" ? quad.map(([x, y]) => ({ x, y })) : coarse;
+      candidates.push({ polygon, center: quadrilateralCenter(polygon), area, coarse, outcome });
     }
     return candidates.sort((a, b) => b.area - a.area);
   } finally {
-    [binary, opened, closed, kernel, contours, hierarchy].forEach((mat) => mat.delete());
+    contours.forEach((contour) => contour.delete());
+    [raw, closed, vector, hierarchy].forEach((mat) => mat.delete());
   }
 }
 
@@ -151,8 +419,12 @@ function toHsv(cv, frame) {
   return hsv;
 }
 
-function candidatesByRole(cv, hsv, palette) {
-  return Object.fromEntries(ROLES.map((role) => [role, findCandidates(cv, hsv, palette[role])]));
+function candidatesByRole(cv, hsv, palette, bridge = null) {
+  if (bridge !== null && (bridge.rows !== hsv.rows || bridge.cols !== hsv.cols || bridge.type() !== cv.CV_8UC1)) {
+    throw new Error("bridge debe ser una máscara uint8 del tamaño del cuadro");
+  }
+  const feature = saturationFeature(hsv);
+  return Object.fromEntries(ROLES.map((role) => [role, findCandidates(cv, hsv, palette[role], feature, bridge)]));
 }
 
 /** Live web boards use camera pixels; corner colors are optional. */
@@ -186,12 +458,16 @@ function boardFrom(cv, found) {
   };
 }
 
-/** Every note of each role that passes the shape filters, largest first. */
-export function findNotes(cv, frame, palette) {
+/**
+ * Every note of each role that passes the shape filters, largest first.
+ * `bridge` (CV_8UC1, 255 where the projector draws its own rims) joins the
+ * pieces of a paper one of those rims cuts (contract 2.5).
+ */
+export function findNotes(cv, frame, palette, bridge = null) {
   checkFrame(cv, frame);
   const hsv = toHsv(cv, frame);
   try {
-    const found = candidatesByRole(cv, hsv, palette);
+    const found = candidatesByRole(cv, hsv, palette, bridge);
     return Object.fromEntries(ROLES.map((role) => [role, found[role].map((c) => c.polygon)]));
   } finally {
     hsv.delete();
@@ -295,21 +571,27 @@ function quality(cv, frame, hsv, notes, ready) {
  * One pass for the live preview: the notes (no count required), whether a
  * scan of this frame would succeed, and the exposure, color and focus
  * measures. Same results as find_notes + frame_quality, one HSV conversion.
+ * `bridge` as in findNotes; `ready` as in Python's frame_quality: a caller
+ * that already knows (the live controller decides it from its own board)
+ * passes it and skips the 4-marker board check.
  */
-export function inspectFrame(cv, frame, palette) {
+export function inspectFrame(cv, frame, palette, { bridge = null, ready = null } = {}) {
   checkFrame(cv, frame);
   const hsv = toHsv(cv, frame);
   try {
-    const found = candidatesByRole(cv, hsv, palette);
+    const found = candidatesByRole(cv, hsv, palette, bridge);
     const notes = Object.fromEntries(ROLES.map((role) => [role, found[role].map((c) => c.polygon)]));
-    let ready = true;
-    try {
-      boardFrom(cv, found);
-    } catch (error) {
-      if (!(error instanceof Error)) throw error;
-      ready = false;
+    let verdict = ready;
+    if (verdict === null) {
+      verdict = true;
+      try {
+        boardFrom(cv, found);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        verdict = false;
+      }
     }
-    return { notes, quality: quality(cv, frame, hsv, notes, ready) };
+    return { notes, quality: quality(cv, frame, hsv, notes, verdict) };
   } finally {
     hsv.delete();
   }
