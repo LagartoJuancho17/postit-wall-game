@@ -23,6 +23,6 @@ cat "$POSTIT_GATE_DIR/web" "$POSTIT_GATE_DIR/core"
 if [ "$POSTIT_GATE_STATUS" -ne 0 ]; then
   cat "$POSTIT_GATE_DIR/node"
 else
-  rg '^ℹ (tests|pass|fail)' "$POSTIT_GATE_DIR/node" || true
+  grep -E '^ℹ (tests|pass|fail)' "$POSTIT_GATE_DIR/node" || true
 fi
 exit "$POSTIT_GATE_STATUS"

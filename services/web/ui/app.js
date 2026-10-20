@@ -293,7 +293,7 @@ function openProjector() {
     return;
   }
   // It must stay directly in the click/keydown call stack for popup permission.
-  const opened = window.open(PROJECTOR_URL, "postit-wall-projector", "popup=yes,width=1280,height=720");
+  const opened = window.open(PROJECTOR_URL, "_blank");
   if (!opened) {
     notice("Chrome bloqueó la ventana. Permití las ventanas emergentes de localhost y usá el botón «Abrir proyección».", "error");
     return;

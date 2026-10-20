@@ -30,13 +30,20 @@ test("whatever the theme, a scan or camera search sees pure black", () => {
   assert.equal(projectorBackground("dark", false), "#000000");
 });
 
-test("the dark theme keeps the original projector colors", () => {
+// docs/alignment-and-color.md 2.1 deliberately changed one thing: the projected
+// result texts share the ball's neutral color. The old won green (#77ec8f) was
+// the bumper's hue, and the camera re-detects projected role hues as post-its.
+test("the dark theme keeps the original projector colors, except the neutral result texts", () => {
   assert.deepEqual(PROJECTOR_THEMES.dark, {
     background: "#000000", playfield: "#56dbe0", grid: "#36696a", start: "#ffdf53",
-    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#77ec8f", lost: "#ff8680",
+    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#f6fbfc", lost: "#f6fbfc",
     cross: "#ffffff", crossRing: "#f877d5",
   });
   assert.deepEqual(Object.keys(PROJECTOR_THEMES.light), Object.keys(PROJECTOR_THEMES.dark));
+  for (const colors of Object.values(PROJECTOR_THEMES)) {
+    assert.equal(colors.won, colors.ball, "won is neutral");
+    assert.equal(colors.lost, colors.ball, "lost is neutral");
+  }
 });
 
 test("every stroke stands out from its background in both themes", () => {

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 
 import { isProjectorShortcut, SETUP_STAGES } from "../ui/ui-core.mjs";
 
@@ -98,4 +99,19 @@ test("a different camera discards the old alignment; a reload with the same one 
 test("the server-unreachable notice clears once the server answers again", () => {
   assert.match(operator, /if \(connectionNotice && localNotice === connectionNotice\) clearNotice\(\);/);
   assert.match(operator, /notice\(`No se puede conectar con el servidor local: \$\{error\.message\}`, "error"\);\s*connectionNotice = localNotice;/);
+});
+
+// Embedded browsers can hide windows explicitly requested as native popups.
+test("the projector opens using the browser's normal tab/window handling", () => {
+  const calls = [];
+  const source = operator.slice(operator.indexOf("function openProjector()"), operator.indexOf("function waitForBlackout()"));
+  const context = vm.createContext({ window: { open: (...args) => {
+    calls.push(args);
+    return { closed: false, focus() {} };
+  } }, notice() {} });
+  vm.runInContext(`const PROJECTOR_URL = "/projector"; let popup = null, popupReady = false; ${source}; openProjector();`, context);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "/projector");
+  assert.equal(calls[0][1], "_blank", "open a visible page instead of reusing an inaccessible named popup");
+  assert.equal(calls[0].length, 2, "do not request popup=yes or a fixed-size native window");
 });

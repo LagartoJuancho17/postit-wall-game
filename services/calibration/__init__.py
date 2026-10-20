@@ -176,9 +176,26 @@ def detect_projected_dot(dark_bgr: np.ndarray, lit_bgr: np.ndarray) -> Point:
     return components[0][2]
 
 
+# Imported last: the coded dot alignment builds on estimate_homography and
+# reprojection_errors defined above.
+from services.calibration.coded import (  # noqa: E402
+    ALIGNMENT_FRAMES,
+    ALIGNMENT_REASONS,
+    alignment_code,
+    alignment_layout,
+    decode_alignment,
+    pattern_dots,
+)
+
 __all__ = [
+    "ALIGNMENT_FRAMES",
+    "ALIGNMENT_REASONS",
+    "alignment_code",
+    "alignment_layout",
+    "decode_alignment",
     "detect_projected_dot",
     "estimate_homography",
+    "pattern_dots",
     "reprojection_errors",
     "transform_board",
     "transform_point",

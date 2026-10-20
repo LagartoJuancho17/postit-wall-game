@@ -7,7 +7,7 @@ import {
   withTimeout,
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
-import { drawLiveDetection, drawLiveGame, LIVE_MAX_AGE_MS } from "./live-view.mjs";
+import { drawAlignmentPattern, drawProjectorScene, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
 
 const api = createApi("projector");
 
@@ -21,6 +21,11 @@ const stateLabel = document.getElementById("projector-state");
 let state = null;
 let stateReceivedAt = 0;
 let blackoutForced = false;
+// What the panel asked this window to show, ahead of state.projection.mode
+// (docs/alignment-and-color.md 3): {kind: "pattern", layout, frame},
+// {kind: "neutral"} or {kind: "overlay_test"}. The channel handlers set it
+// and {type: "resume"} clears it; null draws from the state.
+let localScene = null;
 let tickBusy = false;
 let resizeTimer = null;
 let viewport = projectionSize(window);
@@ -96,16 +101,28 @@ function drawBackground() {
 
 function draw() {
   drawBackground();
-  const mode = blackoutForced ? "black" : (state?.projection?.mode || "live");
-  document.body.dataset.mode = mode;
+  const scene = projectorScene({ blackout: blackoutForced, local: localScene, mode: state?.projection?.mode });
+  document.body.dataset.mode = scene.mode;
   document.body.dataset.theme = theme;
   document.body.dataset.blackout = String(blackoutForced);
-  stateLabel.textContent = mode === "black" ? "" : "Post-it Wall · Detección en vivo";
-  if (mode === "black") return;
-  const live = performance.now() - stateReceivedAt < LIVE_MAX_AGE_MS ? state?.live_detection : null;
-  drawLiveDetection(ctx, live, state?.palette, viewport.width, viewport.height, theme);
-  drawLiveGame(ctx, state?.game, state?.camera?.width, state?.camera?.height,
-    viewport.width, viewport.height, theme);
+  stateLabel.textContent = scene.kind === "live" ? "Post-it Wall · Detección en vivo" : "";
+  if (scene.kind === "black") {
+    // "black" and "align" before its first pattern: pure black whatever the theme.
+    ctx.fillStyle = projectorBackground(theme, true);
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
+    return;
+  }
+  if (scene.kind === "pattern") {
+    drawAlignmentPattern(ctx, scene.layout, scene.frame, viewport.width, viewport.height);
+    return;
+  }
+  if (scene.kind === "neutral") return; // the theme background only: colors are sampled under play light
+  // A stale reply never reaches the renderer, and the renderer refuses stale notes too.
+  const fresh = performance.now() - stateReceivedAt < LIVE_MAX_AGE_MS;
+  drawProjectorScene(ctx, {
+    state, preview: fresh ? state?.live_detection : null, palette: state?.palette,
+    theme, width: viewport.width, height: viewport.height, fresh, forceFill: scene.forceFill,
+  });
 }
 
 async function syncProjectionSize() {
