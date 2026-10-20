@@ -167,12 +167,13 @@ test("the panel fixes the camera on every start and saves what the search finds"
   assert.match(operator, /return \{ settings, preview: result, score: presetScore\(result\) \};/);
   assert.match(operator, /advanced: sets \}/);
   // The scan and the regular preview wait while the search runs.
-  assert.match(operator, /async function scanBoard\(\) \{\s*if \(scanBusy \|\| tuning \|\| pickBusy\) return;/);
-  // The projector goes black for the search, like for a scan, and comes back.
+  assert.match(operator, /async function scanBoard\(\) \{\s*if \(scanBusy \|\| tuning \|\| pickBusy \|\| aligning\) return;/);
+  // The search runs under the play light (theme background only, contract
+  // 2.2), so the chosen exposure fits what live detection sees, and comes back.
   // Owned as soon as the server went black: a lost acknowledgement still restores it.
-  assert.match(operator, /applyState\(await action\("projection_black"\)\);\s*black = true;\s*await waitForBlackout\(\);\s*\}\s*const start = await readCameraSettings/);
+  assert.match(operator, /applyState\(await action\("projection_neutral"\)\);\s*black = true;\s*await waitForNeutral\(\);\s*\}\s*const start = await readCameraSettings/);
   // No search while the eyedropper holds the projector black.
-  assert.match(operator, /if \(!track \|\| tuning \|\| scanBusy \|\| pickBusy \|\| !cameraCaps/);
+  assert.match(operator, /if \(!track \|\| tuning \|\| scanBusy \|\| pickBusy \|\| aligning \|\| !cameraCaps/);
   assert.match(operator, /if \(black\) \{\s*await restoreProjection\(\);\s*channel\.postMessage\(\{ type: "resume" \}\);/);
   // A failed scan also brings the projection back instead of leaving it black.
   assert.match(operator, /notice\(error\.message, "error"\);\s*await restoreProjection\(\);/);

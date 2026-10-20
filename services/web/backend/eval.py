@@ -14,8 +14,14 @@ import cv2
 import numpy as np
 
 from contracts import quadrilateral_center
+from services.calibration import ALIGNMENT_FRAMES
+from services.calibration.tests.render import homography_from_quad, project_to_camera, render_pattern
 
 from .server import GameController, RequestError
+
+# The projector (1280x720) lands keystoned inside the 960x720 synthetic camera.
+ALIGN_PROJECTOR = (1280, 720)
+ALIGN_QUAD = ((40, 30), (925, 18), (940, 705), (22, 690))
 
 
 def _color(hue: int) -> tuple[int, int, int]:
@@ -90,6 +96,67 @@ def recolored_wall() -> dict[str, object]:
             "preview_picked_colors": after, "attempt_result": state["game"]["status"]}
 
 
+def _boards_close(first: dict, second: dict, tolerance: float) -> bool:
+    """Same board JSON up to `tolerance` px on every coordinate."""
+    def flat(board):
+        polygons = [board["playfield"], board["start"], board["goal"], *board["bumpers"], *board["markers"]]
+        return [(point["x"], point["y"]) for polygon in polygons for point in polygon["points"]]
+    a, b = flat(first), flat(second)
+    return len(a) == len(b) and all(abs(x1 - x2) <= tolerance and abs(y1 - y2) <= tolerance
+                                    for (x1, y1), (x2, y2) in zip(a, b))
+
+
+def aligned_flow() -> dict[str, object]:
+    """Align with coded patterns, then play in projector px (contract 1.5).
+
+    Pass: the mapped board lands within 1.5 projector px of where the true
+    homography puts the camera notes, and an attempt aimed at the goal wins.
+    """
+    now = [0.0]
+    game = GameController(log_path=None, clock=lambda: now[0])
+    game.action({"action": "projection_open", "width": ALIGN_PROJECTOR[0], "height": ALIGN_PROJECTOR[1]})
+    frame = _frame(430, markers=False)
+    game.preview_jpeg(frame, "Cámara sintética")
+    layout = game.action({"action": "align_start"})["alignment"]["layout"]
+    G = homography_from_quad(ALIGN_PROJECTOR, ALIGN_QUAD)
+    rng = np.random.default_rng(5)
+    for bit, inverse in ALIGNMENT_FRAMES:
+        image = project_to_camera(render_pattern(layout, bit, inverse), G, (960, 720),
+                                  gain=0.8 * (1 + rng.uniform(-0.2, 0.2)), blur=1.0,
+                                  noise=1.5, jpeg=85, rng=rng)
+        okay, encoded = cv2.imencode(".jpg", image)
+        assert okay
+        game.align_frame_jpeg(encoded.tobytes(), f"{bit}:{int(inverse)}", "Cámara sintética")
+    solved = game.action({"action": "align_solve"})
+    assert solved["alignment"]["status"] == "ready", solved["alignment"]["detail"]
+    game.preview_jpeg(frame, "Cámara sintética")
+    state = game.snapshot()
+    assert state["game"]["space"] == "projector" and state["phase"] == "ready", state["message"]
+    truth = np.linalg.inv(G)
+    errors = []
+    for name in ("start", "goal"):
+        camera = np.float32([[p["x"], p["y"]] for p in state["camera_board"][name]["points"]])
+        expected = cv2.perspectiveTransform(camera.reshape(-1, 1, 2), truth).reshape(-1, 2)
+        mapped = np.float32([[p["x"], p["y"]] for p in state["board"][name]["points"]])
+        errors.extend(np.linalg.norm(mapped - expected, axis=1).tolist())
+    start = quadrilateral_center(game.board.start)
+    goal = quadrilateral_center(game.board.goal)
+    game.action({"action": "aim", "degrees": float(np.degrees(np.arctan2(goal.y - start.y, goal.x - start.x)))})
+    game.action({"action": "launch"})
+    for _ in range(40):
+        now[0] += 0.1
+        current = game.tick()
+        if current["game"]["status"] != "running":
+            break
+    max_error = max(errors)
+    assert max_error <= 1.5, f"mapped board error {max_error:.2f} px"
+    assert current["game"]["status"] == "won", current["game"]
+    quality = solved["alignment"]["quality"]
+    return {"mapped_board_error_px": round(max_error, 3), "decoded": quality["decoded"],
+            "holdout_p95_px": quality["holdout_p95_px"], "attempt_result": current["game"]["status"],
+            "space": state["game"]["space"]}
+
+
 def run() -> dict[str, object]:
     now = [0.0]
     with TemporaryDirectory() as directory:
@@ -133,7 +200,9 @@ def run() -> dict[str, object]:
         elapsed_s = current["game"]["elapsed_s"]
         assert 1.5 < elapsed_s < 2.5
         reset = game.action({"action": "reset"})
-        assert reset["board"] == live["camera_board"]
+        # The latest detection of the same wall: equal up to sub-pixel noise
+        # (later frames also discount the projector's own rims, contract 2.5).
+        assert _boards_close(reset["board"], live["camera_board"], 0.25), (reset["board"], live["camera_board"])
         assert reset["game"]["attempts"] == 1
         shift_px = (quadrilateral_center(game.board.bumpers[0]).x
                     - quadrilateral_center(frozen_board.bumpers[0]).x)
@@ -172,7 +241,8 @@ def run() -> dict[str, object]:
                 "projector_resize_preserved_attempt": True,
                 "invalid_launch_refused": invalid_launch_refused,
                 "expired_detection_hidden": expired["live_detection"] is None,
-                "event_count": len(events), "recolored_wall": recolored_wall()}
+                "event_count": len(events), "recolored_wall": recolored_wall(),
+                "aligned_flow": aligned_flow()}
 
 
 if __name__ == "__main__":

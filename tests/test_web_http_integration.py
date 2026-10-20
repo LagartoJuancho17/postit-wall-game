@@ -230,6 +230,35 @@ class WebHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(changed["projection"]["mode"], "live")
         self.assertEqual(self.action("launch")[0], 409)
 
+    def test_alignment_and_check_routes_over_http(self) -> None:
+        jpeg = {"Content-Type": "image/jpeg", "X-Postit-Client": "1"}
+        # Same client, content type and origin rules as every other upload.
+        status, payload = self.request("POST", "/api/align_frame", self.jpeg(),
+                                       {"Content-Type": "image/jpeg", "X-Postit-Align": "0:0"})
+        self.assertEqual(status, 403)
+        status, payload = self.request("POST", "/api/align_frame", b"{}",
+                                       {**jpeg, "Content-Type": "application/json", "X-Postit-Align": "0:0"})
+        self.assertEqual((status, payload["error"]), (415, "Content-Type esperado: image/jpeg."))
+        status, payload = self.request("POST", "/api/align_frame", self.jpeg(), {**jpeg, "X-Postit-Align": "0:0"})
+        self.assertEqual((status, payload["error"]), (409, "No hay una alineación en curso."))
+        self.assertEqual(payload["state"]["alignment"]["status"], "none")
+        status, payload = self.request("POST", "/api/align_frame", self.jpeg(), {**jpeg, "X-Postit-Align": "9:9"})
+        self.assertEqual((status, payload["error"]), (400, "Cabecera X-Postit-Align inválida."))
+        status, payload = self.request("POST", "/api/check_frame", self.jpeg(), {**jpeg, "X-Postit-Check": "x"})
+        self.assertEqual((status, payload["error"]), (400, "Cabecera X-Postit-Check inválida."))
+        status, payload = self.request("POST", "/api/check_frame", self.jpeg(), {**jpeg, "X-Postit-Check": "neutral"})
+        self.assertEqual((status, payload["error"]), (409, "Primero alineá el proyector."))
+        # A run in progress takes frames of the camera's size.
+        self.action("projection_open", width=1280, height=720)
+        self.request("POST", "/api/preview", self.jpeg(), {**jpeg, "X-Postit-Camera": "C%C3%A1mara"})
+        status, state = self.action("align_start")
+        self.assertEqual((status, state["alignment"]["status"]), (200, "collecting"))
+        status, payload = self.request("POST", "/api/align_frame", self.jpeg(),
+                                       {**jpeg, "X-Postit-Align": "3:1", "X-Postit-Camera": "C%C3%A1mara"})
+        self.assertEqual((status, payload), (200, {"received": 1, "needed": 14}))
+        status, state = self.action("align_cancel")
+        self.assertEqual(state["alignment"]["status"], "none")
+
     def test_preview_records_camera_label_and_partial_overlay_even_when_board_invalid(self) -> None:
         headers = {"Content-Type": "image/jpeg", "X-Postit-Client": "1",
                    "X-Postit-Camera": "C%C3%A1mara%20de%20iPhone%20de%20Tob%C3%ADas"}

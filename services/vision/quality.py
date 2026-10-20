@@ -22,10 +22,14 @@ DARK_LEVEL = 25      # every channel this dark is mostly sensor noise
 
 
 def frame_quality(frame_bgr: np.ndarray, palette: Palette = DEFAULT_PALETTE,
-                  notes: dict[str, tuple] | None = None) -> dict[str, Any]:
+                  notes: dict[str, tuple] | None = None,
+                  ready: bool | None = None) -> dict[str, Any]:
     """Detection readiness and exposure, color and focus measures of a frame.
 
-    ``ready``: a scan of this frame would succeed. ``clipped`` / ``dark``:
+    ``ready``: a scan of this frame would succeed. A caller that already
+    knows (the live server decides it from its own board) passes it, which
+    skips a second full detection on the hot path; otherwise it is the
+    4-marker ``detect_board`` verdict, as before. ``clipped`` / ``dark``:
     fraction of over- and underexposed pixels. ``brightness``: median of the
     brightest channel, 0..1; the wall fills most of the frame, so this reads
     its exposure. ``sharpness``: variance of the
@@ -34,7 +38,10 @@ def frame_quality(frame_bgr: np.ndarray, palette: Palette = DEFAULT_PALETTE,
     None when nothing is detected.
     """
     notes = find_notes(frame_bgr, palette) if notes is None else notes
-    brightest = frame_bgr.max(axis=2)
+    # cv2.max of the three planes: the same values as frame_bgr.max(axis=2),
+    # which numpy reduces over a 3-wide axis ~20x slower (11 ms per frame).
+    blue, green, red = cv2.split(frame_bgr)
+    brightest = cv2.max(cv2.max(blue, green), red)
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
     sharpness = cv2.Laplacian(cv2.GaussianBlur(gray, (3, 3), 0), cv2.CV_64F).var()
     shapes = [np.array([(point.x, point.y) for point in polygon.points], np.int32)
@@ -45,11 +52,12 @@ def frame_quality(frame_bgr: np.ndarray, palette: Palette = DEFAULT_PALETTE,
         cv2.fillPoly(mask, shapes, 255)
         saturation = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)[..., 1]
         note_saturation = round(float(saturation[mask > 0].mean()), 1)
-    try:
-        detect_board(frame_bgr, palette)
-        ready = True
-    except ValueError:
-        ready = False
+    if ready is None:
+        try:
+            detect_board(frame_bgr, palette)
+            ready = True
+        except ValueError:
+            ready = False
     return {
         "ready": ready,
         "clipped": round(float((brightest >= CLIPPED_LEVEL).mean()), 4),

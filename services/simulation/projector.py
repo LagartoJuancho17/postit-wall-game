@@ -11,7 +11,7 @@ Rule sets, chosen with ``rules``:
   casts a full-alpha colored halo too.
 - ``"new"``: contract section 2.1, mirroring ``drawProjectorScene``. Aligned
   (a camera -> projector matrix): neutral rim along the polygon offset
-  outward by 5 px (3 px wide, miter limit 2), optional role fill at alpha
+  outward by 6 px (3 px wide, miter limit 2), optional role fill at alpha
   .35 inset by 5 px. Not aligned: neutral rims through the contain
   transform, never fills, plus the ``Sin alinear`` hint. Ball, aim line and
   texts are neutral.
@@ -44,7 +44,11 @@ import numpy as np
 ROLES = ("start", "goal", "bumper", "marker")  # PALETTE_ROLES draw order
 
 # Contract section 2.1 (live-view.mjs constants)
-RIM_OFFSET_PX = 5.0
+RIM_OFFSET_PX = 6.0
+# Light that fills a paper when its role color is not allowed: neutral, so it
+# can never be taken for a post-it; none under the light theme, whose
+# background already lights the wall (contract 2.1).
+NEUTRAL_FILL = {"dark": "#ffffff", "light": None}
 FILL_INSET_PX = 5.0
 RIM_WIDTH_PX = 3.0
 RIM_MITER_LIMIT = 2.0
@@ -652,18 +656,29 @@ def _draw_old(canvas: Canvas, state: Mapping, theme: str) -> None:
 
 
 def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | None,
-              fill: bool, fresh: bool) -> None:
-    """``drawProjectorScene`` (contract 2.1)."""
+              fill: bool, fresh: bool, probes: bool = False) -> None:
+    """``drawProjectorScene`` (contract 2.1), and the overlay check's probes (2.3)."""
     rim = RIM_COLOR[theme]
     preview = state.get("live_detection") if fresh else None
     for role, shape in _projected_notes(preview, mapping, canvas.width, canvas.height):
-        if fill:
+        # Aligned: role color inside the paper once the overlay check allowed
+        # it; otherwise neutral light there in the dark theme (contract 2.1),
+        # so a dark room still sees the whole paper and a ghost stays gray.
+        color = (_role_hex(state.get("palette"), role, strict=True) if fill
+                 else NEUTRAL_FILL.get(theme) if mapping is not None else None)
+        if color is not None:
             inner = fill_polygon(shape)
             if inner is not None:
-                canvas.fill(inner, _role_hex(state.get("palette"), role, strict=True), FILL_ALPHA)
+                canvas.fill(inner, color, FILL_ALPHA)
         outline = rim_polygon(shape)
         if outline is not None:
             canvas.stroke(outline, RIM_WIDTH_PX, rim, miter_limit=RIM_MITER_LIMIT)
+    if probes and fill:
+        alignment = state.get("alignment") if isinstance(state.get("alignment"), Mapping) else {}
+        overlay = alignment.get("overlay") if isinstance(alignment.get("overlay"), Mapping) else {}
+        for probe in overlay.get("probes") or []:
+            square = np.array([(point["x"], point["y"]) for point in probe["points"]], dtype=np.float64)
+            canvas.fill(square, _role_hex(state.get("palette"), probe["role"], strict=True), FILL_ALPHA)
     neutral = NEUTRAL_COLOR[theme]
     _draw_game(canvas, state, mapping, neutral, {"won": neutral, "lost": neutral})
     if mapping is None:
@@ -708,7 +723,8 @@ def render_scene(state: Mapping, theme: str, size: tuple[int, int], rules: str, 
             overlay = alignment.get("overlay")
             fill = isinstance(overlay, Mapping) and overlay.get("fill") is True
         mapping = _Mapping(matrix, camera_to_projector(matrix, camera)) if matrix is not None else None
-        _draw_new(canvas, state, theme, mapping, mapping is not None and (fill or force_fill), fresh)
+        _draw_new(canvas, state, theme, mapping, mapping is not None and (fill or force_fill), fresh,
+                  probes=force_fill)
     elif rules != "neutral":
         raise ValueError("rules must be 'old', 'new' or 'neutral'")
     return canvas.image

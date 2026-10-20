@@ -87,10 +87,42 @@ function resizeCanvas() {
   draw();
 }
 
+let lastRegister = 0;
+
 function applyState(next) {
   state = next;
   stateReceivedAt = performance.now();
+  // A backend that forgot this window (web.py restarted, or the panel
+  // reloaded and started a new in-browser backend) learns it again.
+  if (next?.projection?.open === false && performance.now() - lastRegister > 1000) {
+    lastRegister = performance.now();
+    registerProjector();
+  }
   draw();
+}
+
+function projectorMetrics() {
+  return { width: viewport.width, height: viewport.height, dpr: window.devicePixelRatio || 1,
+    fullscreen: Boolean(document.fullscreenElement) };
+}
+
+async function registerProjector() {
+  try {
+    const next = await action("projection_open", { width: viewport.width, height: viewport.height });
+    state = next;
+    stateReceivedAt = performance.now();
+    toast.hidden = true;
+    channel.postMessage({ type: "ready", ...projectorMetrics() });
+  } catch (error) {
+    showError(error);
+  }
+}
+
+/** Draw the requested scene, let the compositor show it, then confirm. */
+async function ackAfterDraw(type, id) {
+  draw();
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  channel.postMessage({ type, id, ...projectorMetrics() });
 }
 
 function drawBackground() {
@@ -105,6 +137,8 @@ function draw() {
   document.body.dataset.mode = scene.mode;
   document.body.dataset.theme = theme;
   document.body.dataset.blackout = String(blackoutForced);
+  // Anything the camera is about to capture hides the window's own labels.
+  document.body.dataset.capture = String(Boolean(localScene || blackoutForced));
   stateLabel.textContent = scene.kind === "live" ? "Post-it Wall · Detección en vivo" : "";
   if (scene.kind === "black") {
     // "black" and "align" before its first pattern: pure black whatever the theme.
@@ -128,14 +162,12 @@ function draw() {
 async function syncProjectionSize() {
   const previous = viewport;
   resizeCanvas();
-  if (previous.width === viewport.width && previous.height === viewport.height && state) return;
-  try {
-    applyState(await action("projection_open", viewport));
-    toast.hidden = true;
-    channel.postMessage({ type: "ready" });
-  } catch (error) {
-    showError(error);
+  if (previous.width === viewport.width && previous.height === viewport.height && state) {
+    channel.postMessage({ type: "ready", ...projectorMetrics() }); // fullscreen may have changed
+    return;
   }
+  lastRegister = performance.now();
+  await registerProjector();
 }
 
 document.addEventListener("keydown", (event) => {
@@ -166,17 +198,31 @@ channel.onmessage = async (event) => {
   const data = event.data || {};
   if (data.type === "blackout") {
     blackoutForced = true;
-    draw();
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    channel.postMessage({ type: "blackout_ack", id: data.id });
+    await ackAfterDraw("blackout_ack", data.id);
+  } else if (data.type === "align_pattern") {
+    localScene = { kind: "pattern", layout: data.layout, frame: data.frame };
+    await ackAfterDraw("align_ack", data.id);
+  } else if (data.type === "neutral") {
+    localScene = { kind: "neutral" };
+    await ackAfterDraw("neutral_ack", data.id);
+  } else if (data.type === "overlay_test") {
+    localScene = { kind: "overlay_test" };
+    await ackAfterDraw("overlay_test_ack", data.id);
   } else if (data.type === "resume") {
     blackoutForced = false;
+    localScene = null;
     draw();
   } else if (data.type === "theme") {
     theme = projectorTheme(data.theme);
     draw();
   }
 };
+
+// A projector left as a background tab is throttled: no animation frames,
+// ~1 timer per second. The panel warns the operator.
+document.addEventListener("visibilitychange", () => {
+  channel.postMessage({ type: "visibility", hidden: document.hidden });
+});
 
 window.addEventListener("storage", (event) => {
   if (event.key !== THEME_KEY) return;
@@ -217,5 +263,6 @@ async function tick() {
 
 resizeCanvas();
 syncProjectionSize();
+channel.postMessage({ type: "visibility", hidden: document.hidden });
 // Draw independently of HTTP: a hung request cannot keep old contours alive.
 setInterval(() => { draw(); tick(); }, 33);

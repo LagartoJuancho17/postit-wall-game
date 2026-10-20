@@ -26,6 +26,10 @@
         <button id="open-projector" class="button button-dark" type="button">
           Abrir proyección <kbd>J</kbd>
         </button>
+        <button id="align-projector" class="button" type="button" disabled
+                title="Proyecta unos puntos, la cámara los mira y corrige la imagen para que cada contorno caiga sobre su post-it.">
+          Alinear proyector <kbd>A</kbd>
+        </button>
       </div>
     </header>
 
@@ -36,7 +40,7 @@
           <p>Mirás la cámara y preparás el intento acá. La detección en vivo y la pelota aparecen en la ventana del proyector.</p>
         </div>
         <div class="step-hint" aria-label="Orden de preparación">
-          <span data-step="camera">Cámara</span><b aria-hidden="true">→</b><span data-step="projector">Proyección</span><b aria-hidden="true">→</b><span data-step="detect">Detección</span><b aria-hidden="true">→</b><span data-step="play">Juego</span>
+          <span data-step="camera">Cámara</span><b aria-hidden="true">→</b><span data-step="projector">Proyección</span><b aria-hidden="true">→</b><span data-step="align">Alineación</span><b aria-hidden="true">→</b><span data-step="detect">Detección</span><b aria-hidden="true">→</b><span data-step="play">Juego</span>
         </div>
       </div>
 
@@ -115,6 +119,7 @@
                 <p id="setup-hint">La cámara detecta los post-its y actualiza la proyección automáticamente.</p>
               </div>
             </div>
+            <p id="align-status" class="align-status" role="status" aria-live="polite"></p>
             <div class="setup-actions">
               <button id="scan-button" class="button button-primary" type="button" disabled>Actualizar post-its <kbd>S</kbd></button>
             </div>

@@ -2,7 +2,7 @@
  * Local browser acceptance test. Uses a synthetic camera and isolated data.
  *
  * The server here has no alignment, so the projector draws the unaligned
- * scene (docs/alignment-and-color.md 2.1): neutral rims 5 px outside each
+ * scene (docs/alignment-and-color.md 2.1): neutral rims 6 px outside each
  * note through the contain transform, no fills, no role hue anywhere, and
  * the "Sin alinear" hint bottom-left.
  */
@@ -91,7 +91,7 @@ function alignmentLayout(width, height) {
  * Runs in the projector page: the aligned scene with its fill allowed, drawn
  * by Chrome on a detached canvas, then every lit pixel classified by its
  * distance to the nearest mapped paper (max over the paper's edge lines,
- * positive outward). Fill: 5 px inside; rim: 3 px stroke centered 5 px out.
+ * positive outward). Fill: 5 px inside; rim: 3 px stroke centered 6 px out.
  * Pixel centers within 0.71 px of a boundary can be partly covered, so the
  * bands keep that margin: inside <= -4, gap (-4, 2.5), rim [2.5, 7.5].
  */
@@ -302,7 +302,7 @@ try {
     const fit = containTransform(width, height, frame.width, frame.height);
     return points.map((p) => ({ x: fit.offsetX + p.x * fit.scale, y: fit.offsetY + p.y * fit.scale }));
   }
-  /** Midpoints of the rim's edges: 5 px outside the contained note, on the 3 px stroke's center line. */
+  /** Midpoints of the rim's edges: 6 px outside the contained note, on the 3 px stroke's center line. */
   async function rimSamples(page, note) {
     const rim = offsetConvexPolygon(await toProjector(page, note.points), RIM_OFFSET_PX);
     assert.ok(rim, "a detected note always has a rim");
@@ -347,7 +347,7 @@ try {
   const baseBumper = await until("bumper detected", () => liveNote("bumper"));
   for (const viewport of [{ width: 1280, height: 720 }, { width: 600, height: 1000 }]) {
     await resizeProjector(viewport);
-    await until("neutral white rim 5 px outside the contained bumper", () => rimDrawn(projector, baseBumper, NEUTRAL.dark.rim));
+    await until("neutral white rim 6 px outside the contained bumper", () => rimDrawn(projector, baseBumper, NEUTRAL.dark.rim));
     const [inside] = await pixelsAt(projector, await toProjector(projector, [centerOf(baseBumper)]));
     assert.deepEqual(inside.slice(0, 3), [0, 0, 0], "no fill on the paper without alignment");
     assert.equal(await huedPixels(projector), 0, "no role hue anywhere on the projector");
@@ -390,7 +390,7 @@ try {
     assert.equal(raster.huedOutside, 0, `${theme}: no role hue outside the paper's 5 px inset`);
     assert.equal(raster.litInGap, 0, `${theme}: nothing lit between the fill and the rim`);
     assert.equal(raster.litOutside, 0, `${theme}: nothing lit beyond the rims`);
-    assert.ok(raster.rimMidpoints === raster.edges, `${theme}: rim color 5 px outside every edge midpoint`);
+    assert.ok(raster.rimMidpoints === raster.edges, `${theme}: rim color 6 px outside every edge midpoint`);
     assert.ok(raster.huedInside > 100, `${theme}: the fill is visible`);
     writeFileSync(join(output, `aligned-raster-${theme}.png`), Buffer.from(raster.png.split(",")[1], "base64"));
     delete raster.png;

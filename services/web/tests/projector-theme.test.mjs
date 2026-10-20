@@ -91,7 +91,9 @@ test("the panel switch saves the choice and tells the projector window", () => {
   assert.match(operator, /localStorage\.setItem\(THEME_KEY, projectorBackdrop\);/);
   assert.match(operator, /channel\.postMessage\(\{ type: "theme", theme: projectorBackdrop \}\);\s*render\(\);/);
   // A projector that just opened gets the current choice even without storage.
-  assert.match(operator, /data\.type === "ready"\) \{\s*popupReady = true;\s*channel\.postMessage\(\{ type: "theme", theme: projectorBackdrop \}\);/);
+  // A projector that (re)announces itself gets the panel's theme, and says
+  // whether it is fullscreen (automatic alignment waits for that).
+  assert.match(operator, /data\.type === "ready"\) \{\s*popupReady = true;\s*projectorFullscreen = Boolean\(data\.fullscreen\);\s*channel\.postMessage\(\{ type: "theme", theme: projectorBackdrop \}\);/);
   // J keeps priority; F comes right after it.
   assert.match(operator, /openProjector\(\);\s*return;\s*\}\s*if \(isThemeShortcut\(event\)\) \{/);
   assert.equal(THEME_KEY, "postit-wall:projector-theme");

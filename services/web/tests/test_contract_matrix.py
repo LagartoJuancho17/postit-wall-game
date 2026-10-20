@@ -53,6 +53,7 @@ class StateMatrixContractTests(unittest.TestCase):
             "partial_live": ("waiting_camera", "none", False, True),
             "no_markers": ("ready", "ready", False, True),
             "ready": ("ready", "ready", False, True),
+            "aligned_ready": ("ready", "ready", False, True),
             "ready_closed": ("ready", "ready", False, False),
             "running": ("running", "running", False, True),
             "paused_open": ("paused", "running", True, True),
@@ -99,7 +100,7 @@ class StateMatrixContractTests(unittest.TestCase):
     def test_probes_on_copies_never_leak_into_the_phase(self) -> None:
         # The matrix probes copies to stay inside the 2 s gate; a probe that
         # changed the original would corrupt every later probe of that phase.
-        for name in ("partial_live", "no_markers", "ready", "paused_open"):
+        for name in ("partial_live", "no_markers", "ready", "aligned_ready", "paused_open"):
             wall = _reach(name)
             before = wall.controller.snapshot()
             for probe in _PROBES.values():
@@ -111,7 +112,7 @@ class StateMatrixContractTests(unittest.TestCase):
                 twin.now += 5
                 twin.controller.tick()
             self.assertEqual(wall.controller.snapshot(), before, name)
-        self.assertEqual(len(PHASES), 11)
+        self.assertEqual(len(PHASES), 12)
 
     def test_shape_ignores_values_but_not_types_or_keys(self) -> None:
         self.assertEqual(shape({"a": 1.5, "b": [{"x": 1}]}), shape({"b": [{"x": 9}], "a": 2}))

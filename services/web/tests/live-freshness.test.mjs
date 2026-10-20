@@ -51,7 +51,7 @@ function panel() {
   });
   vm.runInContext(`
     let previewGeneration = 0, previewTimer = null, previewBusy = false;
-    let scanBusy = false, tuning = null, stream = initialStream, video = initialVideo;
+    let scanBusy = false, tuning = null, aligning = false, stream = initialStream, video = initialVideo;
     let previewSupported = true, preview = null, pickCheck = null, paletteError = null;
     let state = { palette: { roles: { start: { hex: "#ffdf53" } } } };
     ${segment(operator, "function stopCamera()", "// The camera the operator picked")}
@@ -187,11 +187,11 @@ function projectorView() {
     document: { body },
     ctx, stateLabel, toast: {}, showError: () => {},
     setTimeout: () => 1, clearTimeout: () => {},
-    resizeCanvas: () => {}, syncProjectionSize: () => {},
+    resizeCanvas: () => {}, syncProjectionSize: () => {}, channel: { postMessage() {} },
     setInterval: (callback, ms) => { frames.push({ callback, ms }); return frames.length; },
   });
   vm.runInContext(`
-    let state = null, stateReceivedAt = 0, blackoutForced = false, tickBusy = false, localScene = null;
+    let state = null, stateReceivedAt = 0, blackoutForced = false, tickBusy = false, localScene = null, lastRegister = 0;
     let viewport = { width: 1280, height: 720 }, theme = "dark";
     ${segment(projector, "function applyState(", "async function syncProjectionSize()")}
     ${segment(projector, "async function tick()", "\nresizeCanvas();")}
@@ -268,7 +268,9 @@ test("the projector draw path follows the projection mode and the panel's local 
     assert.deepEqual(checked.filter((draw) => draw.kind === "fill").map((draw) => [draw.color, draw.alpha]), [["#30d0c0", 0.35]],
       "the overlay check fills even before overlay.fill");
     const plain = show({ ...live, projection: { mode: "live" } });
-    assert.equal(plain.filter((draw) => draw.kind === "fill").length, 0, "no fill until the check allows it");
+    assert.deepEqual(plain.filter((draw) => draw.kind === "fill").map((draw) => draw.color),
+      theme === "dark" ? ["#ffffff"] : [],
+      "until the check allows the role color: neutral white light in the dark theme, none under the light flood");
     assert.equal(plain.filter((draw) => draw.kind === "stroke").length, 2, "rim and aim line");
     assert.equal(view.body.dataset.mode, "live");
     assert.equal(view.stateLabel.textContent, "Post-it Wall · Detección en vivo");

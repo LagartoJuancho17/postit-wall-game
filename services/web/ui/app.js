@@ -46,6 +46,7 @@ import {
   withTimeout,
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
+import { autoAlignKey, runAlignment, shouldAutoAlign } from "./align-run.mjs";
 import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS } from "./live-view.mjs";
 
 const api = createApi("panel");
@@ -75,7 +76,13 @@ let pickBusy = false;
 let pickCheck = null;
 let localNotice = null;
 let requestId = 0;
-const pendingBlackouts = new Map();
+// Projector messages waiting for their ack, by id: blackout, neutral,
+// align_pattern and overlay_test all answer once drawn.
+const pendingAcks = new Map();
+let aligning = false;
+let projectorFullscreen = false;
+let projectorHidden = false;
+const autoAlignTried = new Set();
 let preview = null;
 let previewGeneration = 0;
 let previewBusy = false;
@@ -293,7 +300,9 @@ function openProjector() {
     return;
   }
   // It must stay directly in the click/keydown call stack for popup permission.
-  const opened = window.open(PROJECTOR_URL, "_blank");
+  // A named popup: a reloaded panel reuses it instead of opening a second
+  // projector, and Chrome gives it its own window to move to the projector.
+  const opened = window.open(PROJECTOR_URL, "postit-wall-projector", "popup=yes,width=1280,height=720");
   if (!opened) {
     notice("Chrome bloqueó la ventana. Permití las ventanas emergentes de localhost y usá el botón «Abrir proyección».", "error");
     return;
@@ -304,20 +313,123 @@ function openProjector() {
   notice("Mové la nueva ventana al proyector y pulsá «Pantalla completa» allí.", "info");
 }
 
-function waitForBlackout() {
+/** Ask the projector to draw a scene; resolves with its ack once on screen. */
+function showOnProjector(message, failure = "La ventana de proyección no respondió. Abrila otra vez con J.") {
   return new Promise((resolve, reject) => {
     const id = ++requestId;
     const timeout = setTimeout(() => {
-      pendingBlackouts.delete(id);
-      reject(new Error("La ventana de proyección no confirmó el fondo negro. Abrila otra vez con J."));
+      pendingAcks.delete(id);
+      reject(new Error(failure));
     }, 2500);
-    pendingBlackouts.set(id, () => {
+    pendingAcks.set(id, (ack) => {
       clearTimeout(timeout);
-      pendingBlackouts.delete(id);
-      resolve();
+      pendingAcks.delete(id);
+      resolve({ ...ack, at: performance.now() });
     });
-    channel.postMessage({ type: "blackout", id });
+    channel.postMessage({ ...message, id });
   });
+}
+
+function waitForBlackout() {
+  return showOnProjector({ type: "blackout" },
+    "La ventana de proyección no confirmó el fondo negro. Abrila otra vez con J.");
+}
+
+// Colors and camera settings are measured under the play light, minus our
+// own drawing: the theme background only (contract 2.2).
+function waitForNeutral() {
+  return showOnProjector({ type: "neutral" },
+    "La ventana de proyección no confirmó el fondo neutro. Abrila otra vez con J.");
+}
+
+/** At least `ms` after the projector's ack AND two new camera frames presented after it. */
+function settleAfter(ack, ms) {
+  return new Promise((resolve) => {
+    const since = ack?.at ?? performance.now();
+    let frames = 0;
+    let finished = false;
+    const finish = () => {
+      if (!finished) {
+        finished = true;
+        resolve();
+      }
+    };
+    setTimeout(finish, ms + 1500); // a stalled camera must not hang the run
+    if (typeof video.requestVideoFrameCallback !== "function") {
+      setTimeout(finish, ms);
+      return;
+    }
+    const onFrame = (now) => {
+      if (now >= since) frames += 1;
+      if (frames >= 2 && performance.now() - since >= ms) finish();
+      else if (!finished) video.requestVideoFrameCallback(onFrame);
+    };
+    video.requestVideoFrameCallback(onFrame);
+  });
+}
+
+async function uploadFrame(path, blob, headers) {
+  const response = await api(path, {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
+      "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || ""), ...headers },
+    body: blob,
+  });
+  return responseJSON(response);
+}
+
+function projectorIsReady() {
+  return Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
+}
+
+// Contract section 3: coded patterns, decode, then the overlay check.
+async function alignProjector() {
+  if (aligning || scanBusy || tuning || pickBusy || !stream || !video.videoWidth) return;
+  if (!controlsFor(state, true, projectorIsReady()).align) return;
+  aligning = true;
+  previewGeneration += 1;
+  autoAlignTried.add(autoAlignKey(state));
+  notice("Alineando cámara y proyector: no los muevas.", "busy");
+  render();
+  try {
+    const result = await runAlignment({
+      action: async (name, extra) => {
+        const next = await action(name, extra);
+        applyState(next);
+        return next;
+      },
+      show: (message) => showOnProjector(message),
+      resume: () => channel.postMessage({ type: "resume" }),
+      settle: settleAfter,
+      sleep,
+      capture: () => jpegFromVideo(.92),
+      upload: uploadFrame,
+      progress: (text) => { notice(text, "busy"); render(); },
+    }, { cameraFixed });
+    applyState(result);
+    const { alignment } = result;
+    if (alignment.status === "ready") {
+      notice(`${alignment.detail} ${alignment.overlay.detail}`, alignment.overlay.fill ? "info" : "warn");
+    } else {
+      notice(alignment.detail, "error");
+    }
+  } catch (error) {
+    notice(error.message, "error");
+  } finally {
+    channel.postMessage({ type: "resume" });
+    aligning = false;
+    previewGeneration += 1;
+    render();
+    schedulePreview(0);
+  }
+}
+
+function maybeAutoAlign(cameraReady, projectionReady) {
+  const busy = aligning || scanBusy || Boolean(tuning) || pickBusy;
+  if (shouldAutoAlign({ state, cameraReady, projectorReady: projectionReady, fullscreen: projectorFullscreen,
+    busy, tried: autoAlignTried })) {
+    setTimeout(alignProjector, 0);
+  }
 }
 
 function jpegFromVideo(quality = .94) {
@@ -349,7 +461,7 @@ function freshPreview() {
 // Live detection: the scan's own detector and palette, run on the backend.
 async function previewTick() {
   previewTimer = null;
-  if (previewBusy || scanBusy || tuning || !stream || !video.videoWidth || currentTrack()?.readyState === "ended") {
+  if (previewBusy || scanBusy || tuning || aligning || !stream || !video.videoWidth || currentTrack()?.readyState === "ended") {
     schedulePreview();
     return;
   }
@@ -600,7 +712,7 @@ async function tryCamera(track, settings) {
 // sweep, then the neighbors of the best. Scored by the scan's own detector.
 async function tuneCamera() {
   const track = currentTrack();
-  if (!track || tuning || scanBusy || pickBusy || !cameraCaps || !cameraSupport(cameraCaps).any) return;
+  if (!track || tuning || scanBusy || pickBusy || aligning || !cameraCaps || !cameraSupport(cameraCaps).any) return;
   const plan = searchPlan(cameraCaps);
   const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   tuning = { done: 0, total: plan.exposureTime.length * plan.colorTemperature.length
@@ -610,9 +722,9 @@ async function tuneCamera() {
   render();
   try {
     if (projectorReady && attemptPhase(state?.game) !== "running") {
-      applyState(await action("projection_black"));
+      applyState(await action("projection_neutral"));
       black = true;
-      await waitForBlackout();
+      await waitForNeutral();
     }
     const start = await readCameraSettings(track);
     const focus = Number.isFinite(start.focusDistance) ? { focusDistance: start.focusDistance } : {};
@@ -663,8 +775,9 @@ async function restoreProjection() {
   }
 }
 
-// Colors are read the way the scan reads them: with the projector black,
-// so neither the game drawing nor the light background tints the note.
+// Colors are read under the light the game plays in: the projector shows
+// its theme background only (no outlines, no ball), so the sample matches
+// what live detection will see, in the light theme too (contract 2.2).
 async function pickColor(role, point) {
   const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const darken = projectorReady && attemptPhase(state?.game) !== "running";
@@ -673,10 +786,10 @@ async function pickColor(role, point) {
   render();
   try {
     if (darken) {
-      notice("Apagando el proyector para tomar el color…", "busy");
-      applyState(await action("projection_black"));
+      notice("Ocultando los contornos para tomar el color…", "busy");
+      applyState(await action("projection_neutral"));
       black = true;
-      await waitForBlackout();
+      await waitForNeutral();
       await sleep(scanSettleMs(cameraFixed));
     }
     const hex = sampleHex(point);
@@ -702,7 +815,7 @@ function togglePick(role) {
 }
 
 async function scanBoard() {
-  if (scanBusy || tuning || pickBusy) return;
+  if (scanBusy || tuning || pickBusy || aligning) return;
   if (!controlsFor(state, Boolean(stream), popupReady && state?.projection?.open).scan) return;
   scanBusy = true;
   render();
@@ -834,6 +947,14 @@ function render() {
     ? "Enfocar proyección <kbd>J</kbd>"
     : "Abrir proyección <kbd>J</kbd>";
   $("open-projector").dataset.attention = String(guide.step === "projector");
+  const alignment = state?.alignment;
+  $("align-projector").disabled = aligning || scanBusy || Boolean(tuning) || pickBusy || !controls.align;
+  $("align-projector").dataset.attention = String(guide.step === "align");
+  $("align-status").textContent = !alignment ? "" : alignment.status === "ready"
+    ? `${alignment.detail} ${alignment.overlay?.detail ?? ""}`.trim()
+    : alignment.detail;
+  $("align-status").dataset.tone = alignment?.status === "ready" ? (alignment.overlay?.fill ? "ok" : "warn")
+    : alignment?.status === "failed" ? "error" : alignment?.status === "stale" ? "warn" : "";
   $("theme-dark").setAttribute("aria-pressed", String(projectorBackdrop === "dark"));
   $("theme-light").setAttribute("aria-pressed", String(projectorBackdrop === "light"));
   $("setup-hint").textContent = guide.message;
@@ -864,13 +985,20 @@ function render() {
   $("status-panel").dataset.tone = localNotice?.tone || "info";
   renderPalette(cameraReady);
   drawCameraOverlay();
+  maybeAutoAlign(cameraReady, projectionReady);
 }
 
 channel.onmessage = (event) => {
   const data = event.data || {};
   if (data.type === "ready") {
     popupReady = true;
+    projectorFullscreen = Boolean(data.fullscreen);
     channel.postMessage({ type: "theme", theme: projectorBackdrop });
+    render();
+  } else if (data.type === "visibility") {
+    projectorHidden = Boolean(data.hidden);
+    if (projectorHidden) notice("La ventana de proyección está oculta: movela a su propia ventana en el proyector.", "warn");
+    else if (localNotice?.message?.startsWith("La ventana de proyección está oculta")) clearNotice();
     render();
   } else if (data.type === "theme") {
     projectorBackdrop = projectorTheme(data.theme); // switched from the projector window
@@ -878,14 +1006,15 @@ channel.onmessage = (event) => {
   } else if (data.type === "closed") {
     popupReady = false;
     render();
-  } else if (data.type === "blackout_ack") {
-    pendingBlackouts.get(data.id)?.();
+  } else if (["blackout_ack", "neutral_ack", "align_ack", "overlay_test_ack"].includes(data.type)) {
+    pendingAcks.get(data.id)?.(data);
   } else if (data.type === "projector_error") {
     notice(data.message, "error");
   }
 };
 
 $("open-projector").addEventListener("click", openProjector);
+$("align-projector").addEventListener("click", () => alignProjector());
 // After a failed start the list is still empty: retry the way the page
 // starts, so the remembered camera (and the board scanned with it) comes back.
 $("retry-camera").addEventListener("click", () => startCamera(cameraSelect.value || "", !cameraSelect.value));
@@ -945,6 +1074,9 @@ document.addEventListener("keydown", (event) => {
   if (key === "s") {
     event.preventDefault();
     scanBoard();
+  } else if (key === "a" && !$("align-projector").disabled) {
+    event.preventDefault();
+    alignProjector();
   } else if (key === "r" && !$("reset-button").disabled) {
     event.preventDefault();
     sendAction("reset");

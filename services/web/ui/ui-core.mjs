@@ -110,25 +110,38 @@ export function controlsFor(state, cameraReady, popupReady) {
   const popup = Boolean(popupReady);
   const live = Boolean(cameraReady) && popup;
   const detected = Boolean(state?.camera_board && state?.live_detection);
+  const framed = state?.camera?.width > 0;
   return {
     scan: live && !moving,
     launch: live && detected && phase === "ready",
     reset: popup && detected && phase !== "none",
     aim: popup && detected && phase === "ready",
     resume: popup && phase === "paused",
+    // Same rule as the backend's align_start: projector open, camera frames
+    // seen, no attempt moving; and not while a run is collecting.
+    align: live && framed && !moving && state?.alignment?.status !== "collecting",
   };
 }
 
 /** Setup order of the page's step indicator (data-step in index.html). */
-export const SETUP_STAGES = ["camera", "projector", "detect", "play"];
+export const SETUP_STAGES = ["camera", "projector", "align", "detect", "play"];
 
 const SETUP_GUIDES = {
   camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 o el iPhone debajo del video.",
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
+  align: "Alineá el proyector con A: proyecta unos puntos, la cámara los mira y corrige la imagen sola. Ponelo antes en pantalla completa.",
   detect: "Mostrá 1 inicio y 1 llegada a la cámara. Los rebotes y las esquinas son opcionales; la detección se actualiza sola.",
   play: "Los contornos del proyector siguen la detección en vivo. Ajustá la dirección y lanzá.",
 };
-const STAGE_OF = { camera: "camera", projector: "projector", detect: "detect", play: "play" };
+const STAGE_OF = { camera: "camera", projector: "projector", align: "align", detect: "detect", play: "play" };
+
+/** The align step's text follows the backend's alignment status. */
+function alignMessage(alignment) {
+  if (alignment?.status === "collecting") return "Alineando cámara y proyector: no los muevas.";
+  if (alignment?.status === "failed") return `${alignment.detail} Pulsá A para reintentar.`;
+  if (alignment?.status === "stale") return `${alignment.detail} Pulsá A.`;
+  return SETUP_GUIDES.align;
+}
 
 /**
  * What unblocks the operator next, from the same inputs as controlsFor.
@@ -137,13 +150,18 @@ const STAGE_OF = { camera: "camera", projector: "projector", detect: "detect", p
  */
 export function setupGuide(state, cameraReady, popupReady) {
   let step = "play";
+  const alignment = state?.alignment;
   if (!cameraReady) step = "camera";
   else if (!popupReady) step = "projector";
+  // Not blocking: the game also runs unaligned, it just cannot land on the
+  // papers. Only offered when the align button works.
+  else if (alignment && alignment.status !== "ready" && controlsFor(state, cameraReady, popupReady).align) step = "align";
+  else if (alignment?.status === "collecting") step = "align";
   else if (!state?.camera_board || !state?.live_detection) step = "detect";
   return {
     step,
     stage: STAGE_OF[step],
-    message: SETUP_GUIDES[step],
+    message: step === "align" ? alignMessage(alignment) : SETUP_GUIDES[step],
     blocking: step === "camera" || step === "projector",
   };
 }

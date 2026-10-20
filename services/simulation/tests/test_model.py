@@ -15,7 +15,7 @@ from services.calibration.coded import alignment_layout, decode_alignment
 from services.simulation.loop import SimClock, capture_alignment, frame_record, run_closed_loop
 from services.simulation.model import (Camera, Paper, Projector, Wall, apply_homography,
                                        homography_from_corners, normalized_inverse, standard_rig)
-from services.simulation.projector import (NEUTRAL_COLOR, RIM_COLOR, alignment_code,
+from services.simulation.projector import (NEUTRAL_COLOR, RIM_COLOR, RIM_OFFSET_PX, alignment_code,
                                            circle_coverage, contain_transform, convex_coverage,
                                            fill_polygon, offset_polygon, render_pattern,
                                            render_scene, rim_polygon)
@@ -107,7 +107,8 @@ class GeometryTests(unittest.TestCase):
         self.assertAlmostEqual(abs(cv2.contourArea(offset_polygon(square * 2, -5).astype(np.float32))), 100.0)
         dented = np.array([(0, 0), (10, 0), (5, 2), (10, 10), (0, 10)], float)
         self.assertIsNone(offset_polygon(dented, 5))            # not convex
-        self.assertEqual(rim_polygon(dented).tolist(), [[-5.0, -5.0], [15.0, -5.0], [15.0, 15.0], [-5.0, 15.0]])
+        r = RIM_OFFSET_PX  # the hull of the dent, moved out by the rim offset
+        self.assertEqual(rim_polygon(dented).tolist(), [[-r, -r], [10 + r, -r], [10 + r, 10 + r], [-r, 10 + r]])
         sliver = np.array([(0, 0), (100, 0), (50, 20)], float)  # 43 degree corners exceed miter limit 2
         self.assertEqual(len(offset_polygon(sliver, 5, 2.0)), 5)
         self.assertEqual(len(offset_polygon(sliver, 5)), 3)

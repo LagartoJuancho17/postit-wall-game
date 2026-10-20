@@ -1,5 +1,5 @@
 #!/bin/sh
-# All deterministic gates, with independent web/core Python and Node lanes.
+# All deterministic gates: Node plus six disjoint Python lanes, in parallel.
 # Full OpenCV browser parity and quality evals run in scripts/verify.sh.
 set -eu
 if [ -x .venv/bin/python ]; then
@@ -8,18 +8,20 @@ else
   PY=python3.12
 fi
 POSTIT_GATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/postit-gate.XXXXXX")
-trap 'rm -f "$POSTIT_GATE_DIR/node" "$POSTIT_GATE_DIR/web" "$POSTIT_GATE_DIR/core"; rmdir "$POSTIT_GATE_DIR"' EXIT
+trap 'rm -f "$POSTIT_GATE_DIR"/*; rmdir "$POSTIT_GATE_DIR"' EXIT
 node --test services/web/tests/*.test.mjs >"$POSTIT_GATE_DIR/node" 2>&1 &
-POSTIT_NODE_PID=$!
-PYTHONPATH=. "$PY" scripts/gate_tests.py web >"$POSTIT_GATE_DIR/web" 2>&1 &
-POSTIT_WEB_PID=$!
-PYTHONPATH=. "$PY" scripts/gate_tests.py core >"$POSTIT_GATE_DIR/core" 2>&1 &
-POSTIT_CORE_PID=$!
+POSTIT_PIDS="$!"
+for lane in matrix live web sim vision core; do
+  PYTHONPATH=. "$PY" scripts/gate_tests.py "$lane" >"$POSTIT_GATE_DIR/$lane" 2>&1 &
+  POSTIT_PIDS="$POSTIT_PIDS $!"
+done
 POSTIT_GATE_STATUS=0
-wait "$POSTIT_NODE_PID" || POSTIT_GATE_STATUS=1
-wait "$POSTIT_WEB_PID" || POSTIT_GATE_STATUS=1
-wait "$POSTIT_CORE_PID" || POSTIT_GATE_STATUS=1
-cat "$POSTIT_GATE_DIR/web" "$POSTIT_GATE_DIR/core"
+for pid in $POSTIT_PIDS; do
+  wait "$pid" || POSTIT_GATE_STATUS=1
+done
+for lane in matrix live web sim vision core; do
+  cat "$POSTIT_GATE_DIR/$lane"
+done
 if [ "$POSTIT_GATE_STATUS" -ne 0 ]; then
   cat "$POSTIT_GATE_DIR/node"
 else

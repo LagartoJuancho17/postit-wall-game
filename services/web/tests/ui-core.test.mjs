@@ -22,7 +22,7 @@ import {
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "launch", "aim", "reset", "resume"];
+const CONTROLS = ["scan", "launch", "aim", "reset", "resume", "align"];
 
 // Expected panel controls per backend phase, with the camera live and the
 // projector window ready whenever the backend reports it open. Hand-written:
@@ -30,15 +30,16 @@ const CONTROLS = ["scan", "launch", "aim", "reset", "resume"];
 const EXPECTED = {
   projector_closed: [],
   waiting_camera: ["scan"],
-  partial_live: ["scan"],
-  no_markers: ["scan", "launch", "aim", "reset"],
-  ready: ["scan", "launch", "aim", "reset"],
+  partial_live: ["scan", "align"],
+  no_markers: ["scan", "launch", "aim", "reset", "align"],
+  ready: ["scan", "launch", "aim", "reset", "align"],
+  aligned_ready: ["scan", "launch", "aim", "reset", "align"],
   ready_closed: [],
   running: ["reset"],
-  paused_open: ["scan", "reset", "resume"],
+  paused_open: ["scan", "reset", "resume", "align"],
   paused_closed: [],
-  won: ["scan", "reset"],
-  lost: ["scan", "reset"],
+  won: ["scan", "reset", "align"],
+  lost: ["scan", "reset", "align"],
 };
 
 function enabled(controls) {
@@ -90,16 +91,19 @@ test("controlsFor tolerates the empty state before the first poll", () => {
 // Next setup step per backend phase, camera live, projector ready when open.
 const EXPECTED_STEP = {
   projector_closed: "projector",
+  // Not aligned yet and the align button works: the guide offers it (it
+  // never blocks; the game also runs unaligned).
   waiting_camera: "detect",
-  partial_live: "detect",
-  no_markers: "play",
-  ready: "play",
+  partial_live: "align",
+  no_markers: "align",
+  ready: "align",
+  aligned_ready: "play",
   ready_closed: "projector",
   running: "play",
-  paused_open: "play",
+  paused_open: "align",
   paused_closed: "projector",
-  won: "play",
-  lost: "play",
+  won: "align",
+  lost: "align",
 };
 
 test("setupGuide names the next step for every backend phase", () => {

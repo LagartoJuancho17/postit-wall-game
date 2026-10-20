@@ -80,10 +80,16 @@ test("operator keydown directly opens the same projector route as the button", (
   assert.match(operator, /document\.addEventListener\(["']keydown["'],\s*\(event\)\s*=>\s*\{\s*if\s*\(isProjectorShortcut\(event\)\)\s*\{\s*event\.preventDefault\(\);\s*openProjector\(\)/);
 });
 
-test("projector reports its size and still supports a camera-adjustment blackout", () => {
-  assert.match(projector, /action\(["']projection_open["'],\s*viewport\)/);
-  assert.match(projector, /data\.type\s*===\s*["']blackout["'][\s\S]*?blackoutForced\s*=\s*true;[\s\S]*?requestAnimationFrame\([\s\S]*?blackout_ack/);
-  assert.match(operator, /await waitForBlackout\(\)/);
+test("projector reports its size and answers every capture scene after drawing it", () => {
+  assert.match(projector, /action\("projection_open", \{ width: viewport\.width, height: viewport\.height \}\)/);
+  assert.match(projector, /async function ackAfterDraw\(type, id\) \{\s*draw\(\);\s*await new Promise\(\(resolve\) => requestAnimationFrame\(\(\) => requestAnimationFrame\(resolve\)\)\);/);
+  for (const [request, ack] of [["blackout", "blackout_ack"], ["align_pattern", "align_ack"],
+    ["neutral", "neutral_ack"], ["overlay_test", "overlay_test_ack"]]) {
+    assert.match(projector, new RegExp(`data\\.type === "${request}"[\\s\\S]*?await ackAfterDraw\\("${ack}", data\\.id\\)`), request);
+    if (ack !== "blackout_ack") assert.match(operator, new RegExp(`"${ack}"`), `panel waits for ${ack}`);
+  }
+  // Colors and the camera search sample under the play light, not black (contract 2.2).
+  assert.match(operator, /await waitForNeutral\(\)/);
   const scan = operator.slice(operator.indexOf("async function scanBoard()"), operator.indexOf("async function sendAction"));
   assert.doesNotMatch(scan, /projection_black|waitForBlackout/);
 });
@@ -101,8 +107,12 @@ test("the server-unreachable notice clears once the server answers again", () =>
   assert.match(operator, /notice\(`No se puede conectar con el servidor local: \$\{error\.message\}`, "error"\);\s*connectionNotice = localNotice;/);
 });
 
-// Embedded browsers can hide windows explicitly requested as native popups.
-test("the projector opens using the browser's normal tab/window handling", () => {
+// A named popup (contract 3): a reloaded panel reuses the open projector
+// instead of opening a second one, and Chrome gives it its own window to
+// move to the projector screen. A projector left as a background tab is
+// throttled (no animation frames, ~1 timer per second), so it reports
+// visibility and the panel warns.
+test("the projector opens as a named popup window", () => {
   const calls = [];
   const source = operator.slice(operator.indexOf("function openProjector()"), operator.indexOf("function waitForBlackout()"));
   const context = vm.createContext({ window: { open: (...args) => {
@@ -112,6 +122,8 @@ test("the projector opens using the browser's normal tab/window handling", () =>
   vm.runInContext(`const PROJECTOR_URL = "/projector"; let popup = null, popupReady = false; ${source}; openProjector();`, context);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], "/projector");
-  assert.equal(calls[0][1], "_blank", "open a visible page instead of reusing an inaccessible named popup");
-  assert.equal(calls[0].length, 2, "do not request popup=yes or a fixed-size native window");
+  assert.equal(calls[0][1], "postit-wall-projector", "reuse the projector after a panel reload");
+  assert.equal(calls[0][2], "popup=yes,width=1280,height=720", "its own window, movable to the projector");
+  assert.match(projector, /document\.addEventListener\("visibilitychange", \(\) => \{\s*channel\.postMessage\(\{ type: "visibility", hidden: document\.hidden \}\);/);
+  assert.match(operator, /La ventana de proyección está oculta: movela a su propia ventana en el proyector\./);
 });

@@ -28,7 +28,7 @@ detection always runs with the projector lit (light theme floods the wall).
 | Outcome | Where it is measured | Pass |
 |---|---|---|
 | Alignment accuracy | `alignment_ready` log: holdout p95/max px; sim eval vs ground truth | holdout p95 <= 1.5 px, max <= 3 px; sim truth error p95 <= 1.5 px |
-| Outline lands on paper | sim eval + Chrome e2e: projected polygon vs true note in projector px | max corner error <= 3 px |
+| Outline lands on paper | sim eval + Chrome e2e: projected rim vs the rim of the true paper, projector px | max corner error <= 4 px (camera-limited: 2.0 px dark theme, 3.0 px light theme with no projection at all), plus any injected alignment error; rim clearance >= 0 (never on the paper) with a real alignment |
 | No feedback | sim eval: static wall, 60 closed-loop frames, both themes | 0 ready/invalid flips, 0 phantom notes, note area growth <= 5% |
 | Ghosts die | sim eval: paper removed while projecting | gone within 3 frames |
 | Colors picked under play light | sim eval: pick under neutral, detect under live | role counts correct in both themes |
@@ -196,10 +196,14 @@ State key `alignment` (always present):
  "quality": null | {decoded, total, fit, inliers, holdout, holdout_p95_px,
                     holdout_max_px, outliers, coverage},
  "detail": "texto para el operador",
- "overlay": {"status": "unchecked" | "ok" | "fill_off", "fill": false, "detail": "..."}}
+ "code": null | "few_points" | "inconsistent" | "inaccurate" | "low_coverage" | "frames",
+ "overlay": {"status": "unchecked" | "ok" | "fill_off", "fill": false, "detail": "...",
+             "probes": [{"role": "start", "points": [{"x": 0, "y": 0}, ...]}]}}
 ```
 
-Numbers in `quality` rounded to 3 decimals; matrix entries unrounded.
+Numbers in `quality` rounded to 3 decimals; matrix entries unrounded. `code` is the
+decoder's failure code while status is `failed` (null otherwise): the panel's
+retry branches on it.
 
 Actions (`POST /api/action`):
 
@@ -269,14 +273,23 @@ The projector never puts role-colored light on bare wall.
 - **Aligned** (`alignment.status == "ready"` and the projector viewport equals
   `alignment.projector`): each detected note (camera px) is mapped through H.
   - Rim: neutral stroke, `lineWidth 3`, along the polygon offset **outward**
-    by `RIM_OFFSET_PX = 5` projector px (miter join, miter limit 2). Color:
+    by `RIM_OFFSET_PX = 6` projector px (miter join, miter limit 2; 6 rather than 5 so that,
+    with the measured outline accuracy, the rim never lies on the paper even
+    under the light theme's flood). Color:
     dark theme `#ffffff`, light theme `#2b2f2e`. No shadow, no blur.
-  - Fill: only if `alignment.overlay.fill` is true. Role palette hex at
-    `globalAlpha 0.35`, polygon offset **inward** by `FILL_INSET_PX = 5`;
-    skipped if the inset polygon degenerates (non-convex or area < 25 px²).
-    No shadow, no blur. Because the fill is strictly inside the paper, a
-    ghost (fill seen on bare wall after a paper is removed) is re-detected
-    smaller every frame and disappears.
+  - Fill: polygon offset **inward** by `FILL_INSET_PX = 5`, `globalAlpha
+    0.35`, skipped if the inset polygon degenerates (non-convex or area < 25
+    px²), no shadow, no blur. Color: the role's palette hex when
+    `alignment.overlay.fill` is true; otherwise neutral light,
+    `NEUTRAL_FILL` = `#ffffff` in the dark theme and none in the light theme
+    (its background already lights the wall). Neutral light can never be
+    taken for a post-it, yet in a dark room it lets the camera see the whole
+    paper: measured in `services.simulation.feedback_eval`, without it the
+    projector lit only the part it had detected and a paper stayed half
+    detected. Because a colored fill is strictly inside the paper, a ghost
+    (fill seen on bare wall after a paper is removed) is re-detected smaller
+    every frame and disappears; the overlay check's probes (2.3) turn the
+    colored fill off where even that would be seen.
 - **Not aligned**: rims only (neutral, through the old contain transform),
   never fills. A neutral hint `Sin alinear · pulsá A en el panel` at the
   bottom-left in the rim color, 16 px.
@@ -301,29 +314,185 @@ background (dark `#000000`, light `#f3f2ec`), no notes, no ball.
 
 ### 2.3 Overlay check after alignment
 
-After `align_solve` succeeds the panel verifies that the colored fill does
-not change what the camera detects:
+After `align_solve` succeeds the panel verifies two things with the camera:
+that the colored fill does not change how the papers are detected, and that
+the fill's light on bare wall is not itself taken for a post-it. The second
+matters in a dark room, where the projector is the only light: there the
+fill seen on the wall after a paper is removed was re-detected as that paper
+for 4 frames (`services.simulation.feedback_eval`, 2026-10-20).
+
+**Probes.** On success `align_solve` also places one test square per role on
+bare wall, stored as `alignment.overlay.probes` (list, role order, possibly
+shorter than 4): `[{"role": "start", "points": [{x, y} x 4]}]` in projector
+px, clockwise from top-left. Deterministic placement (both backends):
+
+- side `s = max(32, py_round(0.05 * min(W_p, H_p)))`;
+- keep-out boxes: every note of the current `live_detection` (all roles),
+  mapped through H, its axis-aligned bounding box grown by `s` on every side;
+- candidate centers `(W_p * i / 10, H_p * j / 10)` for `j = 1..9` (outer),
+  `i = 1..9` (inner); square `[cx - s/2, cx + s/2] x [cy - s/2, cy + s/2]`;
+- a candidate is free when its square intersects no keep-out box and no
+  already chosen probe grown by `s` (boxes intersect when `a.x0 < b.x1 and
+  b.x0 < a.x1 and a.y0 < b.y1 and b.y0 < a.y1`), and its 4 corners mapped
+  through `H^-1` land in `[8, W_c - 9] x [8, H_c - 9]` camera px (a corner H^-1
+  cannot map makes the candidate not free);
+- keep-out notes are the rounded points of `live_detection` (the snapshot's
+  3-decimal values, identical in both backends); a note H cannot map is
+  skipped;
+- roles in order start, goal, bumper, marker take the first free candidate.
+
+**Sequence.**
 
 1. Projector neutral, capture frame N -> `POST /api/check_frame` with
    `X-Postit-Check: neutral`.
-2. Projector live with fill forced on (`{type: "overlay_test", id}` ->
-   projector draws the aligned overlay with fill regardless of
-   `overlay.fill`, acks `overlay_test_ack`), capture frame F ->
-   `X-Postit-Check: overlay`.
-3. Action `check_solve`: both frames through `find_notes` with the current
-   palette. For every role, notes are matched greedily by IoU of their convex
-   polygons (`cv.intersectConvexConvex` area / union area). Pass when every
-   role has the same count in both frames and every matched pair has
-   IoU >= 0.85. Pass -> `overlay = {"status": "ok", "fill": true, "detail":
-   "Relleno de color verificado con la cámara."}`. Fail ->
-   `{"status": "fill_off", "fill": false, "detail": "El color proyectado
-   cambiaba la detección ({role}: {before} → {after}); se proyectan solo
-   bordes."}` (first failing role, counts before/after; when counts match but
-   IoU fails, `{role}: forma` instead of counts). Logs `overlay_check
-   {result, fill, roles: {role: {neutral, overlay, min_iou}}}`. Requires
-   both frames (409 `Faltan los cuadros de verificación.`), clears them.
-   `/api/check_frame` returns `{"received": ["neutral", ...]}`; 400 for a
-   bad header value (`Cabecera X-Postit-Check inválida.`).
+2. `{type: "overlay_test", id}` -> the projector draws the aligned overlay
+   with the fill forced on regardless of `overlay.fill`, plus each probe as a
+   square filled with its role's palette hex at `globalAlpha 0.35` (no rim),
+   acks `overlay_test_ack`; capture frame F -> `X-Postit-Check: overlay`.
+3. Action `check_solve` (409 `Primero alineá el proyector.` unless alignment
+   is `ready`; 409 `Faltan los cuadros de verificación.` without both frames;
+   frames are cleared afterwards). Both frames through `find_notes` with the
+   current palette.
+   - Probe hits: a note of F (any role) whose centroid (the mean of its
+     vertices), mapped through H, lies inside a probe square grown by `s/2` on
+     every side (inclusive bounds). A centroid H cannot map is not a hit. Hits are left
+     out of the paper matching below.
+   - Paper matching: for every role, the notes of N and of F (minus hits) are
+     matched greedily by IoU of their convex polygons (`intersectConvexConvex`
+     area / union area; greedy = repeatedly take the highest remaining IoU
+     pair). The papers pass when every role has the same count in N and F and
+     every matched pair has IoU >= 0.85.
+   - Pass (no hit and papers pass) -> `overlay = {"status": "ok", "fill": true,
+     "detail": "Relleno de color verificado con la cámara."}`.
+   - A hit -> `{"status": "fill_off", "fill": false, "detail": "La cámara toma
+     el color proyectado sobre la pared por un post-it de {label}; se
+     proyectan solo bordes."}` (label of the first probe hit, in role order).
+   - Otherwise -> `{"status": "fill_off", "fill": false, "detail": "El color
+     proyectado cambiaba la detección ({label}: {before} → {after}); se
+     proyectan solo bordes."}` for the first failing role (counts in N and F;
+     `{label}: forma` when the counts match but IoU fails).
+   - `{label}` is the role's Spanish label (`ROLE_LABELS`: inicio, llegada,
+     rebotes, esquinas).
+   - Logs `overlay_check {result: "ok" | "fill_off", fill, probes_hit: [role],
+     roles: {role: {neutral, overlay, min_iou}}}` (`min_iou` null without
+     pairs).
+   `/api/check_frame` returns `{"received": ["neutral", ...]}` (sorted);
+   400 `Cabecera X-Postit-Check inválida.` for a bad header value; 409
+   `Primero alineá el proyector.` unless alignment is `ready`.
+
+Until the check passes, `overlay = {"status": "unchecked", "fill": false,
+"detail": "El relleno de color todavía no se verificó.", "probes": [...]}`.
+Before any alignment `probes` is `[]`.
+
+### 2.4 Sub-pixel outlines (vision, both backends)
+
+Measured in `services.simulation.feedback_eval` (wave 1): with no projection
+and a perfect alignment, detected outlines are 11-12% smaller than the paper
+(20% in a dark room) and their corners land 6-12 projector px off. The mask
+boundary sits inside the blurred paper edge and approxPolyDP rounds the
+corners. Alignment itself is accurate to ~0.1 px, so the outline is the
+limit. Every 4-vertex candidate polygon is therefore refined in
+`find_notes` (Python `services/vision/detector.py`, JS `vision.mjs`):
+
+1. `F` = the HSV saturation channel of the frame (the same `cvtColor
+   BGR2HSV` the detector already computes) as float64. Pixel centers are at
+   integer coordinates; bilinear sampling clamps coordinates to
+   `[0, W-1] x [0, H-1]`.
+2. Coarse polygon `P` (4 vertices, from approxPolyDP or minAreaRect),
+   centroid `c` = mean of the 4 vertices. If any side is shorter than 8 px,
+   keep `P` unrefined.
+3. For side `k` from `a = P[k]` to `b = P[(k+1) % 4]`: unit outward normal
+   `n` = perpendicular to `b - a`, oriented away from `c`.
+   `K = clamp(py_round(|b - a| / 4), 5, 25)` samples at
+   `t_j = 0.15 + 0.7 * j / (K - 1)`, `p_j = a + t_j (b - a)`.
+4. Profile at `p_j + s n` for `s = -6.0, -5.75, ..., 6.0` (49 values).
+   Inside level `I` = median of the profile at `s <= -3.0`, outside level `O`
+   = median at `s >= 3.0` (numpy median). Skip the sample if `I - O < 20`.
+5. Crossing level `m = (I + O) / 2`. Scan consecutive profile pairs with
+   `-3.0 <= s_i` and `s_{i+1} <= 3.0` in increasing `s`; the first pair with
+   `F(s_i) > m >= F(s_{i+1})` gives `s* = s_i + 0.25 * (F(s_i) - m) /
+   (F(s_i) - F(s_{i+1}))`. Skip the sample if there is none. Edge point
+   `e_j = p_j + s* n`.
+6. A side needs at least 3 edge points, else keep `P` unrefined. Line fit by
+   total least squares: mean `(mx, my)`, `sxx, syy, sxy` (mean-centered,
+   divided by the count), direction angle `theta = 0.5 * atan2(2 sxy, sxx -
+   syy)`, direction `(cos theta, sin theta)`.
+7. Refined corner `k` = intersection of the lines of sides `k-1` and `k`.
+   If `|cross(d_{k-1}, d_k)| < 0.2` for any corner, keep `P` unrefined.
+8. Accept the refined quad only if every refined corner lies within
+   `max(4 px, 0.15 * shortest coarse side)` of its coarse corner (measured: a
+   noisy coarse corner can be 5-6 px off on a 50 px note while the fitted
+   lines are right), it is convex with the same orientation as `P`, and its
+   area is within `[0.85, 1.25]` of `P`'s area. Otherwise keep `P`.
+9. Second pass: run steps 2-8 again, sampling along the sides of the
+   step-8 result `Q` (its own centroid and side lengths in steps 2-3), with
+   step 8 still judged against `P` (corners, reach, orientation, area).
+   Keep its result if it passes, else `Q`. Where `P` is several px off at
+   one end of a side, that end's profiles miss the edge (`I - O` below 20)
+   and the line is fitted to half the side; along `Q` the whole side is
+   seen. Measured 2026-10-20 (`system_dark_room`, the paper's border ring
+   is darker than the fill-lit center): one corner 6.3 px off after one
+   pass, 1.6 px after two; a synthetic two-tone note, 1.26 -> 0.87 px.
+
+Everything downstream (centers, boards, previews, overlays, the panel's
+halos) uses the refined polygon. Measured by `services.simulation.feedback_eval` with perfect alignment
+(2026-10-20): rim corner error 2.1-2.7 px in the dark theme (normal, bright
+room, auto exposure, fill on/off), 3.2 px in a very dark room, 4.0 px under
+the light theme (3.0 px with no projection at all: the flood itself is the
+floor); outline area within 1-4% of the paper (was 11-20% small). Two
+alternative features were measured and rejected: alpha between wall and
+paper color in linear light (our own white rim pulls the edge out: 7-35 px)
+and linear-light chroma (noise at low light: 11-19 px). Saturation is immune
+to the neutral rim because white light adds no saturation. A fill inset of
+8 px instead of 5 helped the light theme (3.6 px) but hurt the dark room
+(4.3 px), so it stays 5.
+
+### 2.5 The detector discounts the projector's own rims
+
+Measured in a dark room (`system_dark_room`, 2026-10-20): the camera runs
+at a high gain, a white rim that lands on a paper saturates it, and a
+saturated pixel has no color, so the rim cut the paper in two. The
+projector then drew the rim around the detected half, which kept cutting
+it: a stable wrong state, seeded by any rim that once crossed a paper (for
+example before alignment, when rims land anywhere).
+
+Both backends therefore pass `find_notes` a `bridge` mask: 255 where the
+projector draws its own rims in this camera frame, 0 elsewhere. The bridge
+joins, it never draws. For every role, with `raw` the role's color mask and
+`clean(m) = close(open(m, 3x3), 3x3)` (the usual morphology):
+
+1. The contours are the external contours of `clean(raw)`, as without a
+   bridge.
+2. `joined = clean(raw | (bridge & dilate(raw, 5x5 ones)))`: a rim pixel
+   next to the role's color (within 2 px) counts as that color, so the
+   pieces of a paper our rim cut share a component of `joined`
+   (`connectedComponents`, 8-connected). Opening and closing are
+   increasing, so every contour pixel lies in `joined`.
+3. Contours are grouped by the `joined` label of their first point, groups
+   in the order of their first contour. A contour alone in its group is
+   kept as is; a group of several becomes the `convexHull` of all their
+   points. The usual filters, polygon and refinement then run per group.
+
+So a rim beside a paper never changes its outline, coarse or refined, and
+bare wall never changes. Measured, 2026-10-20: the first version added the
+bridge pixels to the mask itself. Where the band reached the paper the
+mask grew; where it only grazed the dilation, it left a jagged rim of
+pixels, the coarse quad came out up to 7 px off at a corner and the
+refinement kept a corner 3.7 px off (`new_aligned_fill_on`, corner 8.7 px
+against a 4 px limit). Now the band's margin does not affect any outline
+(the same case gives 2.36 px with a margin of 2 or 4).
+
+The footprint (both backends, identical): only while `projection.mode ==
+"live"` and the projector is open, from the current `live_detection` (its
+rounded points) if its frame size equals this frame's. Mapping camera ->
+projector: H when alignment is `ready`, else the contain fit the unaligned
+projector uses (`scale = min(W_p / W_c, H_p / H_c)`, centered). Each note
+goes to projector px, is offset outward by `RIM_OFFSET_PX` with
+`offset_convex_polygon` (contracts/geometry.py; miter joins, no limit), and
+comes back to camera px; vertices rounded with `floor(v + 0.5)`; drawn as a
+closed `polylines` stroke (8-connected) of thickness
+`max(3, ceil((RIM_WIDTH_PX + 2 * 4) / stretch))`, where `stretch` is the
+projector distance of one camera px to the right of the note's mean vertex.
 
 ## 3. Panel and projector protocol
 

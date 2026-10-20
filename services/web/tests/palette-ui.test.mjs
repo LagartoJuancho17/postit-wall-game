@@ -107,11 +107,13 @@ test("the panel wires pickers, eyedropper and live preview to the backend", () =
   assert.match(operator, /sendAction\("palette_reset"\)/);
   assert.match(operator, /pickRole = null;\s*pickColor\(role, point\);/);
   assert.match(operator, /const hex = sampleHex\(point\);\s*clearNotice\(\);\s*await setColor\(role, hex\);/);
-  // The eyedropper reads the robust note color, under the same black as a scan.
+  // The eyedropper reads the robust note color under the play light: the
+  // projector shows its theme background only (contract 2.2), not black.
   assert.match(operator, /return noteColorHex\(ctx\.getImageData\(origin\.x, origin\.y, SAMPLE_SIZE, SAMPLE_SIZE\)\.data\);/);
   assert.match(operator, /const darken = projectorReady && attemptPhase\(state\?\.game\) !== "running";/);
   // Owned as soon as the server went black: a lost acknowledgement still restores it.
-  assert.match(operator, /if \(darken\) \{[\s\S]*?applyState\(await action\("projection_black"\)\);\s*black = true;\s*await waitForBlackout\(\);\s*await sleep\(scanSettleMs\(cameraFixed\)\);/);
+  assert.match(operator, /if \(darken\) \{[\s\S]*?applyState\(await action\("projection_neutral"\)\);\s*black = true;\s*await waitForNeutral\(\);\s*await sleep\(scanSettleMs\(cameraFixed\)\);/);
+  assert.doesNotMatch(operator.slice(operator.indexOf("async function pickColor"), operator.indexOf("function togglePick")), /projection_black|waitForBlackout/);
   assert.match(operator, /if \(black\) \{\s*await restoreProjection\(\);\s*channel\.postMessage\(\{ type: "resume" \}\);\s*\}\s*pickBusy = false;/);
   // Pale picks are flagged; no picking while the camera search runs.
   assert.match(operator, /if \(weakColor\(hex\)\) \{/);

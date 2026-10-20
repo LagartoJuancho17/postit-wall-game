@@ -20,12 +20,15 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from threading import RLock
 from typing import Any
 
 import cv2
 
+from services.calibration import ALIGNMENT_FRAMES, alignment_layout
+from services.calibration.tests.render import homography_from_quad, project_to_camera, render_pattern
 from services.web.backend.eval import FRAME_HUES, _color, _frame, _image, sampled_hex
 from services.web.backend.server import GameController, RequestError
 
@@ -34,7 +37,23 @@ PREVIEWS_PATH = Path(__file__).with_name("preview-samples.json")
 RECOLORED = {"start": 105, "goal": 176, "bumper": 28, "marker": 140}
 PROJECTOR = (1280, 800)
 # Each UI control, expressed as the backend calls the browser makes for it.
-CONTROLS = ("scan", "launch", "aim", "reset", "resume")
+CONTROLS = ("scan", "launch", "aim", "reset", "resume", "align")
+# Where the projector's corners land in the 960x720 synthetic camera frame.
+ALIGN_QUAD = ((30, 25), (930, 20), (935, 700), (25, 695))
+
+
+@lru_cache(maxsize=1)
+def _alignment_jpegs() -> tuple[bytes, ...]:
+    """The 14 pattern frames as the camera films them; the same for every run."""
+    layout = alignment_layout(*PROJECTOR)
+    G = homography_from_quad(PROJECTOR, ALIGN_QUAD)
+    frames = []
+    for bit, inverse in ALIGNMENT_FRAMES:
+        bgr = project_to_camera(render_pattern(layout, bit, inverse), G, (960, 720))
+        okay, encoded = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 96])
+        assert okay
+        frames.append(encoded.tobytes())
+    return tuple(frames)
 
 
 class _Wall:
@@ -56,6 +75,17 @@ class _Wall:
     def launch(self, degrees: float) -> None:
         self.act("aim", degrees=degrees)
         self.act("launch")
+
+    def align(self) -> None:
+        """A real alignment run: coded patterns filmed through a known homography."""
+        state = self.act("align_start")
+        layout = state["alignment"]["layout"]
+        assert layout == alignment_layout(*PROJECTOR)
+        for (bit, inverse), jpeg in zip(ALIGNMENT_FRAMES, _alignment_jpegs()):
+            self.controller.align_frame_jpeg(jpeg, f"{bit}:{int(inverse)}")
+        assert self.act("align_solve")["alignment"]["status"] == "ready"
+        self.controller.preview_jpeg(_frame(430))
+
 
     def play_out(self) -> None:
         for _ in range(80):
@@ -113,6 +143,11 @@ def _lost(w: _Wall) -> None:
     w.play_out()
 
 
+def _aligned_ready(w: _Wall) -> None:
+    _ready(w)
+    w.align()
+
+
 def _ready_closed(w: _Wall) -> None:
     _ready(w)
     w.act("projection_close")
@@ -124,6 +159,7 @@ PHASES: dict[str, Callable[[_Wall], None]] = {
     "partial_live": _partial_live,
     "no_markers": _no_markers,
     "ready": _ready,
+    "aligned_ready": _aligned_ready,
     "ready_closed": _ready_closed,
     "running": _running,
     "paused_open": _paused_open,
@@ -138,13 +174,20 @@ _PROBES: dict[str, Callable[[_Wall], None]] = {
     "aim": lambda w: w.act("aim", degrees=0),
     "reset": lambda w: w.act("reset"),
     "resume": lambda w: w.act("resume"),
+    "align": lambda w: w.act("align_start"),
 }
 
 
+_REACHED: dict[str, _Wall] = {}
+
+
 def _reach(phase: str) -> _Wall:
-    wall = _Wall()
-    PHASES[phase](wall)
-    return wall
+    """An independent copy of a phase; each phase is driven once per process."""
+    if phase not in _REACHED:
+        wall = _Wall()
+        PHASES[phase](wall)
+        _REACHED[phase] = wall
+    return clone(_REACHED[phase])
 
 
 def clone(wall: _Wall) -> _Wall:

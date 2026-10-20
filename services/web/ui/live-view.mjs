@@ -30,7 +30,14 @@ export const LIVE_MAX_AGE_MS = 1500;
 export const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
 
 /** Projector px between a paper's edge and its rim (outward) or its fill (inward). */
-export const RIM_OFFSET_PX = 5;
+export const RIM_OFFSET_PX = 6;
+/**
+ * Light inside a paper when its role color is not allowed (aligned only):
+ * neutral, so it can never be taken for a post-it, yet a dark room still
+ * sees the whole paper. None under the light theme, whose background
+ * already lights the wall (contract 2.1).
+ */
+export const NEUTRAL_FILL = Object.freeze({ dark: "#ffffff", light: null });
 export const FILL_INSET_PX = 5;
 export const RIM_WIDTH_PX = 3;
 /** The rim stroke's canvas miter limit; the offset path itself is a pure miter. */
@@ -302,18 +309,40 @@ export function drawProjectorScene(ctx, {
   if (matrix && !previewFitsAlignment(state.alignment, notes)) matrix = null;
   const mapping = matrix && { matrix, toProjector: cameraToProjector(matrix, state.alignment.camera) };
   const fill = Boolean(matrix) && (forceFill || state.alignment.overlay?.fill === true);
+  const neutralFill = matrix && !fill ? NEUTRAL_FILL[projectorTheme(theme)] : null;
   ctx.save();
   plainEffects(ctx);
   for (const { role, points } of projectedNotes(notes, mapping?.toProjector, width, height)) {
     if (fill) {
       const hex = palette?.roles?.[role]?.hex;
       drawFill(ctx, points, HEX.test(hex ?? "") ? hex : FALLBACK_COLORS[role]);
+    } else if (neutralFill) {
+      drawFill(ctx, points, neutralFill);
     }
     drawRim(ctx, points, colors.rim);
   }
+  if (fill && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
   drawGame(ctx, state, mapping, width, height, colors.ball);
   if (!matrix) drawHint(ctx, height, colors.rim);
   ctx.restore();
+}
+
+/**
+ * The overlay check's bare-wall probes (contract 2.3): each role's fill
+ * color, same alpha as a note's fill, no rim. If the camera takes one for a
+ * post-it, the fill is unsafe in this room and stays off.
+ */
+function drawProbes(ctx, probes, palette) {
+  if (!Array.isArray(probes)) return;
+  for (const probe of probes) {
+    if (!Array.isArray(probe?.points) || probe.points.length !== 4 || !probe.points.every(validPoint)) continue;
+    const hex = palette?.roles?.[probe.role]?.hex;
+    tracePolygon(ctx, probe.points);
+    ctx.globalAlpha = FILL_ALPHA;
+    ctx.fillStyle = HEX.test(hex ?? "") ? hex : FALLBACK_COLORS[probe.role] ?? "#ffffff";
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 }
 
 /**

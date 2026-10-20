@@ -120,7 +120,7 @@ test("live data expires after the same 1.5 seconds in both views", () => {
 });
 
 test("contract constants and neutral colors", () => {
-  assert.equal(RIM_OFFSET_PX, 5);
+  assert.equal(RIM_OFFSET_PX, 6);
   assert.equal(RIM_WIDTH_PX, 3);
   assert.equal(RIM_MITER_LIMIT, 2);
   assert.equal(AIM_WIDTH_PX, 3);
@@ -263,11 +263,20 @@ test("alignment that is not ready, malformed or for another viewport draws the u
 
 // --- Projector: aligned. ---
 
-test("aligned projector maps each note through H and rims it 5 px outside, no fill until checked", () => {
+test("aligned projector maps each note through H and rims it 6 px outside; neutral light inside until checked", () => {
   for (const theme of ["dark", "light"]) {
     const ctx = canvas({ dirty: true });
     drawProjectorScene(ctx, { state: aligned(), preview, palette, theme, width: 1280, height: 800 });
-    assert.equal(ctx.draws.filter((d) => d.kind === "fill").length, 0, "overlay.fill is false");
+    // overlay.fill is false: no role color. The dark theme lights each paper
+    // with neutral white (a dark room still sees the whole paper; white can
+    // never be taken for a post-it); the light theme's flood already lights it.
+    const fills = ctx.draws.filter((d) => d.kind === "fill");
+    if (theme === "dark") {
+      assert.equal(fills.length, 4);
+      for (const fill of fills) assert.deepEqual([fill.fillStyle, fill.globalAlpha], ["#ffffff", 0.35]);
+    } else {
+      assert.equal(fills.length, 0);
+    }
     assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
     const strokes = ctx.draws.filter((d) => d.kind === "stroke");
     assert.equal(strokes.length, 4);

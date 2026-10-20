@@ -200,7 +200,13 @@ for (const [name, { preview, palette }] of Object.entries(samples)) {
         check(`aligned:${kind}:${screen}`, () => {
           const ctx = recordingCanvas();
           drawProjectorScene(ctx, { state: { alignment: alignment(false) }, preview, palette, theme, width, height });
-          assert.equal(ctx.draws.filter((d) => d.kind === "fill" || d.kind === "text").length, 0, "no fill, no hint");
+          assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
+          // Unchecked: never a role color. Neutral white light inside each paper
+          // in the dark theme (contract 2.1); nothing under the light flood.
+          const fills = ctx.draws.filter((d) => d.kind === "fill");
+          const neutralFill = theme === "dark" ? "#ffffff" : null;
+          assert.ok(fills.every((d) => d.fillStyle === neutralFill && d.globalAlpha === 0.35), "only neutral fill");
+          if (!neutralFill) assert.equal(fills.length, 0, "no fill under the light flood");
           const strokes = ctx.draws.filter((d) => d.kind === "stroke");
           assert.equal(strokes.length, notes.length);
           strokes.forEach((stroke, i) => {
@@ -251,12 +257,20 @@ for (const [name, { state }] of Object.entries(phases)) {
         projector: { state: { ...state, game: { ...state.game, space: "projector", width, height } },
           center: state.game.position, radius: 10 },
       };
-      for (const [space, expected] of Object.entries(expectations)) {
+      // A phase whose game already runs in projector px (aligned_ready) has no
+      // camera-space ball to re-map: only the projector expectation applies.
+      const spaces = state.game.space === "projector"
+        ? Object.entries(expectations).filter(([space]) => space === "projector") : Object.entries(expectations);
+      for (const [space, expected] of spaces) {
         check(`ball:${space}:${theme}:${name}:${width}x${height}`, () => {
           const ctx = recordingCanvas();
           drawProjectorScene(ctx, { state: expected.state, theme, width, height });
-          const balls = ctx.draws.filter((d) => d.kind === "fill");
+          // The ball is the one arc fill; aligned dark scenes also light each
+          // live paper with a neutral polygon fill (contract 2.1).
+          const balls = ctx.draws.filter((d) => d.kind === "fill" && Number.isFinite(d.points?.[0]?.radius));
           assert.equal(balls.length, 1, "one ball, no frozen board polygons");
+          assert.ok(ctx.draws.filter((d) => d.kind === "fill" && !Number.isFinite(d.points?.[0]?.radius))
+            .every((d) => d.fillStyle === "#ffffff"), "any other fill is neutral paper light");
           const [{ x, y, radius }] = balls[0].points;
           assert.ok(Math.abs(x - expected.center.x) <= MAPPING_TOLERANCE_PX && Math.abs(y - expected.center.y) <= MAPPING_TOLERANCE_PX,
             `center ${x},${y} vs ${expected.center.x},${expected.center.y}`);
