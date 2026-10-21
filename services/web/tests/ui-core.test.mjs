@@ -22,7 +22,7 @@ import {
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "calibrate", "launch", "aim", "reset", "resume"];
+const CONTROLS = ["scan", "launch", "aim", "reset", "resume", "align"];
 
 // Expected panel controls per backend phase, with the camera live and the
 // projector window ready whenever the backend reports it open. Hand-written:
@@ -30,15 +30,16 @@ const CONTROLS = ["scan", "calibrate", "launch", "aim", "reset", "resume"];
 const EXPECTED = {
   projector_closed: [],
   waiting_camera: ["scan"],
-  scanned: ["scan", "calibrate"],
-  calibrating: ["scan", "calibrate"],
-  ready: ["scan", "calibrate", "launch", "aim", "reset"],
+  partial_live: ["scan", "align"],
+  no_markers: ["scan", "launch", "aim", "reset", "align"],
+  ready: ["scan", "launch", "aim", "reset", "align"],
+  aligned_ready: ["scan", "launch", "aim", "reset", "align"],
   ready_closed: [],
   running: ["reset"],
-  paused_open: ["scan", "calibrate", "reset", "resume"],
+  paused_open: ["scan", "reset", "resume", "align"],
   paused_closed: [],
-  won: ["scan", "calibrate", "reset"],
-  lost: ["scan", "calibrate", "reset"],
+  won: ["scan", "reset", "align"],
+  lost: ["scan", "reset", "align"],
 };
 
 function enabled(controls) {
@@ -54,7 +55,7 @@ test("every backend phase enables exactly the intended controls", () => {
   }
 });
 
-test("a paused attempt can be resumed, rescanned and recalibrated", () => {
+test("a paused attempt can be resumed or refreshed without calibration", () => {
   // Regression: closing the projector pauses the attempt (status stays
   // "running"); the panel used to treat that as moving and lock the operator out.
   const { state } = matrix.phases.paused_open;
@@ -63,7 +64,7 @@ test("a paused attempt can be resumed, rescanned and recalibrated", () => {
   const controls = controlsFor(state, true, true);
   assert.equal(controls.resume, true);
   assert.equal(controls.scan, true);
-  assert.equal(controls.calibrate, true);
+  assert.equal("calibrate" in controls, false);
   assert.equal(controls.launch, false);
 });
 
@@ -71,7 +72,7 @@ test("without a live camera nothing that needs a frame is enabled", () => {
   for (const [name, { state }] of Object.entries(matrix.phases)) {
     const controls = controlsFor(state, false, true);
     assert.equal(controls.scan, false, name);
-    assert.equal(controls.calibrate, false, name);
+    assert.equal("calibrate" in controls, false, name);
     assert.equal(controls.launch, false, name);
   }
 });
@@ -90,16 +91,19 @@ test("controlsFor tolerates the empty state before the first poll", () => {
 // Next setup step per backend phase, camera live, projector ready when open.
 const EXPECTED_STEP = {
   projector_closed: "projector",
-  waiting_camera: "scan",
-  scanned: "calibrate",
-  calibrating: "align",
-  ready: "play",
+  // Not aligned yet and the align button works: the guide offers it (it
+  // never blocks; the game also runs unaligned).
+  waiting_camera: "detect",
+  partial_live: "align",
+  no_markers: "align",
+  ready: "align",
+  aligned_ready: "play",
   ready_closed: "projector",
   running: "play",
-  paused_open: "play",
+  paused_open: "align",
   paused_closed: "projector",
-  won: "play",
-  lost: "play",
+  won: "align",
+  lost: "align",
 };
 
 test("setupGuide names the next step for every backend phase", () => {
@@ -133,7 +137,7 @@ test("the guide never sends the operator to a disabled button", () => {
         const where = `${name} camera=${camera} projector=${ready}`;
         const guide = setupGuide(state, camera, ready);
         const controls = controlsFor(state, camera, ready);
-        if (guide.step === "scan" || guide.step === "calibrate") {
+        if (guide.step === "scan") {
           assert.equal(controls[guide.step], true, where);
         }
         assert.ok(SETUP_STAGES.includes(guide.stage), where);
@@ -257,7 +261,7 @@ test("cameraName falls back to a numbered name when the label is hidden", () => 
 test("boardCounts prefers the camera board and survives missing data", () => {
   const { state } = matrix.phases.ready;
   assert.deepEqual(boardCounts(state), {
-    start: 1, goal: 1, bumpers: state.camera_board.bumpers.length, markers: 4,
+    start: 1, goal: 1, bumpers: state.camera_board.bumpers.length, markers: state.camera_board.markers.length,
   });
   assert.deepEqual(boardCounts({ camera_board: null, board: { start: {}, bumpers: [{}] } }),
     { start: 1, goal: 0, bumpers: 1, markers: 0 });
@@ -295,4 +299,22 @@ test("normalizeAngle clamps to ±180 and rejects non-numbers", () => {
 test("projectionSize reports whole positive CSS pixels", () => {
   assert.deepEqual(projectionSize({ innerWidth: 1280.7, innerHeight: 800.2 }), { width: 1280, height: 800 });
   assert.deepEqual(projectionSize({ innerWidth: 0, innerHeight: -3 }), { width: 1, height: 1 });
+});
+
+test("a live board can launch without calibration and optional corner notes", () => {
+  const live = { width: 640, height: 480, roles: {
+    start: { count: 1 }, goal: { count: 1 }, bumper: { count: 0 }, marker: { count: 0 },
+  } };
+  const state = { game: { status: 'ready' }, camera_board: {}, live_detection: live };
+  const controls = controlsFor(state, true, true);
+  assert.equal(controls.launch, true);
+  assert.equal('calibrate' in controls, false);
+  assert.equal(setupGuide(state, true, true).step, 'play');
+});
+
+test("a missing live board points to detection and disables launch and reset", () => {
+  const state = { game: { status: 'ready' }, board: {}, live_detection: null };
+  assert.equal(controlsFor(state, true, true).launch, false);
+  assert.equal(controlsFor(state, true, true).reset, false);
+  assert.equal(setupGuide(state, true, true).step, 'detect');
 });

@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import * as core from "../ui/ui-core.mjs";
+import * as live from "../ui/live-view.mjs";
 
 const read = (name) => readFileSync(new URL(`../ui/${name}`, import.meta.url), "utf8");
 
@@ -32,3 +33,13 @@ for (const script of ["app.js", "projector.js"]) {
     }
   });
 }
+
+// Extracting the overlay must not leave renderPalette's shared fallback undefined.
+// This failed at page startup before camera permissions could be requested.
+test("the panel imports its palette fallback from the shared live renderer", () => {
+  const source = read("app.js");
+  const names = source.match(/import\s*\{([^}]*)\}\s*from\s*"\.\/live-view\.mjs";/)?.[1]
+    .split(",").map((name) => name.trim());
+  assert.ok(names?.includes("FALLBACK_COLORS"), "renderPalette uses FALLBACK_COLORS at startup");
+  for (const name of names) assert.ok(name in live, `${name} must exist in the shared renderer`);
+});

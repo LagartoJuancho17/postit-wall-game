@@ -9,7 +9,6 @@ import {
   cameraName,
   cameraToSwitchTo,
   cameraSupport,
-  containTransform,
   controlsFor,
   describeCamera,
   invalidatesBoard,
@@ -46,6 +45,11 @@ import {
   weakColor,
   withTimeout,
 } from "./ui-core.mjs";
+import { createApi } from "./api.mjs";
+import { autoAlignKey, runAlignment, shouldAutoAlign } from "./align-run.mjs";
+import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS } from "./live-view.mjs";
+
+const api = createApi("panel");
 
 const $ = (id) => document.getElementById(id);
 const video = $("camera-video");
@@ -54,11 +58,10 @@ const overlay = $("camera-overlay");
 const channel = new BroadcastChannel("postit-wall");
 const PROJECTOR_URL = "/projector";
 const PREVIEW_EVERY_MS = 250;
-const PREVIEW_MAX_AGE_MS = 1500;
+const PREVIEW_MAX_AGE_MS = LIVE_MAX_AGE_MS;
 const PALETTE_ERROR_MS = 8000;
 const CAMERA_FRAMES_MS = 8000;
 const PALETTE_NOTE = "Tocá el gotero y después el post-it en la imagen, o elegí el color en el cuadrado. La luz se enciende cuando la cámara lo detecta.";
-const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
 
 let stream = null;
 let popup = null;
@@ -73,8 +76,15 @@ let pickBusy = false;
 let pickCheck = null;
 let localNotice = null;
 let requestId = 0;
-const pendingBlackouts = new Map();
+// Projector messages waiting for their ack, by id: blackout, neutral,
+// align_pattern and overlay_test all answer once drawn.
+const pendingAcks = new Map();
+let aligning = false;
+let projectorFullscreen = false;
+let projectorHidden = false;
+const autoAlignTried = new Set();
 let preview = null;
+let previewGeneration = 0;
 let previewBusy = false;
 let previewTimer = null;
 let previewSupported = true;
@@ -137,7 +147,7 @@ async function responseJSON(response) {
 }
 
 async function action(name, extra = {}) {
-  const response = await fetch("/api/action", {
+  const response = await api("/api/action", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
     body: JSON.stringify({ action: name, ...extra }),
@@ -165,9 +175,11 @@ function cameraError(error) {
 }
 
 function stopCamera() {
+  previewGeneration += 1;
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
   video.srcObject = null;
+  preview = null;
 }
 
 // The camera the operator picked stays picked across reloads.
@@ -272,10 +284,10 @@ async function startCamera(deviceId = "", preferExternal = false) {
 
 // Only once the camera has settled (startup may hop from the default camera
 // to the preferred one) and only if the board came from a different camera:
-// reloading with the same camera keeps the scan and the calibration.
+// reloading with the same camera keeps the active attempt.
 async function forgetBoardOfOtherCamera(label) {
   try {
-    const latest = state ?? await responseJSON(await fetch("/api/state", { cache: "no-store" }));
+    const latest = state ?? await responseJSON(await api("/api/state", { cache: "no-store" }));
     if (invalidatesBoard(latest?.camera?.label, label)) applyState(await action("camera_changed"));
   } catch (error) {
     notice(error.message, "error");
@@ -288,6 +300,8 @@ function openProjector() {
     return;
   }
   // It must stay directly in the click/keydown call stack for popup permission.
+  // A named popup: a reloaded panel reuses it instead of opening a second
+  // projector, and Chrome gives it its own window to move to the projector.
   const opened = window.open(PROJECTOR_URL, "postit-wall-projector", "popup=yes,width=1280,height=720");
   if (!opened) {
     notice("Chrome bloqueó la ventana. Permití las ventanas emergentes de localhost y usá el botón «Abrir proyección».", "error");
@@ -299,20 +313,129 @@ function openProjector() {
   notice("Mové la nueva ventana al proyector y pulsá «Pantalla completa» allí.", "info");
 }
 
-function waitForBlackout() {
+/** Ask the projector to draw a scene; resolves with its ack once on screen. */
+function showOnProjector(message, failure = "La ventana de proyección no respondió. Abrila otra vez con J.") {
   return new Promise((resolve, reject) => {
     const id = ++requestId;
     const timeout = setTimeout(() => {
-      pendingBlackouts.delete(id);
-      reject(new Error("La ventana de proyección no confirmó el fondo negro. Abrila otra vez con J."));
+      pendingAcks.delete(id);
+      reject(new Error(failure));
     }, 2500);
-    pendingBlackouts.set(id, () => {
+    pendingAcks.set(id, (ack) => {
       clearTimeout(timeout);
-      pendingBlackouts.delete(id);
-      resolve();
+      pendingAcks.delete(id);
+      resolve({ ...ack, at: performance.now() });
     });
-    channel.postMessage({ type: "blackout", id });
+    channel.postMessage({ ...message, id });
   });
+}
+
+// Colors and camera settings are measured under the play light, minus our
+// own drawing: the theme background only (contract 2.2).
+function waitForNeutral() {
+  return showOnProjector({ type: "neutral" },
+    "La ventana de proyección no confirmó el fondo neutro. Abrila otra vez con J.");
+}
+
+/** At least `ms` after the projector's ack AND two new camera frames presented after it. */
+function settleAfter(ack, ms) {
+  return new Promise((resolve) => {
+    const since = ack?.at ?? performance.now();
+    let frames = 0;
+    let finished = false;
+    const finish = () => {
+      if (!finished) {
+        finished = true;
+        resolve();
+      }
+    };
+    setTimeout(finish, ms + 1500); // a stalled camera must not hang the run
+    if (typeof video.requestVideoFrameCallback !== "function") {
+      setTimeout(finish, ms);
+      return;
+    }
+    const onFrame = (now) => {
+      if (now >= since) frames += 1;
+      if (frames >= 2 && performance.now() - since >= ms) finish();
+      else if (!finished) video.requestVideoFrameCallback(onFrame);
+    };
+    video.requestVideoFrameCallback(onFrame);
+  });
+}
+
+async function uploadFrame(path, blob, headers) {
+  const response = await api(path, {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
+      "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || ""), ...headers },
+    body: blob,
+  });
+  return responseJSON(response);
+}
+
+function projectorIsReady() {
+  return Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
+}
+
+// Contract section 3: coded patterns, decode, then the overlay check.
+async function alignProjector() {
+  if (aligning || scanBusy || tuning || pickBusy || !stream || !video.videoWidth) return;
+  if (!controlsFor(state, true, projectorIsReady()).align) return;
+  aligning = true;
+  previewGeneration += 1;
+  autoAlignTried.add(autoAlignKey(state));
+  notice("Alineando cámara y proyector: no los muevas.", "busy");
+  render();
+  try {
+    const result = await runAlignment({
+      action: async (name, extra) => {
+        const next = await action(name, extra);
+        applyState(next);
+        return next;
+      },
+      show: (message) => showOnProjector(message),
+      resume: () => channel.postMessage({ type: "resume" }),
+      settle: settleAfter,
+      sleep,
+      capture: () => jpegFromVideo(.92),
+      upload: uploadFrame,
+      progress: (text) => { notice(text, "busy"); render(); },
+    }, { cameraFixed });
+    applyState(result);
+    const { alignment } = result;
+    if (alignment.status === "ready") {
+      notice(`${alignment.detail} ${alignment.overlay.detail}`, alignment.overlay.fill ? "info" : "warn");
+    } else {
+      notice(alignment.detail, "error");
+    }
+  } catch (error) {
+    // The backend may have ended the run itself (projector resized, camera
+    // changed): its reason beats the 409 the next upload got.
+    let reason = error.message;
+    try {
+      const latest = await responseJSON(await api("/api/state", { cache: "no-store" }));
+      applyState(latest);
+      if (["stale", "none"].includes(latest?.alignment?.status) && latest.alignment.detail) reason = latest.alignment.detail;
+    } catch {
+      // Keep the run's own error.
+    }
+    notice(reason, "error");
+  } finally {
+    channel.postMessage({ type: "resume" });
+    aligning = false;
+    cameraSelect.disabled = cameraSelect.options.length === 0 || !cameraSelect.options[0].value;
+    previewGeneration += 1;
+    render();
+    schedulePreview(0);
+  }
+}
+
+function maybeAutoAlign(cameraReady, projectionReady) {
+  const busy = aligning || scanBusy || Boolean(tuning) || pickBusy;
+  if (shouldAutoAlign({ state, cameraReady, projectorReady: projectionReady, fullscreen: projectorFullscreen && !projectorHidden,
+    busy, tried: autoAlignTried })) {
+    setTimeout(alignProjector, 0);
+  }
 }
 
 function jpegFromVideo(quality = .94) {
@@ -344,23 +467,28 @@ function freshPreview() {
 // Live detection: the scan's own detector and palette, run on the backend.
 async function previewTick() {
   previewTimer = null;
-  if (previewBusy || scanBusy || tuning || document.hidden || !stream || !video.videoWidth) {
+  if (previewBusy || scanBusy || tuning || aligning || !stream || !video.videoWidth || currentTrack()?.readyState === "ended") {
     schedulePreview();
     return;
   }
   previewBusy = true;
+  const generation = previewGeneration;
   const sentAt = performance.now();
   try {
-    const response = await fetch("/api/preview", {
+    const response = await api("/api/preview", {
       method: "POST",
-      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
+      headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
+        "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || "") },
       body: await jpegFromVideo(.8),
     });
+    if (generation !== previewGeneration) return;
     if (response.status === 404) {
       previewSupported = false; // server started before live detection existed
       preview = null;
     } else {
-      preview = { ...(await responseJSON(response)), at: performance.now() };
+      const result = await responseJSON(response);
+      if (generation !== previewGeneration) return;
+      preview = { ...result, at: performance.now() };
       if (pickCheck && sentAt > pickCheck.at) {
         const message = pickVerdict(pickCheck.role, pickCheck.hex, pickCheck.before, preview);
         if (message) paletteError = { message, at: performance.now() };
@@ -368,7 +496,7 @@ async function previewTick() {
       }
     }
   } catch {
-    preview = null; // best effort; the scan itself still reports real errors
+    if (generation === previewGeneration) preview = null; // best effort; the scan itself still reports real errors
   } finally {
     previewBusy = false;
     render();
@@ -387,11 +515,15 @@ function sampleHex(point) {
 }
 
 async function setColor(role, hex) {
+  if (aligning) return;
   paletteError = null;
   try {
     const before = freshPreview();
     applyState(await action("palette_set", { role, hex }));
     pickCheck = { role, hex, before, at: performance.now() };
+    previewGeneration += 1;
+    preview = null; // changed colors must not relabel old polygons in the panel
+    render();
     if (weakColor(hex)) {
       paletteError = { at: performance.now(), message:
         `El color de ${ROLE_LABELS[role]} es muy pálido (${hex}): puede confundirse con la pared, la piel o la madera. Tocá el centro del post-it.` };
@@ -440,7 +572,7 @@ async function readCapabilities(track) {
 // otherwise through the server, which talks to the camera over USB.
 async function usbCamera(ids) {
   const query = ids ? `?vendor=${ids.vendor}&product=${ids.product}` : "";
-  const response = await fetch(`/api/camera${query}`, { cache: "no-store" });
+  const response = await api(`/api/camera${query}`, { cache: "no-store" });
   if (response.status === 404) return { available: false, reason: "Reiniciá web.py para fijar la cámara por USB." };
   return responseJSON(response);
 }
@@ -454,7 +586,7 @@ async function applyCamera(track, settings) {
   const sets = lockConstraints(settings, cameraCaps);
   if (cameraDriver === "usb") {
     if (!sets.length) return readCameraSettings(track);
-    const response = await fetch("/api/camera", {
+    const response = await api("/api/camera", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
       body: JSON.stringify({ ...cameraUsb, settings: mergeSets(sets) }),
@@ -535,13 +667,13 @@ async function setupCameraLock() {
     cameraFixed = false;
     cameraLock = { tone: "warn", detail: `Chrome: ${chromeDiagnosis} · USB: ${usbReason}`,
       text: isPhoneCamera(track.label)
-        ? "La cámara del celular queda en automático: no se puede fijar. Apagá Encuadre centrado y Retrato (Centro de control → Efectos de video) y no muevas el celular después de calibrar."
+        ? "La cámara del celular queda en automático: no se puede fijar. Apagá Encuadre centrado y Retrato (Centro de control → Efectos de video) y mantené el celular fijo durante cada intento."
         : `Ni Chrome ni el control USB pueden fijar esta cámara (${usbReason}).` };
     render();
     return;
   }
   try {
-    applyState(await responseJSON(await fetch("/api/state", { cache: "no-store" })));
+    applyState(await responseJSON(await api("/api/state", { cache: "no-store" })));
   } catch {
     // The regular poll keeps trying.
   }
@@ -571,7 +703,7 @@ async function tryCamera(track, settings) {
   if (track !== currentTrack()) throw new Error("la cámara cambió durante la búsqueda");
   await applyCamera(track, settings);
   await sleep(settleMs(settings));
-  const response = await fetch("/api/preview", {
+  const response = await api("/api/preview", {
     method: "POST",
     headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1" },
     body: await jpegFromVideo(.8),
@@ -587,7 +719,7 @@ async function tryCamera(track, settings) {
 // sweep, then the neighbors of the best. Scored by the scan's own detector.
 async function tuneCamera() {
   const track = currentTrack();
-  if (!track || tuning || scanBusy || pickBusy || !cameraCaps || !cameraSupport(cameraCaps).any) return;
+  if (!track || tuning || scanBusy || pickBusy || aligning || !cameraCaps || !cameraSupport(cameraCaps).any) return;
   const plan = searchPlan(cameraCaps);
   const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   tuning = { done: 0, total: plan.exposureTime.length * plan.colorTemperature.length
@@ -597,9 +729,9 @@ async function tuneCamera() {
   render();
   try {
     if (projectorReady && attemptPhase(state?.game) !== "running") {
-      applyState(await action("projection_black"));
+      applyState(await action("projection_neutral"));
       black = true;
-      await waitForBlackout();
+      await waitForNeutral();
     }
     const start = await readCameraSettings(track);
     const focus = Number.isFinite(start.focusDistance) ? { focusDistance: start.focusDistance } : {};
@@ -650,9 +782,11 @@ async function restoreProjection() {
   }
 }
 
-// Colors are read the way the scan reads them: with the projector black,
-// so neither the game drawing nor the light background tints the note.
+// Colors are read under the light the game plays in: the projector shows
+// its theme background only (no outlines, no ball), so the sample matches
+// what live detection will see, in the light theme too (contract 2.2).
 async function pickColor(role, point) {
+  if (aligning) return;
   const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const darken = projectorReady && attemptPhase(state?.game) !== "running";
   let black = false;
@@ -660,10 +794,10 @@ async function pickColor(role, point) {
   render();
   try {
     if (darken) {
-      notice("Apagando el proyector para tomar el color…", "busy");
-      applyState(await action("projection_black"));
+      notice("Ocultando los contornos para tomar el color…", "busy");
+      applyState(await action("projection_neutral"));
       black = true;
-      await waitForBlackout();
+      await waitForNeutral();
       await sleep(scanSettleMs(cameraFixed));
     }
     const hex = sampleHex(point);
@@ -689,18 +823,14 @@ function togglePick(role) {
 }
 
 async function scanBoard() {
-  if (scanBusy || tuning || pickBusy) return;
+  if (scanBusy || tuning || pickBusy || aligning) return;
   if (!controlsFor(state, Boolean(stream), popupReady && state?.projection?.open).scan) return;
   scanBusy = true;
   render();
   try {
-    notice("Apagando el proyector para leer los colores…", "busy");
-    applyState(await action("projection_black"));
-    await waitForBlackout();
-    await new Promise((resolve) => setTimeout(resolve, scanSettleMs(cameraFixed)));
     notice("Leyendo los post-its…", "busy");
     const jpeg = await jpegFromVideo();
-    const response = await fetch("/api/frame", {
+    const response = await api("/api/frame", {
       method: "POST",
       headers: { "Content-Type": "image/jpeg", "X-Postit-Client": "1",
         "X-Postit-Camera": encodeURIComponent(currentTrack()?.label || "") },
@@ -720,9 +850,13 @@ async function scanBoard() {
 }
 
 async function sendAction(name, extra = {}) {
+  const resetsColors = name === "palette_reset";
+  if (resetsColors) { previewGeneration += 1; preview = null; }
   try {
     clearNotice();
-    applyState(await action(name, extra));
+    const next = await action(name, extra);
+    if (resetsColors) { previewGeneration += 1; preview = null; }
+    applyState(next);
   } catch (error) {
     notice(error.message, "error");
   }
@@ -754,74 +888,18 @@ function drawCameraOverlay() {
   const ctx = overlay.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  const colors = Object.fromEntries(PALETTE_ROLES.map((role) =>
-    [role, state?.palette?.roles?.[role]?.hex || FALLBACK_COLORS[role]]));
-  const trace = (fit, shape) => {
-    ctx.beginPath();
-    shape.points.forEach((point, index) => {
-      const x = fit.offsetX + point.x * fit.scale;
-      const y = fit.offsetY + point.y * fit.scale;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-  };
-  const outline = (fit, shape, color) => {
-    if (!shape?.points?.length) return;
-    trace(fit, shape);
-    ctx.lineWidth = 2.6;
-    ctx.strokeStyle = color;
-    ctx.shadowColor = "#00130e";
-    ctx.shadowBlur = 5;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  };
-  // A detected note lights up: a halo in its role color, a white rim on top.
-  const glow = (fit, shape, color) => {
-    if (!shape?.points?.length) return;
-    ctx.save();
-    trace(fit, shape);
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 18;
-    ctx.globalAlpha = .3;
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#ffffff";
-    ctx.stroke();
-    ctx.restore();
-  };
-
-  const board = state?.camera_board;
-  const frameWidth = state?.camera?.width || video.videoWidth;
-  const frameHeight = state?.camera?.height || video.videoHeight;
-  if (board && frameWidth && frameHeight) {
-    const fit = containTransform(width, height, frameWidth, frameHeight);
-    outline(fit, board.playfield, "#70dce0");
-    outline(fit, board.start, colors.start);
-    outline(fit, board.goal, colors.goal);
-    board.bumpers?.forEach((shape) => outline(fit, shape, colors.bumper));
-    board.markers?.forEach((shape) => outline(fit, shape, colors.marker));
-  }
-  const live = freshPreview();
-  if (live?.width && live?.height) {
-    const fit = containTransform(width, height, live.width, live.height);
-    for (const role of PALETTE_ROLES) {
-      live.roles?.[role]?.notes?.forEach((shape) => glow(fit, shape, colors[role]));
-    }
-  }
+  drawLiveDetection(ctx, freshPreview(), state?.palette, width, height);
 }
 
 function renderPalette(cameraReady) {
   const palette = state?.palette;
   const editable = Boolean(palette) && previewSupported;
-  if (pickRole && (!editable || !cameraReady || tuning || scanBusy)) pickRole = null;
+  if (pickRole && (!editable || !cameraReady || tuning || scanBusy || aligning)) pickRole = null;
   const lights = roleLights(freshPreview());
   for (const role of PALETTE_ROLES) {
     const swatch = $(`color-${role}`);
     const color = palette?.roles?.[role]?.hex;
-    swatch.disabled = !editable;
+    swatch.disabled = !editable || aligning;
     if (color && document.activeElement !== swatch) swatch.value = color;
     const box = swatch.closest(".palette-role");
     box.style.setProperty("--role-color", color || FALLBACK_COLORS[role]);
@@ -829,7 +907,7 @@ function renderPalette(cameraReady) {
     $(`light-${role}`).dataset.state = lights[role].state;
     $(`seen-${role}`).textContent = lights[role].text;
     $(`seen-${role}`).dataset.state = lights[role].state;
-    $(`pick-${role}`).disabled = !editable || !cameraReady || Boolean(tuning) || scanBusy || pickBusy;
+    $(`pick-${role}`).disabled = !editable || !cameraReady || Boolean(tuning) || scanBusy || pickBusy || aligning;
     $(`pick-${role}`).setAttribute("aria-pressed", String(pickRole === role));
   }
   $("palette-reset").disabled = !editable || !palette.custom;
@@ -857,27 +935,40 @@ function render() {
   const projectionReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const controls = controlsFor(state, cameraReady, projectionReady);
   const guide = setupGuide(state, cameraReady, projectionReady);
-  $("scan-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.scan;
-  $("calibrate-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.calibrate;
+  // An alignment run owns the camera and the projector: nothing else may use them.
+  $("scan-button").disabled = aligning || scanBusy || Boolean(tuning) || pickBusy || !controls.scan;
   const lock = tuning ? { tone: "busy", text: `Buscando ajuste fijo de cámara ${tuning.done}/${tuning.total}…` } : cameraLock;
   $("camera-lock").textContent = lock.text;
   $("camera-lock").title = lock.detail ? `${lock.text}\n\nChrome informa: ${lock.detail}` : lock.text;
   $("camera-lock").dataset.tone = lock.tone;
-  $("camera-tune").disabled = !cameraReady || Boolean(tuning) || scanBusy || pickBusy || !cameraSupport(cameraCaps).any
+  $("camera-tune").disabled = aligning || !cameraReady || Boolean(tuning) || scanBusy || pickBusy || !cameraSupport(cameraCaps).any
     || !state || !("camera_presets" in state) || attemptPhase(state?.game) === "running";
   $("camera-tune").textContent = state?.camera_presets?.[cameraLabel] ? "Buscar otra vez" : "Buscar ajuste fijo";
-  $("launch-button").disabled = !controls.launch;
+  $("launch-button").disabled = aligning || !controls.launch;
   $("launch-button").hidden = controls.resume;
   $("resume-button").hidden = !controls.resume;
-  $("resume-button").disabled = !controls.resume;
-  $("reset-button").disabled = !controls.reset;
-  $("angle-range").disabled = !controls.aim;
-  $("aim-left").disabled = !controls.aim;
-  $("aim-right").disabled = !controls.aim;
+  $("resume-button").disabled = aligning || !controls.resume;
+  $("reset-button").disabled = aligning || !controls.reset;
+  $("angle-range").disabled = aligning || !controls.aim;
+  $("aim-left").disabled = aligning || !controls.aim;
+  $("aim-right").disabled = aligning || !controls.aim;
+  // The light must not change between the captures of a run, a search or a pick.
+  const lightLocked = aligning || Boolean(tuning) || pickBusy;
+  $("theme-dark").disabled = lightLocked;
+  $("theme-light").disabled = lightLocked;
+  if (aligning) cameraSelect.disabled = true;
   $("open-projector").innerHTML = projectionReady
     ? "Enfocar proyección <kbd>J</kbd>"
     : "Abrir proyección <kbd>J</kbd>";
   $("open-projector").dataset.attention = String(guide.step === "projector");
+  const alignment = state?.alignment;
+  $("align-projector").disabled = aligning || scanBusy || Boolean(tuning) || pickBusy || !controls.align;
+  $("align-projector").dataset.attention = String(guide.step === "align");
+  $("align-status").textContent = !alignment ? "" : alignment.status === "ready"
+    ? `${alignment.detail} ${alignment.overlay?.detail ?? ""}`.trim()
+    : alignment.detail;
+  $("align-status").dataset.tone = alignment?.status === "ready" ? (alignment.overlay?.fill ? "ok" : "warn")
+    : alignment?.status === "failed" ? "error" : alignment?.status === "stale" ? "warn" : "";
   $("theme-dark").setAttribute("aria-pressed", String(projectorBackdrop === "dark"));
   $("theme-light").setAttribute("aria-pressed", String(projectorBackdrop === "light"));
   $("setup-hint").textContent = guide.message;
@@ -893,7 +984,7 @@ function render() {
   $("count-start").textContent = scanned ? String(counts.start) : "—";
   $("count-goal").textContent = scanned ? String(counts.goal) : "—";
   $("count-bumpers").textContent = scanned ? String(counts.bumpers) : "—";
-  $("count-markers").textContent = scanned ? `${counts.markers}/4` : "—";
+  $("count-markers").textContent = scanned ? String(counts.markers) : "—";
 
   const game = state?.game ?? {};
   const attempt = attemptView(game);
@@ -908,13 +999,20 @@ function render() {
   $("status-panel").dataset.tone = localNotice?.tone || "info";
   renderPalette(cameraReady);
   drawCameraOverlay();
+  maybeAutoAlign(cameraReady, projectionReady);
 }
 
 channel.onmessage = (event) => {
   const data = event.data || {};
   if (data.type === "ready") {
     popupReady = true;
+    projectorFullscreen = Boolean(data.fullscreen);
     channel.postMessage({ type: "theme", theme: projectorBackdrop });
+    render();
+  } else if (data.type === "visibility") {
+    projectorHidden = Boolean(data.hidden);
+    if (projectorHidden) notice("La ventana de proyección está oculta: movela a su propia ventana en el proyector.", "warn");
+    else if (localNotice?.message?.startsWith("La ventana de proyección está oculta")) clearNotice();
     render();
   } else if (data.type === "theme") {
     projectorBackdrop = projectorTheme(data.theme); // switched from the projector window
@@ -922,23 +1020,24 @@ channel.onmessage = (event) => {
   } else if (data.type === "closed") {
     popupReady = false;
     render();
-  } else if (data.type === "blackout_ack") {
-    pendingBlackouts.get(data.id)?.();
+  } else if (["blackout_ack", "neutral_ack", "align_ack", "overlay_test_ack"].includes(data.type)) {
+    pendingAcks.get(data.id)?.(data);
   } else if (data.type === "projector_error") {
     notice(data.message, "error");
   }
 };
 
 $("open-projector").addEventListener("click", openProjector);
+$("align-projector").addEventListener("click", () => alignProjector());
 // After a failed start the list is still empty: retry the way the page
 // starts, so the remembered camera (and the board scanned with it) comes back.
 $("retry-camera").addEventListener("click", () => startCamera(cameraSelect.value || "", !cameraSelect.value));
 cameraSelect.addEventListener("change", () => {
+  if (aligning) return;
   rememberCamera(cameraSelect.selectedOptions[0]?.textContent);
   startCamera(cameraSelect.value, false);
 });
 $("scan-button").addEventListener("click", scanBoard);
-$("calibrate-button").addEventListener("click", () => sendAction("calibrate"));
 $("launch-button").addEventListener("click", () => sendAction("launch"));
 $("resume-button").addEventListener("click", () => sendAction("resume"));
 $("reset-button").addEventListener("click", () => sendAction("reset"));
@@ -955,10 +1054,11 @@ $("theme-dark").addEventListener("click", () => setProjectorTheme("dark"));
 $("theme-light").addEventListener("click", () => setProjectorTheme("light"));
 $("palette-reset").addEventListener("click", () => {
   paletteError = null;
+  preview = null;
   sendAction("palette_reset");
 });
 $("camera-stage").addEventListener("click", (event) => {
-  if (!pickRole || pickBusy || scanBusy || tuning || !stream || !video.videoWidth) return;
+  if (!pickRole || pickBusy || scanBusy || tuning || aligning || !stream || !video.videoWidth) return;
   const point = framePointFromClick(event.clientX, event.clientY,
     $("camera-stage").getBoundingClientRect(), video.videoWidth, video.videoHeight);
   if (!point) return;
@@ -975,7 +1075,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (isThemeShortcut(event)) {
     event.preventDefault();
-    setProjectorTheme(projectorBackdrop === "dark" ? "light" : "dark");
+    if (!(aligning || tuning || pickBusy)) setProjectorTheme(projectorBackdrop === "dark" ? "light" : "dark");
     return;
   }
   if (pickRole && event.key === "Escape") {
@@ -985,13 +1085,14 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (isTypingTarget(event.target) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (aligning) return; // S, A, R, Space and the arrows wait for the run to end
   const key = event.key.toLowerCase();
   if (key === "s") {
     event.preventDefault();
     scanBoard();
-  } else if (key === "c" && !$("calibrate-button").disabled) {
+  } else if (key === "a" && !$("align-projector").disabled) {
     event.preventDefault();
-    sendAction("calibrate");
+    alignProjector();
   } else if (key === "r" && !$("reset-button").disabled) {
     event.preventDefault();
     sendAction("reset");
@@ -1012,6 +1113,15 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", drawCameraOverlay);
 window.addEventListener("beforeunload", stopCamera);
+// Leaving mid-run must not leave patterns on the wall (the backend also
+// cancels a run that stops sending frames, after 20 s).
+window.addEventListener("pagehide", () => {
+  if (!aligning) return;
+  channel.postMessage({ type: "resume" });
+  api("/api/action", { method: "POST", keepalive: true,
+    headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
+    body: JSON.stringify({ action: "align_cancel" }) }).catch(() => {});
+});
 // The iPhone joins the list a few seconds after it wakes up near the Mac,
 // often after the page already fell back to the FaceTime camera.
 navigator.mediaDevices?.addEventListener?.("devicechange", async () => {
@@ -1023,7 +1133,7 @@ navigator.mediaDevices?.addEventListener?.("devicechange", async () => {
       activeId,
       remembered: rememberedCamera(),
       scanned: Boolean(state?.camera_board || state?.board),
-      busy: cameraBusy || scanBusy,
+      busy: cameraBusy || scanBusy || aligning || Boolean(tuning) || pickBusy,
     });
     if (target) await startCamera(target, false);
   } catch {
@@ -1052,16 +1162,25 @@ async function watchCamera() {
   }
 }
 
+let leftoverChecked = false;
 async function pollState() {
   if (polling) return;
   polling = true;
   try {
-    const response = await fetch("/api/state", { cache: "no-store" });
+    const response = await api("/api/state", { cache: "no-store" });
     const next = await responseJSON(response);
     if (connectionNotice && localNotice === connectionNotice) clearNotice();
     connectionNotice = null;
     applyState(next);
     if (popup && popup.closed) popupReady = false;
+    if (!leftoverChecked) {
+      leftoverChecked = true;
+      // A run this panel did not start (the page was reloaded mid-run).
+      if (next?.alignment?.status === "collecting" && !aligning) {
+        channel.postMessage({ type: "resume" });
+        applyState(await action("align_cancel"));
+      }
+    }
   } catch (error) {
     notice(`No se puede conectar con el servidor local: ${error.message}`, "error");
     connectionNotice = localNotice;

@@ -42,7 +42,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -76,7 +76,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -110,7 +110,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -144,7 +144,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -178,7 +178,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -187,7 +187,7 @@
        "dark": 0.0,
        "brightness": 0.459,
        "sharpness": 2.86,
-       "note_saturation": 222.5
+       "note_saturation": 220.1
       }
      }
     },
@@ -212,7 +212,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -221,7 +221,7 @@
        "dark": 0.0,
        "brightness": 0.353,
        "sharpness": 2.84,
-       "note_saturation": 224.8
+       "note_saturation": 219.0
       }
      }
     },
@@ -246,7 +246,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -255,7 +255,7 @@
        "dark": 0.0,
        "brightness": 0.345,
        "sharpness": 2.81,
-       "note_saturation": 226.2
+       "note_saturation": 222.5
       }
      }
     },
@@ -280,7 +280,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -289,7 +289,7 @@
        "dark": 0.0,
        "brightness": 0.369,
        "sharpness": 2.83,
-       "note_saturation": 224.9
+       "note_saturation": 223.8
       }
      }
     },
@@ -314,7 +314,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -323,7 +323,7 @@
        "dark": 0.0,
        "brightness": 0.918,
        "sharpness": 5.1,
-       "note_saturation": 223.4
+       "note_saturation": 220.4
       }
      }
     },
@@ -348,7 +348,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -357,7 +357,7 @@
        "dark": 0.0,
        "brightness": 0.71,
        "sharpness": 4.94,
-       "note_saturation": 223.9
+       "note_saturation": 218.0
       }
      }
     },
@@ -382,7 +382,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -391,7 +391,7 @@
        "dark": 0.0,
        "brightness": 0.694,
        "sharpness": 4.92,
-       "note_saturation": 225.6
+       "note_saturation": 221.4
       }
      }
     },
@@ -416,7 +416,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -425,7 +425,7 @@
        "dark": 0.0,
        "brightness": 0.749,
        "sharpness": 4.91,
-       "note_saturation": 225.3
+       "note_saturation": 223.6
       }
      }
     },
@@ -450,7 +450,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -459,7 +459,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.51,
-       "note_saturation": 211.8
+       "note_saturation": 205.1
       }
      }
     },
@@ -484,7 +484,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -493,7 +493,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.52,
-       "note_saturation": 215.2
+       "note_saturation": 208.4
       }
      }
     },
@@ -518,7 +518,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -527,7 +527,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.53,
-       "note_saturation": 216.1
+       "note_saturation": 209.3
       }
      }
     },
@@ -552,7 +552,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -561,7 +561,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.57,
-       "note_saturation": 216.3
+       "note_saturation": 209.5
       }
      }
     },
@@ -586,7 +586,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -595,7 +595,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.76,
-       "note_saturation": 173.2
+       "note_saturation": 167.4
       }
      }
     },
@@ -620,7 +620,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -629,7 +629,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.82,
-       "note_saturation": 179.3
+       "note_saturation": 173.6
       }
      }
     },
@@ -654,7 +654,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -663,7 +663,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.83,
-       "note_saturation": 181.4
+       "note_saturation": 175.8
       }
      }
     },
@@ -688,7 +688,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -697,7 +697,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.83,
-       "note_saturation": 181.8
+       "note_saturation": 176.1
       }
      }
     }
@@ -729,7 +729,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -763,7 +763,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -797,7 +797,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -831,7 +831,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -865,7 +865,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -874,7 +874,7 @@
        "dark": 0.0,
        "brightness": 0.243,
        "sharpness": 2.51,
-       "note_saturation": 228.5
+       "note_saturation": 221.1
       }
      }
     },
@@ -899,7 +899,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -908,7 +908,7 @@
        "dark": 0.0,
        "brightness": 0.282,
        "sharpness": 2.49,
-       "note_saturation": 217.2
+       "note_saturation": 214.3
       }
      }
     },
@@ -933,7 +933,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -942,7 +942,7 @@
        "dark": 0.0,
        "brightness": 0.318,
        "sharpness": 2.5,
-       "note_saturation": 233.1
+       "note_saturation": 228.2
       }
      }
     },
@@ -967,7 +967,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -976,7 +976,7 @@
        "dark": 0.0,
        "brightness": 0.341,
        "sharpness": 2.5,
-       "note_saturation": 234.6
+       "note_saturation": 229.6
       }
      }
     },
@@ -1001,7 +1001,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1010,7 +1010,7 @@
        "dark": 0.0,
        "brightness": 0.49,
        "sharpness": 3.66,
-       "note_saturation": 225.7
+       "note_saturation": 220.2
       }
      }
     },
@@ -1035,7 +1035,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1044,7 +1044,7 @@
        "dark": 0.0,
        "brightness": 0.569,
        "sharpness": 3.63,
-       "note_saturation": 225.8
+       "note_saturation": 224.4
       }
      }
     },
@@ -1069,7 +1069,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1078,7 +1078,7 @@
        "dark": 0.0,
        "brightness": 0.631,
        "sharpness": 3.63,
-       "note_saturation": 230.8
+       "note_saturation": 226.8
       }
      }
     },
@@ -1103,7 +1103,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1112,7 +1112,7 @@
        "dark": 0.0,
        "brightness": 0.682,
        "sharpness": 3.62,
-       "note_saturation": 232.8
+       "note_saturation": 228.6
       }
      }
     },
@@ -1137,7 +1137,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1146,7 +1146,7 @@
        "dark": 0.0,
        "brightness": 0.984,
        "sharpness": 7.43,
-       "note_saturation": 224.8
+       "note_saturation": 218.0
       }
      }
     },
@@ -1171,7 +1171,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1180,7 +1180,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 6.94,
-       "note_saturation": 224.9
+       "note_saturation": 221.2
       }
      }
     },
@@ -1205,7 +1205,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1214,7 +1214,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 6.34,
-       "note_saturation": 225.5
+       "note_saturation": 220.4
       }
      }
     },
@@ -1239,7 +1239,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1248,7 +1248,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 6.95,
-       "note_saturation": 225.8
+       "note_saturation": 220.7
       }
      }
     },
@@ -1273,7 +1273,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1282,7 +1282,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 3.49,
-       "note_saturation": 198.9
+       "note_saturation": 192.7
       }
      }
     },
@@ -1307,7 +1307,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1316,7 +1316,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 3.49,
-       "note_saturation": 201.9
+       "note_saturation": 195.6
       }
      }
     },
@@ -1341,7 +1341,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1350,7 +1350,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 3.49,
-       "note_saturation": 202.4
+       "note_saturation": 196.1
       }
      }
     },
@@ -1375,7 +1375,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1384,7 +1384,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 3.48,
-       "note_saturation": 202.0
+       "note_saturation": 195.8
       }
      }
     }
@@ -1416,7 +1416,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1425,7 +1425,7 @@
        "dark": 0.0,
        "brightness": 0.51,
        "sharpness": 2.89,
-       "note_saturation": 222.3
+       "note_saturation": 220.7
       }
      }
     },
@@ -1450,7 +1450,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1459,7 +1459,7 @@
        "dark": 0.0,
        "brightness": 0.396,
        "sharpness": 2.83,
-       "note_saturation": 221.8
+       "note_saturation": 218.6
       }
      }
     },
@@ -1484,7 +1484,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1493,7 +1493,7 @@
        "dark": 0.0,
        "brightness": 0.353,
        "sharpness": 2.83,
-       "note_saturation": 223.7
+       "note_saturation": 217.8
       }
      }
     },
@@ -1518,7 +1518,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1527,7 +1527,7 @@
        "dark": 0.0,
        "brightness": 0.329,
        "sharpness": 2.81,
-       "note_saturation": 225.5
+       "note_saturation": 220.9
       }
      }
     },
@@ -1552,7 +1552,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1561,7 +1561,7 @@
        "dark": 0.0,
        "brightness": 0.996,
        "sharpness": 4.99,
-       "note_saturation": 221.7
+       "note_saturation": 219.5
       }
      }
     },
@@ -1586,7 +1586,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1595,7 +1595,7 @@
        "dark": 0.0,
        "brightness": 0.788,
        "sharpness": 4.98,
-       "note_saturation": 221.6
+       "note_saturation": 218.0
       }
      }
     },
@@ -1620,7 +1620,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1629,7 +1629,7 @@
        "dark": 0.0,
        "brightness": 0.706,
        "sharpness": 4.95,
-       "note_saturation": 223.3
+       "note_saturation": 217.8
       }
      }
     },
@@ -1654,7 +1654,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1663,7 +1663,7 @@
        "dark": 0.0,
        "brightness": 0.663,
        "sharpness": 4.92,
-       "note_saturation": 225.4
+       "note_saturation": 219.7
       }
      }
     },
@@ -1688,7 +1688,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1697,7 +1697,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 5.02,
-       "note_saturation": 210.0
+       "note_saturation": 203.5
       }
      }
     },
@@ -1722,7 +1722,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1731,7 +1731,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.53,
-       "note_saturation": 214.2
+       "note_saturation": 207.6
       }
      }
     },
@@ -1756,7 +1756,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1765,7 +1765,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.52,
-       "note_saturation": 215.1
+       "note_saturation": 208.5
       }
      }
     },
@@ -1790,7 +1790,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1799,7 +1799,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.53,
-       "note_saturation": 215.8
+       "note_saturation": 209.0
       }
      }
     },
@@ -1824,7 +1824,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1833,7 +1833,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.77,
-       "note_saturation": 170.2
+       "note_saturation": 164.3
       }
      }
     },
@@ -1858,7 +1858,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1867,7 +1867,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.81,
-       "note_saturation": 177.7
+       "note_saturation": 172.0
       }
      }
     },
@@ -1892,7 +1892,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1901,7 +1901,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.83,
-       "note_saturation": 179.6
+       "note_saturation": 173.9
       }
      }
     },
@@ -1926,7 +1926,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1935,7 +1935,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.82,
-       "note_saturation": 180.9
+       "note_saturation": 175.3
       }
      }
     },
@@ -1960,7 +1960,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -1969,7 +1969,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.09,
-       "note_saturation": 124.7
+       "note_saturation": 119.0
       }
      }
     },
@@ -1994,7 +1994,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2003,7 +2003,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.09,
-       "note_saturation": 107.2
+       "note_saturation": 102.0
       }
      }
     },
@@ -2028,7 +2028,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2037,7 +2037,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.06,
-       "note_saturation": 111.1
+       "note_saturation": 106.1
       }
      }
     },
@@ -2062,7 +2062,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2071,7 +2071,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.06,
-       "note_saturation": 112.7
+       "note_saturation": 107.7
       }
      }
     }
@@ -2103,7 +2103,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2137,7 +2137,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2171,7 +2171,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2205,7 +2205,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2239,7 +2239,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2273,7 +2273,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2307,7 +2307,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2341,7 +2341,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2375,7 +2375,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2384,7 +2384,7 @@
        "dark": 0.0,
        "brightness": 0.318,
        "sharpness": 2.53,
-       "note_saturation": 223.7
+       "note_saturation": 221.3
       }
      }
     },
@@ -2409,7 +2409,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2418,7 +2418,7 @@
        "dark": 0.0,
        "brightness": 0.243,
        "sharpness": 2.51,
-       "note_saturation": 228.0
+       "note_saturation": 221.0
       }
      }
     },
@@ -2443,7 +2443,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2452,7 +2452,7 @@
        "dark": 0.0,
        "brightness": 0.275,
        "sharpness": 2.51,
-       "note_saturation": 227.8
+       "note_saturation": 224.4
       }
      }
     },
@@ -2477,7 +2477,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2486,7 +2486,7 @@
        "dark": 0.0,
        "brightness": 0.294,
        "sharpness": 2.5,
-       "note_saturation": 228.0
+       "note_saturation": 225.3
       }
      }
     },
@@ -2511,7 +2511,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2520,7 +2520,7 @@
        "dark": 0.0,
        "brightness": 0.639,
        "sharpness": 3.75,
-       "note_saturation": 220.9
+       "note_saturation": 220.2
       }
      }
     },
@@ -2545,7 +2545,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2554,7 +2554,7 @@
        "dark": 0.0,
        "brightness": 0.49,
        "sharpness": 3.67,
-       "note_saturation": 225.9
+       "note_saturation": 220.2
       }
      }
     },
@@ -2579,7 +2579,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2588,7 +2588,7 @@
        "dark": 0.0,
        "brightness": 0.545,
        "sharpness": 3.64,
-       "note_saturation": 225.2
+       "note_saturation": 223.6
       }
      }
     },
@@ -2613,7 +2613,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2622,7 +2622,7 @@
        "dark": 0.0,
        "brightness": 0.588,
        "sharpness": 3.64,
-       "note_saturation": 225.6
+       "note_saturation": 224.1
       }
      }
     },
@@ -2647,7 +2647,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2656,7 +2656,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 7.31,
-       "note_saturation": 221.4
+       "note_saturation": 214.9
       }
      }
     },
@@ -2681,7 +2681,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2690,7 +2690,7 @@
        "dark": 0.0,
        "brightness": 0.984,
        "sharpness": 7.41,
-       "note_saturation": 224.8
+       "note_saturation": 218.0
       }
      }
     },
@@ -2715,7 +2715,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2724,7 +2724,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 7.16,
-       "note_saturation": 225.2
+       "note_saturation": 219.2
       }
      }
     },
@@ -2749,7 +2749,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2758,7 +2758,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 7.19,
-       "note_saturation": 225.2
+       "note_saturation": 219.6
       }
      }
     }
@@ -2790,7 +2790,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2799,7 +2799,7 @@
        "dark": 0.0,
        "brightness": 0.894,
        "sharpness": 4.71,
-       "note_saturation": 223.4
+       "note_saturation": 219.9
       }
      }
     },
@@ -2824,7 +2824,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2833,7 +2833,7 @@
        "dark": 0.0,
        "brightness": 0.686,
        "sharpness": 4.57,
-       "note_saturation": 221.9
+       "note_saturation": 217.5
       }
      }
     },
@@ -2858,7 +2858,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2867,7 +2867,7 @@
        "dark": 0.0,
        "brightness": 0.616,
        "sharpness": 4.52,
-       "note_saturation": 225.3
+       "note_saturation": 219.9
       }
      }
     },
@@ -2892,7 +2892,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2901,7 +2901,7 @@
        "dark": 0.0,
        "brightness": 0.663,
        "sharpness": 4.52,
-       "note_saturation": 225.2
+       "note_saturation": 221.9
       }
      }
     },
@@ -2926,7 +2926,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2935,7 +2935,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 5.22,
-       "note_saturation": 214.0
+       "note_saturation": 207.3
       }
      }
     },
@@ -2960,7 +2960,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -2969,7 +2969,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.7,
-       "note_saturation": 217.4
+       "note_saturation": 210.6
       }
      }
     },
@@ -2994,7 +2994,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3003,7 +3003,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.73,
-       "note_saturation": 218.3
+       "note_saturation": 211.4
       }
      }
     },
@@ -3028,7 +3028,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3037,7 +3037,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 4.81,
-       "note_saturation": 218.6
+       "note_saturation": 211.7
       }
      }
     },
@@ -3062,7 +3062,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3071,7 +3071,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.91,
-       "note_saturation": 177.7
+       "note_saturation": 171.7
       }
      }
     },
@@ -3096,7 +3096,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3105,7 +3105,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.97,
-       "note_saturation": 184.1
+       "note_saturation": 178.4
       }
      }
     },
@@ -3130,7 +3130,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3139,7 +3139,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.96,
-       "note_saturation": 185.8
+       "note_saturation": 180.0
       }
      }
     },
@@ -3164,7 +3164,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3173,7 +3173,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 2.97,
-       "note_saturation": 186.4
+       "note_saturation": 180.6
       }
      }
     },
@@ -3198,7 +3198,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3207,7 +3207,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.28,
-       "note_saturation": 131.0
+       "note_saturation": 125.4
       }
      }
     },
@@ -3232,7 +3232,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3241,7 +3241,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.26,
-       "note_saturation": 119.0
+       "note_saturation": 113.8
       }
      }
     },
@@ -3266,7 +3266,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3275,7 +3275,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.25,
-       "note_saturation": 122.3
+       "note_saturation": 117.3
       }
      }
     },
@@ -3300,7 +3300,7 @@
        },
        "marker": {
         "count": 4,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3309,7 +3309,7 @@
        "dark": 0.0,
        "brightness": 1.0,
        "sharpness": 1.24,
-       "note_saturation": 123.6
+       "note_saturation": 118.4
       }
      }
     },
@@ -3334,7 +3334,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3368,7 +3368,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3402,7 +3402,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {
@@ -3436,7 +3436,7 @@
        },
        "marker": {
         "count": 0,
-        "expected": 4
+        "expected": null
        }
       },
       "quality": {

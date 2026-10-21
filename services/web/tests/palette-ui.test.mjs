@@ -41,11 +41,11 @@ test("lights follow real preview responses from the backend", () => {
   // Default colors on a recolored wall: a yellow bumper passes for a start
   // (the halo shows which note), the red goal adds a fifth corner.
   assert.deepEqual(lightStates(samples.recolored_default_colors.preview),
-    { start: "on", goal: "off", bumper: "off", marker: "warn" });
+    { start: "on", goal: "off", bumper: "off", marker: "on" });
   assert.deepEqual(lightStates(samples.recolored_picked_colors.preview),
     { start: "on", goal: "on", bumper: "on", marker: "on" });
   const full = roleLights(samples.full_wall.preview);
-  assert.equal(full.marker.text, "4/4");
+  assert.equal(full.marker.text, "4");
   assert.equal(full.start.text, "1/1");
   assert.equal(full.bumper.text, "1");
 });
@@ -55,7 +55,7 @@ test("lights stay neutral before any preview and warn on wrong counts", () => {
     assert.deepEqual(roleLights(null)[role], { state: "", count: null, text: "—" });
   }
   const preview = { roles: { start: { count: 2 }, goal: { count: 0 }, bumper: { count: 3 }, marker: { count: 3 } } };
-  assert.deepEqual(lightStates(preview), { start: "warn", goal: "off", bumper: "on", marker: "warn" });
+  assert.deepEqual(lightStates(preview), { start: "warn", goal: "off", bumper: "on", marker: "on" });
   assert.equal(roleLights(preview).start.text, "2/1");
 });
 
@@ -107,24 +107,26 @@ test("the panel wires pickers, eyedropper and live preview to the backend", () =
   assert.match(operator, /sendAction\("palette_reset"\)/);
   assert.match(operator, /pickRole = null;\s*pickColor\(role, point\);/);
   assert.match(operator, /const hex = sampleHex\(point\);\s*clearNotice\(\);\s*await setColor\(role, hex\);/);
-  // The eyedropper reads the robust note color, under the same black as a scan.
+  // The eyedropper reads the robust note color under the play light: the
+  // projector shows its theme background only (contract 2.2), not black.
   assert.match(operator, /return noteColorHex\(ctx\.getImageData\(origin\.x, origin\.y, SAMPLE_SIZE, SAMPLE_SIZE\)\.data\);/);
   assert.match(operator, /const darken = projectorReady && attemptPhase\(state\?\.game\) !== "running";/);
   // Owned as soon as the server went black: a lost acknowledgement still restores it.
-  assert.match(operator, /if \(darken\) \{[\s\S]*?applyState\(await action\("projection_black"\)\);\s*black = true;\s*await waitForBlackout\(\);\s*await sleep\(scanSettleMs\(cameraFixed\)\);/);
+  assert.match(operator, /if \(darken\) \{[\s\S]*?applyState\(await action\("projection_neutral"\)\);\s*black = true;\s*await waitForNeutral\(\);\s*await sleep\(scanSettleMs\(cameraFixed\)\);/);
+  assert.doesNotMatch(operator.slice(operator.indexOf("async function pickColor"), operator.indexOf("function togglePick")), /projection_black|waitForBlackout/);
   assert.match(operator, /if \(black\) \{\s*await restoreProjection\(\);\s*channel\.postMessage\(\{ type: "resume" \}\);\s*\}\s*pickBusy = false;/);
   // Pale picks are flagged; no picking while the camera search runs.
   assert.match(operator, /if \(weakColor\(hex\)\) \{/);
-  assert.match(operator, /\$\(`pick-\$\{role\}`\)\.disabled = !editable \|\| !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy;/);
+  assert.match(operator, /\$\(`pick-\$\{role\}`\)\.disabled = !editable \|\| !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\| aligning;/);
   // A pick during a scan would restore the projection mid-scan, so it waits.
-  assert.match(operator, /if \(pickRole && \(!editable \|\| !cameraReady \|\| tuning \|\| scanBusy\)\) pickRole = null;/);
-  assert.match(operator, /if \(!pickRole \|\| pickBusy \|\| scanBusy \|\| tuning \|\| !stream \|\| !video\.videoWidth\) return;/);
+  assert.match(operator, /if \(pickRole && \(!editable \|\| !cameraReady \|\| tuning \|\| scanBusy \|\| aligning\)\) pickRole = null;/);
+  assert.match(operator, /if \(!pickRole \|\| pickBusy \|\| scanBusy \|\| tuning \|\| aligning \|\| !stream \|\| !video\.videoWidth\) return;/);
   // While a pick holds the projector black, the buttons that would also use it wait.
-  assert.match(operator, /\$\("scan-button"\)\.disabled = scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.scan;/);
-  assert.match(operator, /\$\("calibrate-button"\)\.disabled = scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.calibrate;/);
-  assert.match(operator, /\$\("camera-tune"\)\.disabled = !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\|/);
-  assert.match(operator, /fetch\("\/api\/preview"/);
-  assert.match(operator, /if \(previewBusy \|\| scanBusy \|\| tuning \|\| document\.hidden/);
+  assert.match(operator, /\$\("scan-button"\)\.disabled = aligning \|\| scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.scan;/);
+  assert.doesNotMatch(operator, /calibrate-button/);
+  assert.match(operator, /\$\("camera-tune"\)\.disabled = aligning \|\| !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\|/);
+  assert.match(operator, /api\("\/api\/preview"/);
+  assert.doesNotMatch(operator, /tuning \|\| document\.hidden/);
   assert.match(operator, /response\.status === 404\) \{\s*previewSupported = false;/);
 });
 
@@ -137,7 +139,7 @@ test("no text names a fixed color now that the operator chooses them", () => {
     setupGuide({ calibration: { status: "collecting" } }, true, true).message,
     ...["none", "ready", "running", "won", "lost"].map((status) => attemptView({ status }).hint),
     attemptView({ status: "running", paused: true }).hint,
-    ...Object.values(matrix.phases).flatMap(({ state }) => [state.message, state.calibration.detail]),
+    ...Object.values(matrix.phases).flatMap(({ state }) => [state.message]),
     projectorPage,
     projector,
   ];
@@ -191,7 +193,7 @@ test("after a color change the panel says what the next preview lost", () => {
   // The picked role is fine but it stole another role's notes.
   assert.match(pickVerdict("goal", "#e0525a", full, seen(0, 1, 1, 4)),
     /^Con #e0525a para llegada dejé de ver bien inicio: los colores se parecen\./);
-  assert.match(pickVerdict("goal", "#e0525a", full, seen(0, 1, 1, 3)), /dejé de ver bien inicio y esquinas/);
+  assert.match(pickVerdict("goal", "#e0525a", full, seen(0, 1, 1, 3)), /dejé de ver bien inicio:/);
   // Only what got worse: a role already off before is not blamed on this pick.
   assert.equal(pickVerdict("goal", "#e0525a", seen(0, 1, 1, 4), seen(0, 1, 1, 4)), null);
   // No preview yet: nothing to judge.
@@ -200,6 +202,6 @@ test("after a color change the panel says what the next preview lost", () => {
 
 test("the verdict comes from the first preview sent after the color was set", () => {
   assert.match(operator, /const before = freshPreview\(\);\s*applyState\(await action\("palette_set", \{ role, hex \}\)\);\s*pickCheck = \{ role, hex, before, at: performance\.now\(\) \};/);
-  assert.match(operator, /const sentAt = performance\.now\(\);\s*try \{\s*const response = await fetch\("\/api\/preview"/);
+  assert.match(operator, /const sentAt = performance\.now\(\);\s*try \{\s*const response = await api\("\/api\/preview"/);
   assert.match(operator, /if \(pickCheck && sentAt > pickCheck\.at\) \{\s*const message = pickVerdict\(pickCheck\.role, pickCheck\.hex, pickCheck\.before, preview\);\s*if \(message\) paletteError = \{ message, at: performance\.now\(\) \};\s*pickCheck = null;/);
 });

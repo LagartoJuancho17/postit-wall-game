@@ -54,12 +54,47 @@ cap, that wall counted as one giant note with the real note inside it, so a
 broken frame looked ready. Even lighting and locked camera exposure improve
 reliability.
 
+## Sub-pixel outlines (contract 2.4)
+
+The mask boundary sits inside a paper's blurred edge and `approxPolyDP`
+rounds its corners, so a raw outline runs 1-3 px small with corners several
+px off. Every 4-vertex candidate is therefore refined on the HSV saturation
+channel: along each side, profiles across the edge find the 50% crossing
+between inside and outside levels, a total-least-squares line fits those
+points, and the corners are the lines' intersections. The result is kept
+only if each corner moved at most max(4 px, 15% of the shortest side), the
+quad stays convex with the same orientation and its area stays within
+0.85-1.25 of the coarse one; otherwise the coarse quad stays
+(`refine_quad` returns why). A second pass samples along the first result:
+where the coarse quad was several px off at one end of a side, that end's
+profiles miss the edge and the first line is fitted to half the side (a dark
+room's two-tone paper: one corner 6.3 px off after one pass, 1.6 px after
+two). Measured in the closed-loop eval: outline area within 1-4% of the
+paper (was 11-20% small), rim corners 1.6-3.8 projector px off.
+
+## Our own rim (contract 2.5)
+
+`find_notes(frame, palette, bridge)` takes a mask of where the projector
+draws its own rims in this frame. White light saturates a paper a rim
+crosses and leaves a colorless gap that would split it in two, a state the
+projector then keeps (it draws rims around both halves). Rim pixels next to
+a role's color join that color's pieces into one component; a group of
+pieces becomes their convex hull, unless two of its pieces are notes by
+themselves (they pass every candidate filter): that is two papers with our
+rim between them, and joining them made the count flip every frame. The
+bridge only joins: a contour alone in its component is returned untouched,
+so a rim beside a paper never moves its outline (a first version that added
+the rim pixels to the mask put a corner 8.7 px off).
+
 ## Frame quality
 
-`frame_quality(frame_bgr, palette, notes=None)` measures how well a frame
-suits detection. The panel uses it to pick fixed camera settings. It returns:
+`frame_quality(frame_bgr, palette, notes=None, ready=None)` measures how
+well a frame suits detection. The panel uses it to pick fixed camera
+settings. It returns:
 
-- `ready`: `detect_board` would succeed.
+- `ready`: `detect_board` would succeed, or the caller's own verdict when it
+  passes one (the live server decides it from its board and skips a second
+  detection).
 - `clipped` / `dark`: fraction of pixels whose brightest channel is ≥250 /
   <25.
 - `brightness`: median brightest channel, 0–1, which mostly reads the wall's
@@ -78,7 +113,7 @@ new scan.
 From the project root:
 
 ```sh
-python -m unittest services.vision.tests.test_detector services.vision.tests.test_palette services.vision.tests.test_quality
+python -m unittest services.vision.tests.test_detector services.vision.tests.test_palette services.vision.tests.test_quality services.vision.tests.test_refine
 python -m services.vision.eval
 ```
 

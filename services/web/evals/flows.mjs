@@ -42,11 +42,12 @@ const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", 
 const previews = JSON.parse(readFileSync(new URL("../contract/preview-samples.json", import.meta.url), "utf8"));
 const cameraTrials = JSON.parse(readFileSync(new URL("../contract/camera-trials.json", import.meta.url), "utf8"));
 const c920 = JSON.parse(readFileSync(new URL("../contract/c920-capabilities.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "calibrate", "launch", "aim", "reset", "resume"];
-const NEEDS_CAMERA = ["scan", "calibrate", "launch"];
+const CONTROLS = ["scan", "launch", "aim", "reset", "resume", "align"];
+const NEEDS_CAMERA = ["scan", "launch"];
 const JOURNEY = [
   ["waiting_camera", "scan"],
-  ["scanned", "calibrate"],
+  ["partial_live", "scan"],
+  ["no_markers", "launch"],
   ["ready", "aim"],
   ["ready", "launch"],
   ["running", "reset"],
@@ -55,7 +56,7 @@ const JOURNEY = [
   ["lost", "reset"],
   ["paused_open", "resume"],
   ["paused_open", "scan"],
-  ["paused_open", "calibrate"],
+
 ];
 const REOPEN = { projector_closed: "waiting_camera", ready_closed: "ready", paused_closed: "paused_open" };
 
@@ -103,8 +104,8 @@ function reopenCase() {
   return { case: "reopen", passed: stuck.length === 0, stuck };
 }
 
-const OUTSIDE_PANEL = new Set(["camera", "projector", "align"]);
-const NAMES_ITS_FIX = { camera: /cámara/i, projector: /\bJ\b/, align: /cruz/i };
+const OUTSIDE_PANEL = new Set(["camera", "projector", "detect"]);
+const NAMES_ITS_FIX = { camera: /cámara/i, projector: /\bJ\b/, detect: /inicio.*llegada/i };
 
 function guidanceCase() {
   const seen = new Set();
@@ -124,7 +125,7 @@ function guidanceCase() {
         const problems = [];
         if (dead && !OUTSIDE_PANEL.has(guide.step)) problems.push(`dead state guides to ${guide.step}`);
         if (NAMES_ITS_FIX[guide.step] && !NAMES_ITS_FIX[guide.step].test(guide.message)) problems.push("message lacks the fix");
-        if (["scan", "calibrate"].includes(guide.step) && !controls[guide.step]) problems.push(`points at disabled ${guide.step}`);
+        if (["scan"].includes(guide.step) && !controls[guide.step]) problems.push(`points at disabled ${guide.step}`);
         if (guide.blocking && statusText(null, state, guide) !== guide.message) problems.push("backend message hides blocker");
         if (problems.length) unguided.push({ state: key, problems });
       }
@@ -137,7 +138,7 @@ function lightsCase() {
   const wrong = Object.entries(previews.samples)
     .map(([name, sample]) => {
       const lights = roleLights(sample.preview);
-      const ready = ["start", "goal", "marker"].every((role) => lights[role].state === "on");
+      const ready = ["start", "goal"].every((role) => lights[role].state === "on");
       return { sample: name, lights_ready: ready, scan_ok: sample.scan_ok };
     })
     .filter((row) => row.lights_ready !== row.scan_ok);

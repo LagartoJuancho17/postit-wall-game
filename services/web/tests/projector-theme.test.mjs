@@ -30,13 +30,20 @@ test("whatever the theme, a scan or camera search sees pure black", () => {
   assert.equal(projectorBackground("dark", false), "#000000");
 });
 
-test("the dark theme keeps the original projector colors", () => {
+// docs/alignment-and-color.md 2.1 deliberately changed one thing: the projected
+// result texts share the ball's neutral color. The old won green (#77ec8f) was
+// the bumper's hue, and the camera re-detects projected role hues as post-its.
+test("the dark theme keeps the original projector colors, except the neutral result texts", () => {
   assert.deepEqual(PROJECTOR_THEMES.dark, {
     background: "#000000", playfield: "#56dbe0", grid: "#36696a", start: "#ffdf53",
-    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#77ec8f", lost: "#ff8680",
+    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#f6fbfc", lost: "#f6fbfc",
     cross: "#ffffff", crossRing: "#f877d5",
   });
   assert.deepEqual(Object.keys(PROJECTOR_THEMES.light), Object.keys(PROJECTOR_THEMES.dark));
+  for (const colors of Object.values(PROJECTOR_THEMES)) {
+    assert.equal(colors.won, colors.ball, "won is neutral");
+    assert.equal(colors.lost, colors.ball, "lost is neutral");
+  }
 });
 
 test("every stroke stands out from its background in both themes", () => {
@@ -73,8 +80,9 @@ test("the projector draws only theme colors and blacks out for scans", () => {
   assert.match(projector, /ctx\.fillStyle = projectorBackground\(theme, blackoutForced\);/);
   assert.match(projector, /data\.type === "theme"\) \{\s*theme = projectorTheme\(data\.theme\);\s*draw\(\);/);
   assert.match(projector, /window\.addEventListener\("storage", \(event\) => \{\s*if \(event\.key !== THEME_KEY\) return;/);
-  // F works in the projector window too, also during calibration.
-  assert.match(projector, /if \(isThemeShortcut\(event\)\) \{[\s\S]*?\}\s*if \(state\?\.projection\?\.mode !== "calibration"/);
+  // F keeps working in the live projector after calibration was removed.
+  assert.match(projector, /if \(isThemeShortcut\(event\)\) \{[\s\S]*?setTheme\(theme === "dark" \? "light" : "dark"\);/);
+  assert.doesNotMatch(projector, /calibrat|drawBoard|drawTarget/);
   assert.match(css, /body\.projector-page\[data-blackout="true"\] \{ background: #000; \}/);
 });
 
@@ -83,7 +91,9 @@ test("the panel switch saves the choice and tells the projector window", () => {
   assert.match(operator, /localStorage\.setItem\(THEME_KEY, projectorBackdrop\);/);
   assert.match(operator, /channel\.postMessage\(\{ type: "theme", theme: projectorBackdrop \}\);\s*render\(\);/);
   // A projector that just opened gets the current choice even without storage.
-  assert.match(operator, /data\.type === "ready"\) \{\s*popupReady = true;\s*channel\.postMessage\(\{ type: "theme", theme: projectorBackdrop \}\);/);
+  // A projector that (re)announces itself gets the panel's theme, and says
+  // whether it is fullscreen (automatic alignment waits for that).
+  assert.match(operator, /data\.type === "ready"\) \{\s*popupReady = true;\s*projectorFullscreen = Boolean\(data\.fullscreen\);\s*channel\.postMessage\(\{ type: "theme", theme: projectorBackdrop \}\);/);
   // J keeps priority; F comes right after it.
   assert.match(operator, /openProjector\(\);\s*return;\s*\}\s*if \(isThemeShortcut\(event\)\) \{/);
   assert.equal(THEME_KEY, "postit-wall:projector-theme");

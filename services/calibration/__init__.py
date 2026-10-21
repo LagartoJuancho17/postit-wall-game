@@ -114,7 +114,9 @@ def reprojection_errors(
     errors = []
     for src, dst in zip(source, target):
         mapped = transform_point(Point(float(src[0]), float(src[1])), matrix)
-        errors.append(math.hypot(mapped.x - dst[0], mapped.y - dst[1]))
+        # sqrt(dx*dx + dy*dy), not hypot: the JS port gets the same bits.
+        dx, dy = mapped.x - dst[0], mapped.y - dst[1]
+        errors.append(math.sqrt(dx * dx + dy * dy))
     return tuple(errors)
 
 
@@ -176,9 +178,26 @@ def detect_projected_dot(dark_bgr: np.ndarray, lit_bgr: np.ndarray) -> Point:
     return components[0][2]
 
 
+# Imported last: the coded dot alignment builds on estimate_homography and
+# reprojection_errors defined above.
+from services.calibration.coded import (  # noqa: E402
+    ALIGNMENT_FRAMES,
+    ALIGNMENT_REASONS,
+    alignment_code,
+    alignment_layout,
+    decode_alignment,
+    pattern_dots,
+)
+
 __all__ = [
+    "ALIGNMENT_FRAMES",
+    "ALIGNMENT_REASONS",
+    "alignment_code",
+    "alignment_layout",
+    "decode_alignment",
     "detect_projected_dot",
     "estimate_homography",
+    "pattern_dots",
     "reprojection_errors",
     "transform_board",
     "transform_point",

@@ -167,12 +167,13 @@ test("the panel fixes the camera on every start and saves what the search finds"
   assert.match(operator, /return \{ settings, preview: result, score: presetScore\(result\) \};/);
   assert.match(operator, /advanced: sets \}/);
   // The scan and the regular preview wait while the search runs.
-  assert.match(operator, /async function scanBoard\(\) \{\s*if \(scanBusy \|\| tuning \|\| pickBusy\) return;/);
-  // The projector goes black for the search, like for a scan, and comes back.
+  assert.match(operator, /async function scanBoard\(\) \{\s*if \(scanBusy \|\| tuning \|\| pickBusy \|\| aligning\) return;/);
+  // The search runs under the play light (theme background only, contract
+  // 2.2), so the chosen exposure fits what live detection sees, and comes back.
   // Owned as soon as the server went black: a lost acknowledgement still restores it.
-  assert.match(operator, /applyState\(await action\("projection_black"\)\);\s*black = true;\s*await waitForBlackout\(\);\s*\}\s*const start = await readCameraSettings/);
+  assert.match(operator, /applyState\(await action\("projection_neutral"\)\);\s*black = true;\s*await waitForNeutral\(\);\s*\}\s*const start = await readCameraSettings/);
   // No search while the eyedropper holds the projector black.
-  assert.match(operator, /if \(!track \|\| tuning \|\| scanBusy \|\| pickBusy \|\| !cameraCaps/);
+  assert.match(operator, /if \(!track \|\| tuning \|\| scanBusy \|\| pickBusy \|\| aligning \|\| !cameraCaps/);
   assert.match(operator, /if \(black\) \{\s*await restoreProjection\(\);\s*channel\.postMessage\(\{ type: "resume" \}\);/);
   // A failed scan also brings the projection back instead of leaving it black.
   assert.match(operator, /notice\(error\.message, "error"\);\s*await restoreProjection\(\);/);
@@ -214,7 +215,7 @@ test("without Chrome controls the panel fixes the camera through the server over
   assert.match(operator, /\} else if \(!cameraSupport\(caps\)\.any\) \{\s*try \{\s*const usb = await usbCamera\(usbIds\);/);
   assert.doesNotMatch(operator, /usbCamera\(null\)|usbCamera\(\)/);
   assert.match(operator, /cameraDriver = "usb";/);
-  assert.match(operator, /if \(cameraDriver === "usb"\) \{[\s\S]*?fetch\("\/api\/camera", \{\s*method: "POST",[\s\S]*?settings: mergeSets\(sets\)/);
+  assert.match(operator, /if \(cameraDriver === "usb"\) \{[\s\S]*?api\("\/api\/camera", \{\s*method: "POST",[\s\S]*?settings: mergeSets\(sets\)/);
   // The search reads its starting point through the same route.
   assert.match(operator, /const start = await readCameraSettings\(track\);/);
   // A watchdog puts back a preset when the camera returns to automatic.
@@ -232,7 +233,7 @@ test("the phone camera is recognized and an automatic camera waits longer before
   assert.equal(scanSettleMs(true), 180);
   assert.equal(scanSettleMs(false), 1000);
   const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
-  assert.match(operator, /setTimeout\(resolve, scanSettleMs\(cameraFixed\)\)/);
+  assert.match(operator, /sleep\(scanSettleMs\(cameraFixed\)\)/);
 });
 
 test("describeCamera and settleMs speak in operator units", () => {

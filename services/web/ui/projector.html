@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#000000">
     <title>Post-it Wall · Proyección</title>
+    <!-- Inline: no /favicon.ico request, which a static host would answer 404. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg transform='rotate(-5 12 12)'%3E%3Crect x='1' y='1' width='10.5' height='10.5' rx='2' fill='%23f7d84b'/%3E%3Crect x='12.5' y='1' width='10.5' height='10.5' rx='2' fill='%23ff9b49'/%3E%3Crect x='1' y='12.5' width='10.5' height='10.5' rx='2' fill='%236cc678'/%3E%3Crect x='12.5' y='12.5' width='10.5' height='10.5' rx='2' fill='%23d75ab9'/%3E%3C/g%3E%3C/svg%3E">
     <link rel="stylesheet" href="/app.css">
   </head>
   <body class="projector-page">
@@ -12,13 +14,6 @@
     <div class="projector-topline">
       <span id="projector-state">Preparando proyección</span>
       <button id="fullscreen-button" class="projector-control" type="button">Pantalla completa</button>
-    </div>
-    <div id="calibration-dock" class="calibration-dock" hidden>
-      <div>
-        <strong id="calibration-label">Alineá la cruz</strong>
-        <span>Arrastrá la cruz hasta el centro del post-it de esquina. Flechas: mover · Shift: preciso.</span>
-      </div>
-      <button id="confirm-target" class="projector-control primary" type="button">Confirmar esquina <kbd>Enter</kbd></button>
     </div>
     <div id="projector-toast" class="projector-toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/projector.js"></script>

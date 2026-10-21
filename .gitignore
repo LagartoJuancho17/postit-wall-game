@@ -4,3 +4,8 @@ __pycache__/
 .DS_Store
 runs/
 services/uvc/build/
+node_modules/
+dist/
+.vercel/
+services/browser/parity/golden/
+.vercel

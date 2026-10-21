@@ -112,7 +112,7 @@ class CameraPresetTests(unittest.TestCase):
 class ScannedCameraTests(unittest.TestCase):
     """The board remembers which camera scanned it, so a reload keeps it."""
 
-    def test_scan_records_the_camera_and_resets_forget_it(self) -> None:
+    def test_scan_records_camera_change_forgets_and_projector_resize_preserves_it(self) -> None:
         game = GameController(log_path=None)
         self.assertIsNone(game.snapshot()["camera"]["label"])
         game.action({"action": "projection_open", "width": 1280, "height": 800})
@@ -122,16 +122,17 @@ class ScannedCameraTests(unittest.TestCase):
         game.action({"action": "projection_black"})
         game.scan_jpeg(_frame(430), "Cámara de iPhone de Tobías")
         resized = game.action({"action": "projection_open", "width": 1024, "height": 768})
-        self.assertIsNone(resized["camera"]["label"])
+        self.assertEqual(resized["camera"]["label"], "Cámara de iPhone de Tobías")
 
-    def test_a_failed_scan_keeps_the_previous_camera(self) -> None:
+    def test_a_partial_scan_updates_camera_and_clears_stale_ready_board(self) -> None:
         game = GameController(log_path=None)
         game.action({"action": "projection_open", "width": 1280, "height": 800})
         game.scan_jpeg(_frame(430), "C920")
         game.action({"action": "projection_black"})
         with self.assertRaises(RequestError):
             game.scan_jpeg(_frame(430, {"start": 105, "goal": 176, "bumper": 28, "marker": 140}), "Otra")
-        self.assertEqual(game.snapshot()["camera"]["label"], "C920")
+        self.assertEqual(game.snapshot()["camera"]["label"], "Otra")
+        self.assertIsNone(game.snapshot()["board"])
 
     def test_an_unreasonable_label_is_refused(self) -> None:
         game = GameController(log_path=None)
@@ -147,31 +148,18 @@ class ProjectionRestoreTests(unittest.TestCase):
         game = GameController(log_path=None)
         game.action({"action": "projection_open", "width": 1280, "height": 800})
         game.scan_jpeg(_frame(430))
-        game.action({"action": "calibrate"})
-        for marker in game.camera_board.markers:
-            center = marker.points[0]
-            game.action({"action": "calibration_confirm", "x": center.x + 80, "y": center.y + 30})
         return game
 
     def test_game_view_comes_back_after_a_blackout(self) -> None:
         game = self.ready_game()
         self.assertEqual(game.action({"action": "projection_black"})["projection"]["mode"], "black")
-        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"], "game")
+        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"], "live")
 
-    def test_calibration_view_comes_back_during_calibration(self) -> None:
+    def test_live_view_restores_without_a_board_or_projector(self) -> None:
         game = GameController(log_path=None)
+        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"], "live")
         game.action({"action": "projection_open", "width": 1280, "height": 800})
-        game.scan_jpeg(_frame(430))
-        game.action({"action": "calibrate"})
-        game.action({"action": "projection_black"})
-        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"],
-                         "calibration")
-
-    def test_without_board_or_projector_it_stays_black(self) -> None:
-        game = GameController(log_path=None)
-        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"], "black")
-        game.action({"action": "projection_open", "width": 1280, "height": 800})
-        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"], "black")
+        self.assertEqual(game.action({"action": "projection_restore"})["projection"]["mode"], "live")
 
 
 class PreviewQualityTests(unittest.TestCase):

@@ -18,14 +18,17 @@ from services.runtime.tests.fixtures import (
     PROJECTOR_SIZE,
     START_CENTER,
     camera_frame,
-    known_mapping,
-    mapped,
 )
 from services.web.backend.server import GameController, RequestError
 
 
-def _jpeg(**options: object) -> bytes:
-    okay, encoded = cv2.imencode(".jpg", camera_frame(**options))
+def _jpeg(*, remove_markers: bool = False, **options: object) -> bytes:
+    image = camera_frame(**options)
+    if remove_markers:
+        background = int(round(220 * float(options.get("brightness", 1.0))))
+        for x, y in MARKER_CENTERS:
+            image[y - 32:y + 33, x - 32:x + 33] = background
+    okay, encoded = cv2.imencode(".jpg", image)
     if not okay:
         raise AssertionError("Could not encode synthetic camera frame")
     return encoded.tobytes()
@@ -47,21 +50,14 @@ def _case(name: str, **frame_options: object) -> dict[str, object]:
     controller = GameController(log_path=None)
     width, height = PROJECTOR_SIZE
     controller.action({"action": "projection_open", "width": width, "height": height})
-    first = controller.scan_jpeg(_jpeg(**frame_options))
-    if first["camera_board"] is None or first["board"] is not None:
-        raise AssertionError("First scan must detect notes before calibration")
-    controller.action({"action": "calibrate"})
-    matrix = known_mapping()
-    for marker in MARKER_CENTERS:
-        point = mapped(Point(*marker), matrix)
-        state = controller.action({"action": "calibration_confirm",
-                                   "x": point.x, "y": point.y})
-    if state["calibration"]["status"] != "ready" or state["game"]["status"] != "ready":
-        raise AssertionError("Four marker confirmations must produce a ready game")
+    preview = controller.preview_jpeg(_jpeg(**frame_options))
+    state = controller.snapshot()
+    if state["phase"] != "ready" or state["board"] != state["camera_board"]:
+        raise AssertionError("Live start and goal must prepare a board without scan or calibration")
+    if state["live_detection"] != preview or state["projection"]["mode"] != "live":
+        raise AssertionError("Projector must receive the exact live detection")
     board = state["board"]
-    expected = [mapped(Point(*START_CENTER), matrix),
-                mapped(Point(*GOAL_CENTER), matrix),
-                mapped(Point(405, 190), matrix)]
+    expected = [Point(*START_CENTER), Point(*GOAL_CENTER), Point(405, 190)]
     actual = [_center(board["start"]), _center(board["goal"]),
               _center(board["bumpers"][0])]
     geometry_error = max(_error(a, b) for a, b in zip(actual, expected))
@@ -76,9 +72,10 @@ def _case(name: str, **frame_options: object) -> dict[str, object]:
         refused_during_attempt = error.status.value == 409
     else:
         refused_during_attempt = False
-    controller.action({"action": "reset"})
-    controller.action({"action": "projection_black"})
-    rescanned = controller.scan_jpeg(_jpeg(green_center=(515, 245)))
+    controller.preview_jpeg(_jpeg(green_center=(515, 245), **frame_options))
+    if controller.snapshot()["board"] != board:
+        raise AssertionError("Live post-it movement changed an active attempt")
+    rescanned = controller.action({"action": "reset"})
     new_green = _center(rescanned["board"]["bumpers"][0])
     old_green = actual[2]
     moved_distance = _error(old_green, new_green)
@@ -95,7 +92,9 @@ def _case(name: str, **frame_options: object) -> dict[str, object]:
 def run_eval() -> dict[str, object]:
     cases = []
     for name, options in (("normal", {}),
-                          ("dim_and_speckled", {"brightness": 0.62, "speckles": True})):
+                          ("dim_and_speckled", {"brightness": 0.62, "speckles": True}),
+                          ("no_markers", {"remove_markers": True}),
+                          ("no_markers_dim", {"remove_markers": True, "brightness": 0.62})):
         try:
             cases.append(_case(name, **options))
         except (AssertionError, RequestError, ValueError, KeyError, IndexError) as error:

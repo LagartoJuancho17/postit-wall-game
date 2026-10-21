@@ -17,8 +17,7 @@ export function preferredCamera(devices, remembered = "") {
 /**
  * The camera to hop to when the list changes (the iPhone joins a few seconds
  * after the page loads, or the C920 is plugged in), or null to stay. It only
- * hops before a scan, since another camera discards the board and the
- * calibration, and never away from the camera the operator picked.
+ * hops before a scan, since another camera discards the board, and never away from the camera the operator picked.
  */
 export function cameraToSwitchTo({ devices, activeId = "", remembered = "", scanned = false, busy = false }) {
   if (scanned || busy) return null;
@@ -83,7 +82,7 @@ export function boardCounts(state) {
 }
 
 const ATTEMPT_VIEWS = {
-  none: { label: "Sin tablero", hint: "Escaneá y calibrá antes de lanzar." },
+  none: { label: "Sin tablero", hint: "Mostrá un inicio y una llegada a la cámara para lanzar." },
   ready: { label: "Listo", hint: "Ajustá la dirección y lanzá desde el post-it de inicio." },
   running: { label: "En juego", hint: "La pelota está en movimiento." },
   paused: {
@@ -110,30 +109,39 @@ export function controlsFor(state, cameraReady, popupReady) {
   const moving = phase === "running";
   const popup = Boolean(popupReady);
   const live = Boolean(cameraReady) && popup;
-  const hasCameraBoard = Boolean(state?.camera_board);
-  const calibrated = state?.calibration?.status === "ready";
+  const detected = Boolean(state?.camera_board && state?.live_detection);
+  const framed = state?.camera?.width > 0;
   return {
     scan: live && !moving,
-    calibrate: live && hasCameraBoard && !moving,
-    launch: live && calibrated && phase === "ready",
-    reset: popup && phase !== "none",
-    aim: popup && phase === "ready",
+    launch: live && detected && phase === "ready",
+    reset: popup && detected && phase !== "none",
+    aim: popup && detected && phase === "ready",
     resume: popup && phase === "paused",
+    // Same rule as the backend's align_start: projector open, camera frames
+    // seen, no attempt moving; and not while a run is collecting.
+    align: live && framed && !moving && state?.alignment?.status !== "collecting",
   };
 }
 
 /** Setup order of the page's step indicator (data-step in index.html). */
-export const SETUP_STAGES = ["camera", "projector", "scan", "play"];
+export const SETUP_STAGES = ["camera", "projector", "align", "detect", "play"];
 
 const SETUP_GUIDES = {
   camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 o el iPhone debajo del video.",
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
-  scan: "Siguiente: escaneá con S. Tienen que verse 4 esquinas, 1 inicio y 1 llegada (los rebotes son opcionales): mirá las luces debajo del video.",
-  calibrate: "Siguiente: calibrá las 4 esquinas con C.",
-  align: "En la ventana del proyector, llevá la cruz al centro de cada post-it de esquina y confirmá con Enter.",
-  play: "La proyección se apaga un instante al escanear.",
+  align: "Alineá el proyector con A: proyecta unos puntos, la cámara los mira y corrige la imagen sola. Ponelo antes en pantalla completa.",
+  detect: "Mostrá 1 inicio y 1 llegada a la cámara. Los rebotes y las esquinas son opcionales; la detección se actualiza sola.",
+  play: "Los contornos del proyector siguen la detección en vivo. Ajustá la dirección y lanzá.",
 };
-const STAGE_OF = { camera: "camera", projector: "projector", scan: "scan", calibrate: "scan", align: "scan", play: "play" };
+const STAGE_OF = { camera: "camera", projector: "projector", align: "align", detect: "detect", play: "play" };
+
+/** The align step's text follows the backend's alignment status. */
+function alignMessage(alignment) {
+  if (alignment?.status === "collecting") return "Alineando cámara y proyector: no los muevas.";
+  if (alignment?.status === "failed") return `${alignment.detail} Pulsá A para reintentar.`;
+  if (alignment?.status === "stale") return `${alignment.detail} Pulsá A.`;
+  return SETUP_GUIDES.align;
+}
 
 /**
  * What unblocks the operator next, from the same inputs as controlsFor.
@@ -142,15 +150,18 @@ const STAGE_OF = { camera: "camera", projector: "projector", scan: "scan", calib
  */
 export function setupGuide(state, cameraReady, popupReady) {
   let step = "play";
+  const alignment = state?.alignment;
   if (!cameraReady) step = "camera";
   else if (!popupReady) step = "projector";
-  else if (state?.calibration?.status === "collecting") step = "align";
-  else if (!state?.camera_board) step = "scan";
-  else if (state?.calibration?.status !== "ready") step = "calibrate";
+  // Not blocking: the game also runs unaligned, it just cannot land on the
+  // papers. Only offered when the align button works.
+  else if (alignment && alignment.status !== "ready" && controlsFor(state, cameraReady, popupReady).align) step = "align";
+  else if (alignment?.status === "collecting") step = "align";
+  else if (!state?.camera_board || !state?.live_detection) step = "detect";
   return {
     step,
     stage: STAGE_OF[step],
-    message: SETUP_GUIDES[step],
+    message: step === "align" ? alignMessage(alignment) : SETUP_GUIDES[step],
     blocking: step === "camera" || step === "projector",
   };
 }
@@ -165,7 +176,7 @@ export function statusText(notice, state, guide) {
 /** Post-it roles in panel order, and how many a playable wall needs. */
 export const PALETTE_ROLES = ["start", "goal", "bumper", "marker"];
 export const ROLE_LABELS = { start: "inicio", goal: "llegada", bumper: "rebotes", marker: "esquinas" };
-const NEEDED = { start: 1, goal: 1, bumper: null, marker: 4 };
+const NEEDED = { start: 1, goal: 1, bumper: null, marker: null };
 
 /**
  * Detection light per role from a /api/preview response: "on" when the
@@ -213,6 +224,210 @@ export function containTransform(boxWidth, boxHeight, frameWidth, frameHeight) {
     offsetX: (boxWidth - frameWidth * scale) / 2,
     offsetY: (boxHeight - frameHeight * scale) / 2,
   };
+}
+
+/*
+ * Projector geometry (docs/alignment-and-color.md). Points are {x, y}.
+ * A homography is 3x3 row-major [[h00,h01,h02],[h10,h11,h12],[h20,h21,h22]]
+ * mapping camera px to projector px, normalized so h22 == 1.
+ */
+
+const finite = Number.isFinite;
+const finitePoint = (point) => Boolean(point) && finite(point.x) && finite(point.y);
+const cross = (ax, ay, bx, by) => ax * by - ay * bx;
+
+/** A 3x3 matrix of finite numbers with a nonzero determinant. */
+export function isHomography(matrix) {
+  if (!Array.isArray(matrix) || matrix.length !== 3) return false;
+  if (!matrix.every((row) => Array.isArray(row) && row.length === 3 && row.every(finite))) return false;
+  const [[a, b, c], [d, e, f], [g, h, i]] = matrix;
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  return finite(det) && det !== 0;
+}
+
+/**
+ * Where a point lands through a homography; null when it maps to infinity
+ * (w == 0) or the result is not finite.
+ */
+export function applyHomography(matrix, point) {
+  if (!isHomography(matrix) || !finitePoint(point)) return null;
+  const [[a, b, c], [d, e, f], [g, h, i]] = matrix;
+  const w = g * point.x + h * point.y + i;
+  if (!finite(w) || Math.abs(w) < 1e-12) return null;
+  const x = (a * point.x + b * point.y + c) / w;
+  const y = (d * point.x + e * point.y + f) / w;
+  return finite(x) && finite(y) ? { x, y } : null;
+}
+
+/**
+ * The exact inverse, normalized so [2][2] == 1. The adjugate is the inverse
+ * times det, so dividing it by its own [2][2] skips the division by det.
+ * Null for a singular matrix or one whose inverse cannot be normalized.
+ */
+export function invertHomography(matrix) {
+  if (!isHomography(matrix)) return null;
+  const [[a, b, c], [d, e, f], [g, h, i]] = matrix;
+  const adjugate = [
+    [e * i - f * h, c * h - b * i, b * f - c * e],
+    [f * g - d * i, a * i - c * g, c * d - a * f],
+    [d * h - e * g, b * g - a * h, a * e - b * d],
+  ];
+  const corner = adjugate[2][2];
+  if (!finite(corner) || corner === 0) return null;
+  const inverse = adjugate.map((row) => row.map((value) => value / corner));
+  return inverse.every((row) => row.every(finite)) ? inverse : null;
+}
+
+function signedArea(points) {
+  let twice = 0;
+  for (let index = 0; index < points.length; index++) {
+    const next = points[(index + 1) % points.length];
+    twice += cross(points[index].x, points[index].y, next.x, next.y);
+  }
+  return twice / 2;
+}
+
+/** Area enclosed by a simple polygon, whatever its orientation. */
+export function polygonArea(points) {
+  if (!Array.isArray(points) || points.length < 3 || !points.every(finitePoint)) return 0;
+  return Math.abs(signedArea(points));
+}
+
+/**
+ * Strictly convex, turning once around, every turn on the side of `sign`
+ * (the sign of the signed area). A pentagram turns the same way at every
+ * vertex but twice around, so the total turn is checked too.
+ */
+function convexWithSign(points, sign) {
+  let turn = 0;
+  for (let index = 0; index < points.length; index++) {
+    const prev = points[(index + points.length - 1) % points.length];
+    const point = points[index];
+    const next = points[(index + 1) % points.length];
+    const inX = point.x - prev.x;
+    const inY = point.y - prev.y;
+    const outX = next.x - point.x;
+    const outY = next.y - point.y;
+    const bend = cross(inX, inY, outX, outY);
+    if (Math.sign(bend) !== sign) return false;
+    turn += Math.atan2(bend, inX * outX + inY * outY);
+  }
+  return Math.abs(turn - sign * 2 * Math.PI) < 1e-6;
+}
+
+/** Drops repeated points and vertices that lie on the line of their neighbors. */
+function simplePolygon(points) {
+  const kept = [];
+  for (const point of points) {
+    const last = kept[kept.length - 1];
+    if (!last || Math.hypot(point.x - last.x, point.y - last.y) > 1e-9) kept.push({ x: point.x, y: point.y });
+  }
+  while (kept.length > 1 && Math.hypot(kept[0].x - kept.at(-1).x, kept[0].y - kept.at(-1).y) <= 1e-9) kept.pop();
+  let changed = true;
+  while (changed && kept.length >= 3) {
+    changed = false;
+    for (let index = 0; index < kept.length; index++) {
+      const prev = kept[(index + kept.length - 1) % kept.length];
+      const point = kept[index];
+      const next = kept[(index + 1) % kept.length];
+      const inX = point.x - prev.x;
+      const inY = point.y - prev.y;
+      const outX = next.x - point.x;
+      const outY = next.y - point.y;
+      // Collinear and continuing forward: the vertex adds nothing to the shape.
+      const straight = Math.abs(cross(inX, inY, outX, outY)) <= 1e-9 * Math.hypot(inX, inY) * Math.hypot(outX, outY);
+      if (straight && inX * outX + inY * outY > 0) {
+        kept.splice(index, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return kept;
+}
+
+/**
+ * Every edge of a convex polygon moved `distance` along its normal: positive
+ * outward, negative inward, whatever the vertex order. Vertices are the
+ * miter intersections of neighboring offset edges, so each output edge stays
+ * parallel to its source edge at exactly |distance|. Null when the input is
+ * not a convex polygon, or the result degenerates: an edge collapsed or
+ * reversed, the orientation flipped, or the area vanished.
+ * No bevel here: a sharp corner's miter reaches |distance| / sin(angle / 2)
+ * from its vertex, and the stroke drawn along the result applies its own
+ * miter limit (services/simulation/projector.py mirrors this line for line).
+ */
+export function offsetConvexPolygon(points, distance) {
+  if (!Array.isArray(points) || !finite(distance) || !points.every(finitePoint)) return null;
+  const polygon = simplePolygon(points);
+  if (polygon.length < 3) return null;
+  const area = signedArea(polygon);
+  if (!(Math.abs(area) > 1e-9)) return null;
+  const sign = Math.sign(area);
+  if (!convexWithSign(polygon, sign)) return null;
+  const count = polygon.length;
+  const lines = polygon.map((point, index) => {
+    const next = polygon[(index + 1) % count];
+    const dx = next.x - point.x;
+    const dy = next.y - point.y;
+    const length = Math.hypot(dx, dy);
+    // For a positive signed area the interior is left of each edge, so (dy, -dx) points out.
+    return { x: point.x + sign * dy / length * distance, y: point.y - sign * dx / length * distance, dx, dy };
+  });
+  const result = lines.map((line, index) => {
+    const prev = lines[(index + count - 1) % count];
+    const along = cross(line.x - prev.x, line.y - prev.y, line.dx, line.dy) / cross(prev.dx, prev.dy, line.dx, line.dy);
+    return { x: prev.x + along * prev.dx, y: prev.y + along * prev.dy };
+  });
+  if (!result.every(finitePoint)) return null;
+  for (let index = 0; index < count; index++) {
+    const next = result[(index + 1) % count];
+    const forward = (next.x - result[index].x) * lines[index].dx + (next.y - result[index].y) * lines[index].dy;
+    if (!(forward > 1e-9)) return null; // the edge collapsed or turned around
+  }
+  const resultArea = signedArea(result);
+  if (Math.sign(resultArea) !== sign || !(Math.abs(resultArea) > 1e-9)) return null;
+  return convexWithSign(result, sign) ? result : null;
+}
+
+/**
+ * Convex hull of a point set (Andrew's monotone chain), collinear points
+ * dropped. Null for fewer than three points that are not all on one line.
+ */
+export function convexHull(points) {
+  if (!Array.isArray(points) || !points.every(finitePoint)) return null;
+  const sorted = points.map(({ x, y }) => ({ x, y })).sort((a, b) => a.x - b.x || a.y - b.y);
+  const chain = (list) => {
+    const kept = [];
+    for (const point of list) {
+      while (kept.length >= 2) {
+        const [a, b] = [kept.at(-2), kept.at(-1)];
+        if (cross(b.x - a.x, b.y - a.y, point.x - a.x, point.y - a.y) > 0) break;
+        kept.pop();
+      }
+      kept.push(point);
+    }
+    kept.pop(); // the last point starts the other chain
+    return kept;
+  };
+  const hull = [...chain(sorted), ...chain([...sorted].reverse())];
+  return hull.length >= 3 ? hull : null;
+}
+
+/**
+ * How much a homography stretches lengths around a point: the square root
+ * of |det| of its Jacobian there (area scale -> length scale). Null where
+ * the point maps to infinity.
+ */
+export function homographyLocalScale(matrix, point) {
+  const mapped = applyHomography(matrix, point);
+  if (!mapped) return null;
+  const [[a, b], [d, e], [g, h, i]] = matrix;
+  const w = g * point.x + h * point.y + i;
+  // d(x')/dx = (a - x' g) / w and so on, from the quotient rule.
+  const jacobian = cross((a - mapped.x * g) / w, (d - mapped.y * g) / w, (b - mapped.x * h) / w, (e - mapped.y * h) / w);
+  const scale = Math.sqrt(Math.abs(jacobian));
+  return finite(scale) ? scale : null;
 }
 
 /** Frame pixel under a click on the camera stage; null on the letterbox bars. */
@@ -442,7 +657,7 @@ export function presetScore(preview) {
   const quality = preview?.quality;
   if (!quality) return -Infinity;
   const roles = preview.roles ?? {};
-  const satisfied = ["start", "goal", "marker"].filter((role) => roles[role]?.count === NEEDED[role]).length;
+  const satisfied = ["start", "goal"].filter((role) => roles[role]?.count === NEEDED[role]).length;
   return (quality.ready ? 1000 : 0) + satisfied * 100 + ((roles.bumper?.count ?? 0) > 0 ? 10 : 0)
     + 0.2 * (quality.note_saturation ?? 0) - 400 * quality.clipped - 150 * quality.dark
     - 200 * Math.abs(quality.brightness - TARGET_BRIGHTNESS);
@@ -475,18 +690,23 @@ export function settleMs(settings) {
 
 /**
  * Projector themes: the background and everything drawn on it. Dark keeps
- * the original colors. Light darkens every stroke so it stays visible on
- * a lit wall. Whatever the theme, a scan or camera search sees pure black.
+ * the original colors except the result texts. Light darkens every stroke
+ * so it stays visible on a lit wall. Whatever the theme, a scan or camera
+ * search sees pure black. won and lost share the ball's neutral color: the
+ * camera re-detects projected role hues as post-its, and the old green
+ * "won" was the bumper's hue (docs/alignment-and-color.md 2.1). The live
+ * renderer draws from NEUTRAL in live-view.mjs; the panel styles its own
+ * result colors in CSS and never reads these.
  */
 export const PROJECTOR_THEMES = {
   dark: {
     background: "#000000", playfield: "#56dbe0", grid: "#36696a", start: "#ffdf53",
-    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#77ec8f", lost: "#ff8680",
+    goal: "#ffa659", bumper: "#77ec8f", ball: "#f6fbfc", won: "#f6fbfc", lost: "#f6fbfc",
     cross: "#ffffff", crossRing: "#f877d5",
   },
   light: {
     background: "#f3f2ec", playfield: "#0d7168", grid: "#6f968d", start: "#946f00",
-    goal: "#c2540c", bumper: "#1f7a43", ball: "#17211f", won: "#1f7a43", lost: "#b0392e",
+    goal: "#c2540c", bumper: "#1f7a43", ball: "#17211f", won: "#17211f", lost: "#17211f",
     cross: "#17211f", crossRing: "#a8308a",
   },
 };

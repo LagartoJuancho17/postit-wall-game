@@ -1,28 +1,31 @@
 import {
   isThemeShortcut,
-  pointInCanvas,
   projectionSize,
   projectorBackground,
-  projectorColors,
   projectorTheme,
   THEME_KEY,
+  withTimeout,
 } from "./ui-core.mjs";
+import { createApi } from "./api.mjs";
+import { drawAlignmentPattern, drawProjectorScene, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
+
+const api = createApi("projector");
 
 const canvas = document.getElementById("projector-canvas");
 const ctx = canvas.getContext("2d", { alpha: false });
 const channel = new BroadcastChannel("postit-wall");
 const fullscreenButton = document.getElementById("fullscreen-button");
-const confirmButton = document.getElementById("confirm-target");
-const dock = document.getElementById("calibration-dock");
 const toast = document.getElementById("projector-toast");
 const stateLabel = document.getElementById("projector-state");
-const calibrationLabel = document.getElementById("calibration-label");
 
 let state = null;
-let localTarget = null;
-let targetIndex = -1;
+let stateReceivedAt = 0;
 let blackoutForced = false;
-let dragging = false;
+// What the panel asked this window to show, ahead of state.projection.mode
+// (docs/alignment-and-color.md 3): {kind: "pattern", layout, frame},
+// {kind: "neutral"} or {kind: "overlay_test"}. The channel handlers set it
+// and {type: "resume"} clears it; null draws from the state.
+let localScene = null;
 let tickBusy = false;
 let resizeTimer = null;
 let viewport = projectionSize(window);
@@ -65,7 +68,7 @@ async function responseJSON(response) {
 }
 
 async function action(name, extra = {}) {
-  const response = await fetch("/api/action", {
+  const response = await api("/api/action", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
     body: JSON.stringify({ action: name, ...extra }),
@@ -84,17 +87,42 @@ function resizeCanvas() {
   draw();
 }
 
+let lastRegister = 0;
+
 function applyState(next) {
   state = next;
-  const target = state?.projection?.target;
-  if (!dragging && target && (target.index !== targetIndex || !localTarget)) {
-    localTarget = { x: target.x, y: target.y };
-    targetIndex = target.index;
-  } else if (!target) {
-    localTarget = null;
-    targetIndex = -1;
+  stateReceivedAt = performance.now();
+  // A backend that forgot this window (web.py restarted, or the panel
+  // reloaded and started a new in-browser backend) learns it again.
+  if (next?.projection?.open === false && performance.now() - lastRegister > 1000) {
+    lastRegister = performance.now();
+    registerProjector();
   }
   draw();
+}
+
+function projectorMetrics() {
+  return { width: viewport.width, height: viewport.height, dpr: window.devicePixelRatio || 1,
+    fullscreen: Boolean(document.fullscreenElement) };
+}
+
+async function registerProjector() {
+  try {
+    const next = await action("projection_open", { width: viewport.width, height: viewport.height });
+    state = next;
+    stateReceivedAt = performance.now();
+    toast.hidden = true;
+    channel.postMessage({ type: "ready", ...projectorMetrics() });
+  } catch (error) {
+    showError(error);
+  }
+}
+
+/** Draw the requested scene, let the compositor show it, then confirm. */
+async function ackAfterDraw(type, id) {
+  draw();
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  channel.postMessage({ type, id, ...projectorMetrics() });
 }
 
 function drawBackground() {
@@ -103,184 +131,54 @@ function drawBackground() {
   ctx.fillRect(0, 0, viewport.width, viewport.height);
 }
 
-function drawPolygon(polygon, color, width = 3) {
-  if (!polygon?.points?.length) return;
-  ctx.beginPath();
-  polygon.points.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y);
-    else ctx.lineTo(point.x, point.y);
-  });
-  ctx.closePath();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.stroke();
-}
-
-function drawBoard(board, grid = false) {
-  if (!board) return;
-  const colors = projectorColors(theme);
-  drawPolygon(board.playfield, colors.playfield, 3);
-  if (grid && board.playfield?.points?.length === 4) {
-    const [tl, tr, br, bl] = board.playfield.points;
-    const mix = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-    ctx.strokeStyle = colors.grid;
-    ctx.lineWidth = 1;
-    for (const t of [.25, .5, .75]) {
-      const lines = [[mix(tl, bl, t), mix(tr, br, t)], [mix(tl, tr, t), mix(bl, br, t)]];
-      for (const [a, b] of lines) {
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-    }
-  }
-  drawPolygon(board.start, colors.start, 4);
-  drawPolygon(board.goal, colors.goal, 4);
-  board.bumpers?.forEach((polygon) => drawPolygon(polygon, colors.bumper, 3));
-}
-
-function drawTarget(target) {
-  const colors = projectorColors(theme);
-  const x = target.x;
-  const y = target.y;
-  ctx.strokeStyle = colors.cross;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(x - 29, y);
-  ctx.lineTo(x + 29, y);
-  ctx.moveTo(x, y - 29);
-  ctx.lineTo(x, y + 29);
-  ctx.stroke();
-  ctx.strokeStyle = colors.crossRing;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(x, y, 9, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
-function drawGame(game, board) {
-  if (!board || !game?.position) return;
-  const colors = projectorColors(theme);
-  drawBoard(board);
-  const ball = game.position;
-  if (game.status === "ready") {
-    const angle = (game.aim_degrees ?? -45) * Math.PI / 180;
-    ctx.strokeStyle = colors.ball;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(ball.x, ball.y);
-    ctx.lineTo(ball.x + 70 * Math.cos(angle), ball.y + 70 * Math.sin(angle));
-    ctx.stroke();
-  }
-  ctx.fillStyle = colors.ball;
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-  ctx.fill();
-  if (game.status === "won" || game.status === "lost") {
-    ctx.font = "700 42px -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillStyle = game.status === "won" ? colors.won : colors.lost;
-    ctx.fillText(game.status === "won" ? "¡LLEGASTE!" : "FUERA DEL CAMPO", viewport.width / 2, 75);
-  }
-}
-
 function draw() {
   drawBackground();
-  const mode = blackoutForced ? "black" : (state?.projection?.mode || "black");
-  document.body.dataset.mode = mode;
+  const scene = projectorScene({ blackout: blackoutForced, local: localScene, mode: state?.projection?.mode });
+  document.body.dataset.mode = scene.mode;
   document.body.dataset.theme = theme;
   document.body.dataset.blackout = String(blackoutForced);
-  const calibrating = mode === "calibration" && Boolean(state?.projection?.target);
-  dock.hidden = !calibrating;
-  stateLabel.textContent = calibrating
-    ? "Calibración · " + (state?.projection?.target?.index ?? 1) + "/4"
-    : mode === "game" ? "Post-it Wall" : "";
-  if (mode === "black") return;
-  if (calibrating) {
-    const index = state?.projection?.target?.index ?? state?.calibration?.index ?? 1;
-    calibrationLabel.textContent = `Esquina ${index}/4 · ${state.projection.target.label || "post-it de esquina"}`;
-    drawTarget(localTarget || state.projection.target);
-  } else if (mode === "game") {
-    drawGame(state?.game, state?.board);
+  // Anything the camera is about to capture hides the window's own labels.
+  document.body.dataset.capture = String(Boolean(localScene || blackoutForced));
+  stateLabel.textContent = scene.kind === "live" ? "Post-it Wall · Detección en vivo" : "";
+  if (scene.kind === "black") {
+    // "black" and "align" before its first pattern: pure black whatever the theme.
+    ctx.fillStyle = projectorBackground(theme, true);
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
+    return;
   }
+  if (scene.kind === "pattern") {
+    drawAlignmentPattern(ctx, scene.layout, scene.frame, viewport.width, viewport.height);
+    return;
+  }
+  if (scene.kind === "neutral") return; // the theme background only: colors are sampled under play light
+  // A stale reply never reaches the renderer, and the renderer refuses stale notes too.
+  const fresh = performance.now() - stateReceivedAt < LIVE_MAX_AGE_MS;
+  drawProjectorScene(ctx, {
+    state, preview: fresh ? state?.live_detection : null, palette: state?.palette,
+    theme, width: viewport.width, height: viewport.height, fresh, forceFill: scene.forceFill,
+  });
 }
 
 async function syncProjectionSize() {
   const previous = viewport;
   resizeCanvas();
-  if (previous.width === viewport.width && previous.height === viewport.height && state) return;
-  try {
-    applyState(await action("projection_open", viewport));
-    toast.hidden = true;
-    channel.postMessage({ type: "ready" });
-  } catch (error) {
-    showError(error);
+  if (previous.width === viewport.width && previous.height === viewport.height && state) {
+    channel.postMessage({ type: "ready", ...projectorMetrics() }); // fullscreen may have changed
+    return;
   }
+  lastRegister = performance.now();
+  await registerProjector();
 }
-
-function moveTarget(point) {
-  if (state?.projection?.mode !== "calibration" || !state?.projection?.target) return;
-  localTarget = {
-    x: Math.max(0, Math.min(viewport.width - 1, point.x)),
-    y: Math.max(0, Math.min(viewport.height - 1, point.y)),
-  };
-  draw();
-}
-
-async function confirmTarget() {
-  if (!localTarget || state?.projection?.mode !== "calibration") return;
-  try {
-    applyState(await action("calibration_confirm", localTarget));
-    toast.hidden = true;
-  } catch (error) {
-    showError(error);
-  }
-}
-
-canvas.addEventListener("pointerdown", (event) => {
-  if (state?.projection?.mode !== "calibration") return;
-  dragging = true;
-  canvas.setPointerCapture(event.pointerId);
-  moveTarget(pointInCanvas(event.clientX, event.clientY, canvas.getBoundingClientRect(), viewport.width, viewport.height));
-});
-canvas.addEventListener("pointermove", (event) => {
-  if (!dragging) return;
-  moveTarget(pointInCanvas(event.clientX, event.clientY, canvas.getBoundingClientRect(), viewport.width, viewport.height));
-});
-canvas.addEventListener("pointerup", (event) => {
-  if (!dragging) return;
-  dragging = false;
-  canvas.releasePointerCapture(event.pointerId);
-  moveTarget(localTarget);
-});
-canvas.addEventListener("pointercancel", () => { dragging = false; });
 
 document.addEventListener("keydown", (event) => {
   if (isThemeShortcut(event)) {
     event.preventDefault();
-    setTheme(theme === "dark" ? "light" : "dark");
-    return;
-  }
-  if (state?.projection?.mode !== "calibration" || !localTarget) return;
-  const step = event.shiftKey ? 1 : 8;
-  const moves = {
-    ArrowLeft: [-step, 0],
-    ArrowRight: [step, 0],
-    ArrowUp: [0, -step],
-    ArrowDown: [0, step],
-  };
-  if (moves[event.key]) {
-    event.preventDefault();
-    const [dx, dy] = moves[event.key];
-    moveTarget({ x: localTarget.x + dx, y: localTarget.y + dy });
-  } else if (event.key === "Enter") {
-    event.preventDefault();
-    confirmTarget();
+    // Not while the camera is capturing what this window shows (a run, a
+    // search or a pick): the light must not change between two captures.
+    if (!localScene && !blackoutForced) setTheme(theme === "dark" ? "light" : "dark");
   }
 });
 
-confirmButton.addEventListener("click", confirmTarget);
 fullscreenButton.addEventListener("click", async () => {
   try {
     await document.documentElement.requestFullscreen();
@@ -302,17 +200,31 @@ channel.onmessage = async (event) => {
   const data = event.data || {};
   if (data.type === "blackout") {
     blackoutForced = true;
-    draw();
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    channel.postMessage({ type: "blackout_ack", id: data.id });
+    await ackAfterDraw("blackout_ack", data.id);
+  } else if (data.type === "align_pattern") {
+    localScene = { kind: "pattern", layout: data.layout, frame: data.frame };
+    await ackAfterDraw("align_ack", data.id);
+  } else if (data.type === "neutral") {
+    localScene = { kind: "neutral" };
+    await ackAfterDraw("neutral_ack", data.id);
+  } else if (data.type === "overlay_test") {
+    localScene = { kind: "overlay_test" };
+    await ackAfterDraw("overlay_test_ack", data.id);
   } else if (data.type === "resume") {
     blackoutForced = false;
+    localScene = null;
     draw();
   } else if (data.type === "theme") {
     theme = projectorTheme(data.theme);
     draw();
   }
 };
+
+// A projector left as a background tab is throttled: no animation frames,
+// ~1 timer per second. The panel warns the operator.
+document.addEventListener("visibilitychange", () => {
+  channel.postMessage({ type: "visibility", hidden: document.hidden });
+});
 
 window.addEventListener("storage", (event) => {
   if (event.key !== THEME_KEY) return;
@@ -322,7 +234,7 @@ window.addEventListener("storage", (event) => {
 
 window.addEventListener("pagehide", () => {
   channel.postMessage({ type: "closed" });
-  fetch("/api/action", {
+  api("/api/action", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
     body: JSON.stringify({ action: "projection_close" }),
@@ -333,16 +245,26 @@ window.addEventListener("pagehide", () => {
 async function tick() {
   if (tickBusy) return;
   tickBusy = true;
+  const request = new AbortController();
   try {
-    const response = await fetch("/api/tick", { cache: "no-store" });
-    applyState(await responseJSON(response));
+    const next = await withTimeout(
+      api("/api/tick", { cache: "no-store", signal: request.signal }).then(responseJSON),
+      LIVE_MAX_AGE_MS, "Se interrumpió la actualización del proyector.",
+    );
+    applyState(next);
+    toast.hidden = true;
   } catch (error) {
+    state = null; // never leave old detections on the wall after disconnection
+    draw();
     showError(error);
   } finally {
+    request.abort();
     tickBusy = false;
   }
 }
 
 resizeCanvas();
 syncProjectionSize();
-setInterval(tick, 33);
+channel.postMessage({ type: "visibility", hidden: document.hidden });
+// Draw independently of HTTP: a hung request cannot keep old contours alive.
+setInterval(() => { draw(); tick(); }, 33);

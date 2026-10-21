@@ -116,7 +116,7 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; p
 .camera-stage video { object-fit: contain; }
 .camera-stage canvas { pointer-events: none; }
 .camera-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px; padding: 24px; color: #edf6f1; text-align: center; }
-.camera-placeholder[hidden], .live-tag[hidden], .calibration-dock[hidden], .projector-toast[hidden] { display: none; }
+.camera-placeholder[hidden], .live-tag[hidden], .projector-toast[hidden] { display: none; }
 .camera-placeholder strong { font-size: 18px; font-weight: 650; }
 .camera-placeholder span { color: #bdccc5; font-size: 13px; line-height: 1.45; max-width: 36ch; }
 .camera-placeholder .button { margin-top: 10px; }
@@ -131,6 +131,11 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; p
 .camera-toolbar { flex-wrap: wrap; row-gap: 8px; padding-block: 10px; }
 .camera-lock { flex: 1 1 220px; min-width: 0; margin-left: auto; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.35; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .camera-lock[data-tone="ok"] { color: #1f6a4a; font-weight: 650; }
+.align-status { margin: 0 0 12px; font-size: 13px; line-height: 1.4; color: var(--muted, #5b6663); }
+.align-status:empty { display: none; }
+.align-status[data-tone="ok"] { color: #1f6a4a; font-weight: 650; }
+.align-status[data-tone="warn"] { color: #94571a; font-weight: 650; }
+.align-status[data-tone="error"] { color: #944439; font-weight: 650; }
 .camera-lock[data-tone="busy"] { color: #155d55; font-weight: 650; }
 .camera-lock[data-tone="warn"] { color: #94571a; font-weight: 650; }
 .camera-lock[data-tone="error"] { color: #944439; font-weight: 650; }
@@ -199,25 +204,24 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; p
 .footnote { margin: 0 24px 24px; color: #68746c; font-size: 11px; line-height: 1.5; }
 
 body.projector-page { background: #000; color: #fff; overflow: hidden; }
-#projector-canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
-body.projector-page[data-mode="game"] #projector-canvas, body.projector-page[data-mode="black"] #projector-canvas { cursor: none; }
+#projector-canvas { display: block; width: 100vw; height: 100vh; cursor: default; }
+body.projector-page[data-mode="live"] #projector-canvas, body.projector-page[data-mode="black"] #projector-canvas { cursor: none; }
+body.projector-page[data-capture="true"] .projector-topline,
+body.projector-page[data-capture="true"] .projector-toast,
+body.projector-page[data-mode="align"] .projector-topline,
+body.projector-page[data-mode="neutral"] .projector-topline,
 body.projector-page[data-mode="black"] .projector-topline,
-body.projector-page[data-mode="black"] .calibration-dock,
 body.projector-page[data-mode="black"] .projector-toast,
-body.projector-page:fullscreen[data-mode="game"] .projector-topline,
-body.projector-page:fullscreen[data-mode="game"] .projector-toast,
-html:fullscreen body.projector-page[data-mode="game"] .projector-topline,
-html:fullscreen body.projector-page[data-mode="game"] .projector-toast { display: none; }
+body.projector-page:fullscreen[data-mode="live"] .projector-topline,
+body.projector-page:fullscreen[data-mode="live"] .projector-toast,
+html:fullscreen body.projector-page[data-mode="live"] .projector-topline,
+html:fullscreen body.projector-page[data-mode="live"] .projector-toast { display: none; }
 .projector-topline { position: fixed; inset: 17px 18px auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; pointer-events: none; }
 .projector-topline span { color: #f3f7f7; font-size: 14px; font-weight: 650; text-shadow: 0 1px 5px #000; }
 .projector-control { pointer-events: auto; min-height: 39px; padding: 8px 12px; border: 1px solid #66827b; border-radius: 7px; background: #1b302c; color: #f9fffb; font-size: 12px; font-weight: 700; }
 .projector-control:hover { background: #2d4841; }
 .projector-control.primary { background: #eaf7ed; border-color: #eaf7ed; color: #173329; }
 .projector-control.primary:hover { background: #c8e6d6; }
-.calibration-dock { position: fixed; inset: auto 18px 18px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 14px; border: 1px solid #55756a; border-radius: 9px; background: rgba(11, 31, 24, .94); }
-.calibration-dock > div { display: flex; flex-direction: column; gap: 4px; }
-.calibration-dock strong { font-size: 13px; }
-.calibration-dock span { font-size: 11px; color: #c1d6ce; }
 .projector-toast { position: fixed; top: 76px; right: 18px; max-width: 40ch; padding: 10px 12px; border-radius: 8px; background: #fff0eb; color: #8e3c31; font-size: 12px; }
 /* Light projector theme: ink on a lit wall. A scan still turns it black. */
 body.projector-page[data-theme="light"] { background: #f3f2ec; color: #17211f; }
@@ -227,8 +231,6 @@ body.projector-page[data-theme="light"] .projector-control { background: #fff; b
 body.projector-page[data-theme="light"] .projector-control:hover { background: #e9f2ec; }
 body.projector-page[data-theme="light"] .projector-control.primary { background: #213a36; border-color: #213a36; color: #fff; }
 body.projector-page[data-theme="light"] .projector-control.primary:hover { background: #142a27; }
-body.projector-page[data-theme="light"] .calibration-dock { background: rgba(255, 255, 255, .95); border-color: #b8c9c1; color: #17211f; }
-body.projector-page[data-theme="light"] .calibration-dock span { color: #4b5a51; }
 
 @media (max-width: 1050px) {
   .workspace-grid { grid-template-columns: 1fr; }
@@ -250,7 +252,6 @@ body.projector-page[data-theme="light"] .calibration-dock span { color: #4b5a51;
   .topbar-actions { gap: 10px; }
   .theme-switch-label { display: none; }
   .theme-switch button { padding: 6px 8px; }
-  .calibration-dock { align-items: stretch; flex-direction: column; }
   .palette-footer { flex-direction: column; gap: 4px; }
   .camera-lock { flex-basis: 100%; margin-left: 0; text-align: left; white-space: normal; }
 }

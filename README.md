@@ -1,12 +1,17 @@
 # Juego de pared con post-its
 
-La webcam lee un tablero físico y el proyector dibuja una pelota encima. Hay
-un post-it de inicio, uno de llegada, rebotes opcionales y **cuatro** de
-esquina que marcan el campo. Por defecto, el inicio es amarillo, la llegada
-naranja, los rebotes verdes y las esquinas fucsia o violetas. Desde la vista
-de cámara podés elegir otros colores. Esta versión relee los post-its **entre
-intentos**. La interfaz web muestra la cámara y los controles en la pantalla
-principal; `J` abre otra ventana para proyectar sobre la pared.
+La webcam detecta los post-its en vivo y el proyector muestra esos mismos
+contornos, sus colores y la pelota. Hay un post-it de inicio, uno de llegada
+y rebotes opcionales. Las esquinas también se muestran si están presentes,
+pero no son necesarias para jugar. Por defecto, el inicio es amarillo, la
+llegada naranja, los rebotes verdes y las esquinas fucsia o violetas. Desde
+la vista de cámara podés elegir otros colores. `J` abre la ventana `/projector`.
+No hay pasos manuales de calibración: para que cada contorno caiga justo
+alrededor de su papel, el panel alinea cámara y proyector solo, con unos
+patrones de puntos que proyecta durante unos 8 segundos (`A` lo repite).
+
+También hay una versión que corre entera en el navegador, sin instalar nada:
+ver **Versión web (Vercel)**.
 
 ## Iniciar la interfaz web
 
@@ -27,35 +32,105 @@ cuatro veces por segundo, para la detección en vivo.
 
 Pulsá `J` o el botón **Abrir proyector**. Mové la nueva ventana a la pantalla
 del proyector y activá su pantalla completa desde el botón de esa ventana.
-Mantené esa pantalla en su tamaño definitivo antes de calibrar: un cambio de
-tamaño invalida la alineación. Los controles de la partida permanecen en la
+Podés cambiar su tamaño o activar pantalla completa durante la partida: el
+encuadre se adapta conservando las proporciones. Los controles permanecen en la
 ventana principal. Si Chrome bloquea la ventana emergente, permití las
-ventanas emergentes para `127.0.0.1` y volvé a pulsar `J`.
+ventanas emergentes para `127.0.0.1` y volvé a pulsar `J`. Con la ventana
+del proyector en pantalla completa, el panel alinea cámara y proyector (ver
+**Alinear cámara y proyector**).
 
-Los botones de escanear, calibrar y lanzar se habilitan recién con la cámara
-y la ventana de proyección listas. Debajo de "Preparar la pared", el panel
-muestra siempre el siguiente paso y resalta el botón que lo destraba.
+Debajo de "Preparar la pared", el panel muestra el siguiente paso. Cuando la
+cámara ve un inicio y una llegada válidos, la pelota aparece automáticamente.
 
 Con la cámara y la proyección listas:
 
-1. Pulsá `S` para escanear los post-its. La ventana del proyector se pone
-   negra antes de tomar la imagen.
-2. Pulsá `C` para calibrar. En la ventana del proyector, llevá la cruz al
-   centro de cada post-it de esquina y confirmá las cuatro esquinas en el
-   orden indicado. Revisá que los contornos proyectados coincidan con los
-   papeles.
-3. Ajustá la dirección desde el control principal y lanzá con `Espacio`.
-   Tras ganar o perder, `R` inicia otro intento con el mismo tablero. Si
-   moviste post-its, pulsá `S` para releerlos antes del siguiente intento.
+1. Revisá en la vista en vivo que estén detectados el inicio y la llegada.
+   Los contornos del proyector siguen esas mismas detecciones, incluso antes
+   de que el tablero esté completo.
+2. Ajustá la dirección desde el control principal y lanzá con `Espacio`.
+3. Tras ganar o perder, `R` inicia otro intento con el tablero detectado más
+   reciente. `S` permite releerlo expresamente sin apagar la proyección.
 
 Si se cierra la ventana del proyector durante un intento, la pelota queda en
 pausa. Reabrila con `J` y pulsá **Continuar intento** (o `Espacio`). Con el
-intento en pausa también podés releer los post-its, recalibrar o empezar otro
+intento en pausa también podés releer los post-its o empezar otro
 intento con `R`.
 
-La vista de cámara sigue en directo durante la partida. El tablero del juego
-se lee solo al escanear; las luces de detección en vivo son una guía previa.
-Si movés la cámara, la pared o el proyector, repetí la calibración.
+La detección y sus contornos siguen en directo durante la partida. La física
+usa el tablero con el que se lanzó la pelota: mover un papel cambia el
+contorno en vivo, pero su rebote se actualiza al iniciar el siguiente intento.
+Sin imágenes nuevas durante 1,5 segundos, desaparecen los contornos viejos.
+El proyector muestra solo el fondo elegido, un borde neutro alrededor de cada
+papel detectado y la pelota; el video de la cámara queda en el panel. Sin
+alinear, encaja la imagen de la cámara en la ventana (con bandas si hace
+falta) y avisa `Sin alinear · pulsá A en el panel`: los bordes no caen sobre
+los papeles. Alineado, cada borde rodea su papel a 6 píxeles del proyector y
+la pelota se mueve en coordenadas del proyector.
+
+## Alinear cámara y proyector
+
+La cámara y el proyector miran la pared desde lugares distintos. Para que un
+borde caiga justo alrededor de su papel, el panel mide cómo se corresponden
+sus píxeles (una homografía; el detalle está en
+`docs/alignment-and-color.md`).
+
+- **Cuándo.** Sola, la primera vez que la ventana del proyector está en
+  pantalla completa con la cámara funcionando, y de nuevo si cambia el tamaño
+  de la proyección, la cámara o su resolución. `A` o **Alinear proyector** la
+  repite cuando quieras. Si movés la cámara o el proyector, pulsá `A`: ese
+  movimiento el panel no lo nota solo.
+- **Qué se ve.** El proyector muestra 14 patrones de puntos blancos sobre
+  negro durante unos 8 segundos (más con una cámara en automático, como el
+  iPhone). No muevas los equipos mientras tanto. Si la toma sale imprecisa o
+  incoherente, el panel la repite una vez más despacio.
+- **Resultado.** El panel dice el error medido, por ejemplo "Proyector
+  alineado: error 0.2 px con 60 puntos". Si falla, dice por qué: la cámara
+  vio pocos puntos (que vea toda la proyección y el proyector esté
+  encendido), puntos incoherentes (reflejos), una toma imprecisa (fijá los
+  equipos) o muy poca parte de la proyección (encuadrá la pared entera).
+- **Color sobre el papel.** Después de alinear, el panel proyecta un cuadrado
+  de cada color sobre pared vacía. Si la cámara toma alguno por un post-it,
+  el proyector no pone color: sobre los papeles proyecta solo luz neutra
+  (blanca con el fondo oscuro). Si ninguno se confunde, cada papel se ilumina
+  con su color, siempre por dentro del papel. El panel dice cuál quedó.
+
+El proyector nunca pone colores sobre la pared vacía, así su propia luz no
+crea post-its falsos. Medido en el simulador de lazo cerrado
+(`services/simulation`), en sala normal, oscura e iluminada: el borde queda a
+1.6-3.8 px de donde debe y nunca toca el papel. Con el diseño anterior, en
+la pared real la detección cambió de estado 730 veces en 26 minutos
+(`runs/web-events.jsonl`, 19/10), y en el simulador los contornos crecían
+hasta 12 veces el papel.
+
+## Versión web (Vercel)
+
+**https://postit-wall-game.vercel.app**: la misma interfaz corre entera en el
+navegador, sin Python ni instalación.
+El backend es un port a JavaScript de los servicios de Python (visión,
+alineación, física y estado del juego) sobre OpenCV.js 4.12, la misma versión
+de OpenCV que usa Python. Las pruebas de paridad exigen que el port dé las
+mismas respuestas que Python en 2065 casos (`services/browser/README.md`).
+
+- Abrí la página en Chrome, permití la cámara y seguí los mismos pasos que
+  con el servidor local, alineación incluida.
+- La primera carga descarga OpenCV (11 MB); después queda en caché.
+- Diferencias: no hay control de la cámara por USB (solo se fija lo que
+  Chrome permite), y los colores, los ajustes de cámara y los eventos quedan
+  guardados en el navegador. `postitEvents()` en la consola lista los eventos.
+
+Para construir y probar el sitio estático en la Mac:
+
+```sh
+npm ci
+npm run build                     # dist/
+node scripts/serve-static.mjs     # http://localhost:4870/
+```
+
+`vercel deploy --prod` lo publica: `vercel.json` define el build y
+`.vercelignore` sube solo los 21 archivos que el build necesita. El proyecto
+de Vercel está conectado al repositorio de GitHub: cada push genera un
+deploy de vista previa. Para probar en Chrome el sitio publicado:
+`node tests/closed-loop-browser.mjs https://postit-wall-game.vercel.app`.
 
 ## Usar la cámara del celular
 
@@ -66,21 +141,21 @@ guardada prefiere la C920, después el iPhone y recién después la cámara
 FaceTime de la Mac, que mira al operador y no a la pared. El iPhone suele
 aparecer unos segundos después de abrir la página. Si para entonces el panel
 ya arrancó con la FaceTime, pasa solo al iPhone, siempre que todavía no
-hayas escaneado ni elegido otra cámara a mano. El tablero escaneado y la calibración quedan
-asociados al nombre de la cámara: recargar la página con la misma cámara los
-conserva, y elegir otra los descarta porque cambia el encuadre. Si la cámara
+hayas elegido otra cámara a mano ni preparado un tablero. El tablero queda
+asociado al nombre de la cámara: recargar la página con la misma cámara lo
+conserva mientras llegan imágenes recientes, y elegir otra lo descarta porque cambia el encuadre. Si la cámara
 no entrega imágenes en 8 segundos, el panel lo dice y muestra **Reintentar
 cámara**, que vuelve a la cámara recordada.
 
-- **Fijalo.** Usá un soporte firme y no lo muevas después de calibrar: si
-  cambia el encuadre, hay que calibrar de nuevo.
+- **Fijalo.** Usá un soporte firme para que el encuadre no cambie durante un
+  intento. Si lo movés, empezá otro intento con la nueva detección.
 - **Apagá los efectos.** En Centro de control → Efectos de video, apagá
-  *Encuadre centrado*, que mueve el encuadre solo y rompe la calibración, y
+  *Encuadre centrado*, que mueve el encuadre solo, y
   también *Retrato* y *Luz de estudio*.
 - **Queda en automático.** El celular no es USB y Chrome no ofrece sus
   controles, así que el balance, la exposición y el foco no se pueden fijar.
-  Para compensar, con una cámara automática el escaneo espera 1 segundo con
-  el proyector en negro antes de capturar, en vez de 0.18 s, para que la
+  Para compensar, con una cámara automática el gotero espera 1 segundo con
+  el proyector en negro antes de leer, en vez de 0.18 s, para que la
   exposición se acomode.
 - **No toca otra cámara.** El ajuste fijo por USB solo se usa con una cámara
   cuyo nombre trae su ID USB. Con el celular activo, el panel nunca toca la
@@ -93,17 +168,15 @@ Claro**. También se cambia con la tecla `F`, desde el panel o desde la
 ventana del proyector. El cambio se ve al instante en la ventana del
 proyector y queda guardado en el navegador.
 
-- **Oscuro**: fondo negro con trazos claros (el aspecto original).
-- **Claro**: fondo blanco suave (`#f3f2ec`) con trazos oscuros: pelota y cruz
-  casi negras, contornos verde azulado, dorado oscuro y óxido. Todos los
-  trazos tienen contraste 4:1 o más contra el fondo; la cuadrícula de guía,
-  2.5:1.
+- **Oscuro**: fondo negro y pelota clara.
+- **Claro**: fondo blanco suave (`#f3f2ec`) y pelota oscura.
 
-En los dos modos, al escanear o al buscar el ajuste de cámara, la ventana se
-pone en **negro absoluto**. La lectura de colores y el ajuste fijo de cámara
-siempre se hacen en las mismas condiciones. Con fondo claro, mientras jugás la
-pared queda iluminada y la cámara la ve más clara: las luces de detección en
-vivo pueden apagarse, pero el escaneo no se ve afectado.
+En los dos fondos el proyector dibuja bordes neutros (blancos en el oscuro,
+grafito en el claro) y nunca pone color sobre la pared vacía.
+
+Al usar el gotero o buscar el ajuste de cámara, la ventana muestra solo su
+fondo, sin bordes ni pelota. Así la lectura de colores y el ajuste de cámara
+se hacen con la misma luz que habrá durante el juego, también con fondo claro.
 
 ## Colores de los post-its
 
@@ -111,14 +184,15 @@ Debajo del video hay una fila por tipo de post-it: inicio, llegada, rebotes y
 esquinas. Cada una tiene:
 
 - **Luz**: se enciende con el color elegido cuando la cámara ve lo que el
-  escaneo necesita (1 inicio, 1 llegada, 4 esquinas; cualquier cantidad de
-  rebotes). Queda en ámbar si ve una cantidad incorrecta y apagada si no ve
+  juego necesita (1 inicio, 1 llegada; rebotes y esquinas opcionales).
+  Queda en ámbar si ve una cantidad incorrecta y apagada si no ve
   ninguno. Al lado figura la cuenta, por ejemplo `4/4`.
 - **Cuadrado de color**: abre el selector de color de Chrome. En macOS, ese
   selector trae su propia lupa para tomar un color de la pantalla.
 - **Gotero**: pulsalo y tocá el centro del post-it en la imagen de la
-  cámara. Apaga el proyector un instante, como el escaneo, para que la luz
-  proyectada no tiña el papel. Lee un cuadrito de 11×11 píxeles y se queda
+  cámara. Deja la proyección un instante solo con su fondo (negro con el
+  fondo oscuro), sin bordes ni pelota, para que la luz proyectada no tiña el
+  papel. Lee un cuadrito de 11×11 píxeles y se queda
   con la parte más saturada: si el cuadrito pisa el borde, la pared no lava
   el color. `Esc` cancela.
 - **Avisos**: si el color elegido es pálido, el panel lo dice. Con la imagen
@@ -138,14 +212,15 @@ Límites:
   se confundirían con él.
 - Un tono vecino a dos tipos se reparte por cercanía, así un papel nunca
   cuenta para dos.
-- Con la proyección del juego encendida, los contornos proyectados pueden
-  iluminar papeles de más. El escaneo apaga la proyección antes de leer.
-- Después de cambiar un color, escaneá otra vez para aplicarlo al tablero.
+- La luz proyectada altera los colores que ve la cámara. El gotero los lee
+  con la proyección en su fondo neutro, la misma luz que habrá al jugar.
+- Los colores se aplican a la siguiente detección en vivo. Durante un intento,
+  `R` prepara una pelota nueva con la distribución actual.
 
 ## Cámara fija: nada en automático
 
 El balance de blancos, la exposición y el foco automáticos cambian los colores
-cuando el proyector se apaga para escanear. Por eso el panel los fija:
+cuando cambia la luz del proyector. Por eso el panel los fija:
 
 - **Al abrir la cámara**, si hay un ajuste guardado para esa cámara (por
   nombre, por ejemplo `HD Pro Webcam C920 (046d:082d)`), lo aplica en manual
@@ -154,8 +229,8 @@ cuando el proyector se apaga para escanear. Por eso el panel los fija:
   usa el automático: prueba valores fijos y elige el mejor. Tarda unos 15
   segundos.
 - **Buscar ajuste fijo / Buscar otra vez** repite la búsqueda cuando quieras.
-  Hacelo con la ventana de proyección abierta: la búsqueda la pone en negro
-  como al escanear y después vuelve a mostrar lo que había. Si el ajuste se
+  Hacelo con la ventana de proyección abierta: la búsqueda la deja solo con
+  su fondo y después vuelve a mostrar lo que había. Si el ajuste se
   buscó sin proyector, el estado lo avisa en ámbar.
 
 La búsqueda prueba:
@@ -211,16 +286,17 @@ volvé a tomar los colores con el gotero.
 
 ## Montaje
 
-1. Usá una pared plana. Colocá los cuatro post-its de esquina cerca de las
-   cuatro esquinas del área proyectada. La webcam debe verlos a todos y el
-   proyector debe iluminar todo el campo.
-2. Poné el inicio, la llegada y los rebotes dentro de ese rectángulo. Dejá
+1. Usá una pared plana. Hacé que la webcam vea toda la zona de juego y que el
+   proyector ilumine el mismo encuadre. Podés agregar post-its de esquina,
+   pero el juego funciona también sin ellos.
+2. Poné el inicio, la llegada y los rebotes dentro de esa zona. Dejá
    espacio entre papeles y una separación de al menos el radio de la pelota
-   respecto de los bordes. Revisá que las cuatro luces debajo del video estén
-   encendidas antes de escanear.
+   respecto de los bordes. Revisá que las luces de inicio y llegada estén
+   encendidas antes de lanzar.
 3. Fijá webcam y proyector. Usá iluminación ambiente estable y configurá el
-   proyector como pantalla extendida de macOS. Si se mueve cualquiera de los
-   dos, pulsá `C` para recalibrar.
+   proyector como pantalla extendida de macOS. No hace falta que los
+   encuadres coincidan: alcanza con que la cámara vea toda la proyección,
+   porque la alineación mide la correspondencia.
 
 ## Modo clásico de pantalla completa
 
@@ -283,11 +359,12 @@ además de Python para validar la interfaz del navegador:
 ./scripts/verify.sh
 ```
 
-El script ejecuta estas pruebas y evaluaciones:
+El script ejecuta estas pruebas y evaluaciones (unos 2 minutos):
 
 ```sh
 ./.venv/bin/python -m unittest discover -s . -p 'test_*.py' -q
 ./.venv/bin/python -m services.calibration.evals.synthetic
+./.venv/bin/python -m services.calibration.evals.coded
 ./.venv/bin/python -m services.vision.eval
 ./.venv/bin/python -m services.physics.evals.scenarios
 ./.venv/bin/python -m services.runtime.eval
@@ -295,10 +372,41 @@ El script ejecuta estas pruebas y evaluaciones:
 ./.venv/bin/python -m tests.eval_web_flow
 ./.venv/bin/python -m services.web.contract.camera_trials --check
 ./.venv/bin/python -m services.uvc.smoke
+./.venv/bin/python -m services.browser.parity.export
+node --test services/browser/tests/*.test.mjs
+node services/browser/evals/parity.mjs
 node --test services/web/tests/*.test.mjs
 node services/web/evals/flows.mjs
+node services/web/evals/live-projection.mjs
 ./.venv/bin/python -m services.web.evals.eyedropper
+./.venv/bin/python -m services.simulation.feedback_eval --jobs 4
 ```
+
+Con `POSTIT_BROWSER=1 ./scripts/verify.sh` corre además en Chrome real
+`tests/live-browser.mjs` y `tests/closed-loop-browser.mjs` (unos 4 minutos;
+necesitan Chrome y Playwright).
+
+`services/calibration/evals/coded.py` decodifica la alineación en 14
+condiciones (exposición automática, reflejos, desenfoque, cuadros
+mezclados): 140/140 sin ids equivocados, error contra la verdad p95 ≤ 0,11 px.
+
+`services/simulation/feedback_eval.py` es el lazo cerrado: el backend real,
+un proyector y una cámara simulados, y 18 escenarios (sin alinear, alineado
+exacto o con 2 px de error, con y sin relleno, sala oscura, iluminada,
+exposición automática y el sistema completo con su alineación y su chequeo
+de color). Exige 0 parpadeos, 0 post-its fantasma, el borde a ≤ 4 px de
+donde debe y nunca sobre el papel. La línea base con el proyector anterior
+reproduce la falla medida en la pared real.
+
+`services/browser/parity` exporta las respuestas de Python y los tests de
+`services/browser` exigen que el port de JavaScript dé las mismas en 2065
+casos: detección, refinamiento subpíxel, alineación con sus cinco motivos de
+falla, sondas y guiones completos del controlador.
+
+`tests/closed-loop-browser.mjs` abre el panel y el proyector reales en Chrome
+con una cámara simulada que filma la pared iluminada por la ventana del
+proyector, con los dos backends: la alineación sale a 0,03-0,08 px de la
+verdad, los contornos a 0,4 px de los papeles y los bordes a 3 px por fuera.
 
 `services/web/evals/eyedropper.py` mide el gotero: hace 588 clicks sobre
 fotos de la pared en siete condiciones de luz y foco, y exige que todo click
@@ -310,23 +418,33 @@ backend o la forma de `/api/state`, regenerá la matriz que usa:
 `./.venv/bin/python -m services.web.contract.matrix`. Una prueba falla
 mientras la matriz guardada no coincida con el backend.
 
-La prueba física que falta hacer en la pared es revisar la cuadrícula sobre
-papeles reales y confirmar que el error máximo mostrado en la calibración
-  automática sea menor que la mitad del radio de la pelota. Cada calibración, lectura de
-tablero e intento registra valores en `runs/events.jsonl` para poder revisar
-errores de alineación, cantidad de rebotes y tiempo de llegada.
+`services/web/evals/live-projection.mjs` compara los contornos de todas las
+muestras reales en pantallas horizontales, verticales y con distintas
+proporciones. Exige 100 % de coincidencia de colores, geometría y pelota.
+`tests/live-browser.mjs` verifica las dos ventanas con Chrome y una cámara
+sintética. Ver `services/web/README.md` para ejecutarlo.
+
+Lo que ninguna prueba sin hardware cubre: la lente, el enfoque y la
+exposición automática de la cámara real, y el brillo del proyector real. La
+alineación los mide en cada sesión y dice su error. Los eventos de la interfaz
+web quedan en `runs/web-events.jsonl`; el modo clásico usa `runs/events.jsonl`.
 
 ## Estructura
 
 - `contracts/`: datos y coordenadas compartidos.
-- `services/vision/`: segmentación de los post-its con el proyector en negro.
-- `services/calibration/`: puntos proyectados y homografía cámara → proyector.
-- `services/physics/`: pelota y colisiones en píxeles del proyector.
+- `services/vision/`: segmentación de los post-its por color.
+- `services/calibration/`: puntos proyectados y homografía del modo clásico.
+- `services/physics/`: pelota y colisiones en coordenadas del tablero.
 - `services/runtime/`: captura de cámara, pantalla, controles y registro.
 - `services/web/backend/`: servidor local, estado del juego y rutas HTTP.
 - `services/web/ui/`: panel de control y ventana de proyección del navegador.
 - `services/web/contract/`: matriz de estados del backend que leen las
   pruebas y la evaluación del navegador.
+- `services/browser/`: port a JavaScript del backend para la versión web.
+- `services/simulation/`: cámara, proyector y pared simulados; evaluación del
+  lazo cerrado.
+- `docs/alignment-and-color.md`: contrato de la alineación y de lo que
+  proyecta cada modo.
 - `services/uvc/`: control de la cámara por USB (balance, exposición y foco
   manuales) cuando Chrome no lo ofrece.
 - `main.py`: entrada del programa.
@@ -335,3 +453,5 @@ errores de alineación, cantidad de rebotes y tiempo de llegada.
 Cada servicio tiene sus propias pruebas, evaluación y explicación. El hook de
 Git ejecuta las pruebas locales antes de cada commit; si clonás el proyecto,
 activá el hook con `git config core.hooksPath .githooks`.
+El hook divide la suite completa en grupos independientes que corren en
+paralelo; mantiene la misma cobertura y limita los hilos de OpenCV.
