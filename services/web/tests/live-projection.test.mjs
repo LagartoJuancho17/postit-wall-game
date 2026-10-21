@@ -72,6 +72,9 @@ function canvas({ dirty = false } = {}) {
     fillText(text, x, y) { draws.push({ kind: "text", text, x, y, ...snapshot(this) }); },
     strokeText(text, x, y) { draws.push({ kind: "strokeText", text, x, y, ...snapshot(this) }); },
     drawImage() { draws.push({ kind: "image" }); },
+    rect(x, y, w, h) { path.push(["rect", x, y, w, h]); },
+    clips: [],
+    clip(rule) { this.clips.push({ rule, path: structuredClone(path) }); },
   };
   return ctx;
 }
@@ -569,4 +572,26 @@ test("projector.js imports only what live-view exports, and uses all of it", () 
   }
   for (const name of ["drawProjectorScene", "drawAlignmentPattern", "projectorScene"]) assert.ok(names.includes(name), name);
   assert.doesNotMatch(source, /drawLiveDetection|drawLiveGame/, "the projector never draws the panel's colored overlay");
+});
+
+test("a rim is clipped out of every other note grown by RIM_CLEAR_PX, so it never lights a neighbor", () => {
+  const square = (x, y) => ({ points: [{ x, y }, { x: x + 40, y }, { x: x + 40, y: y + 40 }, { x, y: y + 40 }] });
+  const two = { width: 640, height: 480, roles: { start: { notes: [] }, goal: { notes: [] }, marker: { notes: [] },
+    bumper: { notes: [square(200, 200), square(246, 200)], count: 2 } } };
+  const ctx = canvas();
+  drawProjectorScene(ctx, { state: aligned(), preview: two, width: 1280, height: 800 });
+  assert.equal(ctx.clips.length, 2, "one keep-clear region per rim: the other note");
+  const mapped = two.roles.bumper.notes.map((note) => note.points.map((p) => applyHomography(H, p)));
+  ctx.clips.forEach((clip, k) => {
+    assert.equal(clip.rule, "evenodd");
+    assert.equal(clip.path[0][0], "rect", "everything but the region");
+    const other = offsetConvexPolygon(mapped[1 - k], liveView.RIM_CLEAR_PX);
+    samePolygon(points(clip.path), other, 1e-9, `rim ${k}`);
+  });
+  // One note alone: nothing to keep clear of.
+  const alone = canvas();
+  drawProjectorScene(alone, { state: aligned(), preview: { ...two, roles: { ...two.roles, bumper: { notes: [square(200, 200)] } } },
+    width: 1280, height: 800 });
+  assert.equal(alone.clips.length, 0);
+  assert.equal(liveView.RIM_CLEAR_PX, 3);
 });

@@ -307,7 +307,9 @@ function errors(camera, projector, matrix) {
   return camera.map((source, index) => {
     try {
       const mapped = transformPoint(source, matrix);
-      return Math.hypot(mapped.x - projector[index].x, mapped.y - projector[index].y);
+      const dx = mapped.x - projector[index].x;
+      const dy = mapped.y - projector[index].y;
+      return Math.sqrt(dx * dx + dy * dy);   // as services/calibration reprojection_errors
     } catch {
       return Infinity;
     }

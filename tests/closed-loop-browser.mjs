@@ -12,8 +12,9 @@
  * patterns, acks, settle, uploads), the backend's decoder, the overlay
  * check, the live detection and the projector's drawing all run as shipped.
  *
- *   node tests/closed-loop-browser.mjs [server|static][:normal|:bright]...
- *   (default: server, static, static:bright)
+ *   node tests/closed-loop-browser.mjs [server|static|https://…][:normal|:bright]...
+ *   (default: server, static, static:bright; a URL runs against that
+ *   deployment of the static build, e.g. the Vercel one)
  *
  * Passes when, for each backend: the alignment decodes the true mapping
  * (projector px error at the papers < 1 px), the overlay check completes,
@@ -44,6 +45,8 @@ const playwrightModule = process.env.POSTIT_PLAYWRIGHT_MODULE || (existsSync(GST
 const playwright = playwrightModule ? await import(pathToFileURL(resolve(playwrightModule)).href) : await import("playwright");
 const runs = (process.argv.slice(2).length ? process.argv.slice(2) : ["server", "static", "static:bright"])
   .map((arg) => {
+    const remote = arg.match(/^(https?:\/\/[^\s]+?)(?::(normal|bright))?$/);
+    if (remote) return { kind: "remote", url: remote[1].replace(/\/$/, ""), room: remote[2] ?? "normal" };
     const [kind, room = "normal"] = arg.split(":");
     if (!["server", "static"].includes(kind) || !["normal", "bright"].includes(room)) throw new Error(`unknown run ${arg}`);
     return { kind, room };
@@ -353,16 +356,17 @@ async function startStaticBuild() {
 
 // ------------------------------------------------------------------ one run
 
-async function run({ kind, room }) {
+async function run({ kind, room, url }) {
   const name = `${kind}-${room}`;
-  const backend = kind === "server" ? await startPythonServer() : await startStaticBuild();
+  const backend = kind === "server" ? await startPythonServer()
+    : kind === "remote" ? { url, stop: () => {}, log: () => "" } : await startStaticBuild();
   const chrome = process.env.POSTIT_BROWSER_EXECUTABLE || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   const browser = await playwright.chromium.launch({ headless: true, ...(existsSync(chrome) ? { executablePath: chrome } : {}),
     args: ["--autoplay-policy=no-user-gesture-required"] });
   const errors = [];
   const timeline = [];   // every /api request: what, when it started and ended (ms since the run began)
   const began = Date.now();
-  const report = { backend: kind, room, checks: [] };
+  const report = { backend: kind === "remote" ? url : kind, room, checks: [] };
   let panel;
   let projector;
   try {

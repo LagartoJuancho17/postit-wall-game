@@ -201,15 +201,32 @@ export function fillPolygon(points) {
   return inset && polygonArea(inset) >= MIN_FILL_AREA_PX ? inset : null;
 }
 
-function drawRim(ctx, points, color) {
+/** Contract 2.1: a rim stays this far off every other detected note. */
+export const RIM_CLEAR_PX = 3;
+
+/**
+ * A note's rim, clipped out of `keepClear` (the other notes, grown by
+ * RIM_CLEAR_PX): our white light never lands on another paper, so it never
+ * cuts a neighbor or a second piece of the same paper.
+ */
+function drawRim(ctx, points, color, keepClear = []) {
   const rim = rimPolygon(points);
   if (!rim) return;
+  ctx.save();
+  for (const region of keepClear) {
+    ctx.beginPath();
+    ctx.rect(-1e5, -1e5, 2e5, 2e5);
+    region.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+    ctx.closePath();
+    ctx.clip("evenodd");
+  }
   tracePolygon(ctx, rim);
   ctx.lineWidth = RIM_WIDTH_PX;
   ctx.lineJoin = "miter";
   ctx.miterLimit = RIM_MITER_LIMIT;
   ctx.strokeStyle = color;
   ctx.stroke();
+  ctx.restore();
 }
 
 /** Role color strictly inside the paper, so a ghost on bare wall shrinks every frame. */
@@ -312,14 +329,16 @@ export function drawProjectorScene(ctx, {
   const neutralFill = matrix && !fill ? NEUTRAL_FILL[projectorTheme(theme)] : null;
   ctx.save();
   plainEffects(ctx);
-  for (const { role, points } of projectedNotes(notes, mapping?.toProjector, width, height)) {
+  const projected = [...projectedNotes(notes, mapping?.toProjector, width, height)];
+  const clear = projected.map(({ points }) => offsetConvexPolygon(points, RIM_CLEAR_PX));
+  for (const [index, { role, points }] of projected.entries()) {
     if (fill) {
       const hex = palette?.roles?.[role]?.hex;
       drawFill(ctx, points, HEX.test(hex ?? "") ? hex : FALLBACK_COLORS[role]);
     } else if (neutralFill) {
       drawFill(ctx, points, neutralFill);
     }
-    drawRim(ctx, points, colors.rim);
+    drawRim(ctx, points, colors.rim, clear.filter((region, k) => k !== index && region));
   }
   if (fill && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
   drawGame(ctx, state, mapping, width, height, colors.ball);

@@ -299,12 +299,25 @@ function clean(cv, mask) {
   }
 }
 
+/** The size and shape filters every candidate passes (`_is_note_shape`). */
+function isNoteShape(cv, contour, minArea, maxArea) {
+  const area = cv.contourArea(contour, false);
+  if (area < minArea || area > maxArea) return false;
+  const { size } = cv.minAreaRect(contour);
+  const shortSide = Math.min(size.width, size.height);
+  const longSide = Math.max(size.width, size.height);
+  if (shortSide < 5 || longSide / shortSide > 4.0) return false;
+  return area / (size.width * size.height) >= 0.55;
+}
+
 /**
- * Contract 2.5: contours our own rim splits become one, their convex hull;
- * a contour alone in its component of `joined` is kept as is. Takes the
- * contour Mats (ownership) and returns Mats the caller deletes.
+ * Contract 2.5: the pieces of a paper our own rim cut become one, their
+ * convex hull; a component with two or more pieces that are notes by
+ * themselves stays apart (two papers with our rim between them), and a
+ * contour alone in its group is kept as is. Takes the contour Mats
+ * (ownership) and returns Mats the caller deletes.
  */
-function joined(cv, contours, raw, bridge) {
+function joined(cv, contours, raw, bridge, minArea, maxArea) {
   const kernel = cv.Mat.ones(BRIDGE_KERNEL_SIZE, BRIDGE_KERNEL_SIZE, cv.CV_8U);
   const grown = new cv.Mat();
   const labels = new cv.Mat();
@@ -327,8 +340,9 @@ function joined(cv, contours, raw, bridge) {
     }
     const out = [];
     for (const members of groups.values()) {
-      if (members.length === 1) {
-        out.push(members[0]);
+      const notes = members.filter((member) => isNoteShape(cv, member, minArea, maxArea)).length;
+      if (members.length === 1 || notes >= 2) {
+        out.push(...members);
         continue;
       }
       const flat = members.flatMap((member) => Array.from(member.data32S));
@@ -362,16 +376,11 @@ function findCandidates(cv, hsv, rule, feature, bridge = null) {
     const maxArea = width * height * MAX_NOTE_FRACTION;
     cv.findContours(closed, vector, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
     for (let i = 0; i < vector.size(); i += 1) contours.push(vector.get(i));
-    if (bridge !== null) contours = joined(cv, contours, raw, bridge);
+    if (bridge !== null) contours = joined(cv, contours, raw, bridge, minArea, maxArea);
     const candidates = [];
     for (const contour of contours) {
+      if (!isNoteShape(cv, contour, minArea, maxArea)) continue;
       const area = cv.contourArea(contour, false);
-      if (area < minArea || area > maxArea) continue;
-      const { size } = cv.minAreaRect(contour);
-      const shortSide = Math.min(size.width, size.height);
-      const longSide = Math.max(size.width, size.height);
-      if (shortSide < 5 || longSide / shortSide > 4.0) continue;
-      if (area / (size.width * size.height) < 0.55) continue;
       const coarse = polygonFromContour(cv, contour);
       const [quad, outcome] = refineQuad(feature, coarse.map((p) => [p.x, p.y]));
       const polygon = outcome === "refined" ? quad.map(([x, y]) => ({ x, y })) : coarse;

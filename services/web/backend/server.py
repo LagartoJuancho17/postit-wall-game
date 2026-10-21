@@ -42,6 +42,12 @@ MAX_BODY_BYTES = 8 * 1024 * 1024
 LOCAL_NAMES = ("127.0.0.1", "localhost")  # the panel may be opened with either
 MAX_FRAME_PIXELS = 12_000_000
 LIVE_DETECTION_MAX_AGE_S = 1.5
+# During an alignment run and its overlay check the panel pauses previews
+# (the camera films patterns): the last detection is held, so the probes keep
+# off the papers and the overlay frame fills them (contract 2.3). Every frame
+# of the run renews the hold; a run that stops sending frames is cancelled.
+ALIGN_HOLD_S = 20.0
+ALIGN_STALL_S = 20.0
 LIVE_EXPECTED_NOTES = {"start": 1, "goal": 1, "bumper": None, "marker": None}
 
 # Camera <-> projector alignment and the overlay check
@@ -202,8 +208,19 @@ def _round3(value: Any) -> Any:
 
 
 def _normalized_inverse(matrix) -> np.ndarray:
-    inverse = np.linalg.inv(np.asarray(matrix, dtype=np.float64))
-    return inverse / inverse[2, 2]
+    """inv(matrix) / inv[2][2] by cofactors, one IEEE operation at a time, as
+    the JS port does (numpy's LAPACK inverse differs in the last bits)."""
+    (a, b, c), (d, e, f), (g, h, i) = [[float(value) for value in row] for row in matrix]
+    A, B, C = e * i - f * h, -(d * i - f * g), d * h - e * g
+    determinant = a * A + b * B + c * C
+    if not math.isfinite(determinant) or determinant == 0:
+        raise np.linalg.LinAlgError("singular matrix")
+    inverse = [[A, -(b * i - c * h), b * f - c * e],
+               [B, a * i - c * g, -(a * f - c * d)],
+               [C, -(a * h - b * g), a * e - b * d]]
+    inverse = [[value / determinant for value in row] for row in inverse]
+    scale = inverse[2][2]
+    return np.array([[value / scale for value in row] for row in inverse], dtype=np.float64)
 
 
 def _mean(values: list[float]) -> float:
@@ -363,6 +380,9 @@ class GameController:
         self._align_code: str | None = None   # decoder failure code of the last run
         self._overlay: dict[str, Any] = self._overlay_state("unchecked", [])
         self._check_frames: dict[str, np.ndarray] = {}
+        self._hold_until: float | None = None       # live detection kept until then (run in progress)
+        self._align_activity: float | None = None   # last frame of a collecting run
+        self._camera_epoch = 0                      # camera_changed count: a late frame of the old camera is dropped
         self.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J."
         self.revision = 0
 
@@ -520,6 +540,8 @@ class GameController:
         self._align_code = None
         self._overlay = self._overlay_state("unchecked", [])
         self._check_frames = {}
+        self._hold_until = None
+        self._align_activity = None
         if self.projection_mode == "align":
             self.projection_mode = "live"
         self._recompute_candidate_unlocked()
@@ -576,9 +598,27 @@ class GameController:
         if self.game is None or self.game.status == GameStatus.READY:
             self._apply_candidate_unlocked()
 
+    def _hold_detection_unlocked(self) -> None:
+        self._hold_until = self._clock() + ALIGN_HOLD_S
+
+    def _live_mode_unlocked(self) -> None:
+        """Back to drawing the live scene, except during a run: patterns until it ends."""
+        self.projection_mode = "align" if self._align_status == "collecting" else "live"
+
     def _expire_detection_unlocked(self) -> None:
+        now = self._clock()
+        if (self._align_status == "collecting" and self._align_activity is not None
+                and now - self._align_activity > ALIGN_STALL_S):
+            # The panel left mid-run (reload, crash): never keep patterns up.
+            self._drop_alignment_unlocked("none", "La alineación se interrumpió: el panel dejó de enviar patrones.")
+            self._changed(self._align_detail)
+            self._log("alignment_cancelled", reason="stalled")
+        if self._hold_until is not None:
+            if now < self._hold_until:
+                return
+            self._hold_until = None
         if (self._last_detection is not None and
-                self._clock() - self._last_detection > LIVE_DETECTION_MAX_AGE_S):
+                now - self._last_detection > LIVE_DETECTION_MAX_AGE_S):
             self._clear_detection_unlocked()
             self._changed("Esperando detección en vivo de la cámara.")
             self._log("live_detection_expired")
@@ -725,12 +765,13 @@ class GameController:
                                                    self.projector_height)
                 self.projector_width, self.projector_height = width, height
                 self.projector_open = True
-                self.projection_mode = "live"
+                self._live_mode_unlocked()
                 self._changed("Ventana del proyector abierta. Mostrando detección en vivo.")
                 if changed_size:
                     self._log("projection_resized", width=width, height=height)
                     self._invalidate_alignment_unlocked("projector_resized")
             elif action == "camera_changed":
+                self._camera_epoch += 1
                 self.board = self.game = None
                 self._clear_detection_unlocked()
                 self.frame_width = self.frame_height = 0
@@ -753,19 +794,21 @@ class GameController:
                     self._drop_alignment_unlocked("none", "Alineación cancelada: se cerró el proyector.")
                     self._log("alignment_cancelled", reason="projection_close")
             elif action == "projection_black":
+                self._refuse_while_collecting_unlocked()
                 if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
                     raise RequestError("Terminá o pausá el intento antes de escanear.",
                                        HTTPStatus.CONFLICT)
                 self.projection_mode = "black"
                 self._changed("Proyección en negro. Ahora podés capturar la pared.")
             elif action == "projection_neutral":
+                self._refuse_while_collecting_unlocked()
                 if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
                     raise RequestError("Terminá o pausá el intento antes de escanear.",
                                        HTTPStatus.CONFLICT)
                 self.projection_mode = "neutral"
                 self._changed("Proyección neutra: solo el fondo, para leer colores.")
             elif action == "projection_restore":
-                self.projection_mode = "live"
+                self._live_mode_unlocked()
                 self.revision += 1
             elif action == "align_start":
                 if not self.projector_open:
@@ -778,6 +821,8 @@ class GameController:
                 self._align_layout = alignment_layout(self.projector_width, self.projector_height)
                 self._align_camera = {"label": self.frame_camera, "width": self.frame_width,
                                       "height": self.frame_height}
+                self._align_activity = self._clock()
+                self._hold_detection_unlocked()
                 self.projection_mode = "align"
                 self._changed("Alineando cámara y proyector…")
                 self._log("alignment_started", width=self.projector_width, height=self.projector_height,
@@ -799,6 +844,7 @@ class GameController:
                 self._log("alignment_cleared")
             elif action == "check_solve":
                 self._solve_overlay_check_unlocked()
+                self._hold_until = None
             elif action in ("aim", "aim_left", "aim_right"):
                 if self.game is None or self.game.status != GameStatus.READY:
                     raise RequestError("La dirección solo se cambia antes del lanzamiento.",
@@ -808,6 +854,7 @@ class GameController:
                 self.aim_degrees = (aim + 180) % 360 - 180
                 self.revision += 1
             elif action == "launch":
+                self._refuse_while_collecting_unlocked()
                 if (not self.projector_open or self.camera_board is None or
                         self.board is None or self.game is None):
                     raise RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.",
@@ -833,7 +880,7 @@ class GameController:
                 self.paused = False
                 self._last_tick = None
                 self._accumulator = 0.0
-                self.projection_mode = "live"
+                self._live_mode_unlocked()
                 self._changed("Intento reiniciado con los post-its de la vista en vivo.")
                 self._log("attempt_reset")
             elif action == "pause":
@@ -900,6 +947,7 @@ class GameController:
                     raise RequestError(str(exc)) from exc
                 self._log("camera_report", camera=label, **{"report": details})
             elif action == "resume":
+                self._refuse_while_collecting_unlocked()
                 if (not self.projector_open or self.game is None or
                         self.game.status != GameStatus.RUNNING or not self.paused):
                     raise RequestError("No hay un intento pausado o falta el proyector.",
@@ -913,6 +961,10 @@ class GameController:
             return self._snapshot_unlocked()
 
     # ------------------------------------------------------------ alignment
+
+    def _refuse_while_collecting_unlocked(self) -> None:
+        if self._align_status == "collecting":
+            raise RequestError("Esperá a que termine la alineación.", HTTPStatus.CONFLICT)
 
     def _solve_alignment_unlocked(self) -> None:
         """Decode the 14 pattern frames (contract 1.3) and adopt or reject H."""
@@ -943,6 +995,7 @@ class GameController:
                               (camera["width"], camera["height"]))
         self._overlay = self._overlay_state("unchecked", probes)
         self._check_frames = {}
+        self._hold_detection_unlocked()   # the overlay check comes next
         detail = (f"Proyector alineado: error {result['holdout_p95_px']:.1f} px "
                   f"con {result['decoded']} puntos.")
         self._align_detail = detail
@@ -964,6 +1017,8 @@ class GameController:
             if (width, height) != (self.frame_width, self.frame_height):
                 raise RequestError("El cuadro de alineación no coincide con el tamaño de la cámara.")
             self._align_frames[key] = gray
+            self._align_activity = self._clock()
+            self._hold_detection_unlocked()
             self.revision += 1
             return {"received": len(self._align_frames), "needed": ALIGN_NEEDED}
 
@@ -975,7 +1030,11 @@ class GameController:
         with self._lock:
             if self._align_status != "ready":
                 raise RequestError("Primero alineá el proyector.", HTTPStatus.CONFLICT)
+            height, width = frame.shape[:2]
+            if (width, height) != (self._align_camera["width"], self._align_camera["height"]):
+                raise RequestError("El cuadro de verificación no coincide con el tamaño de la cámara.")
             self._check_frames[kind] = frame
+            self._hold_detection_unlocked()
             return {"received": sorted(self._check_frames)}
 
     def _solve_overlay_check_unlocked(self) -> None:
@@ -1064,12 +1123,12 @@ class GameController:
         """
         label = self._frame_label(camera)
         frame = _decode_jpeg(data)
-        notes, quality, palette = self._measure_or_refuse(frame)
+        notes, quality, palette, epoch = self._measure_or_refuse(frame)
         height, width = frame.shape[:2]
         with self._lock:
-            if self.palette is not palette:
-                # The colors changed while detecting: these notes belong to
-                # the old palette, so they must not replace the cleared view.
+            if self.palette is not palette or self._camera_epoch != epoch:
+                # The colors or the camera changed while detecting: these notes
+                # belong to the old ones, so they must not replace the cleared view.
                 return {"width": width, "height": height,
                         "roles": {role: {"count": len(notes[role]), "expected": LIVE_EXPECTED_NOTES[role],
                                          "notes": [_polygon_json(p) for p in notes[role]]} for role in ROLES},
@@ -1081,13 +1140,13 @@ class GameController:
     def _measure_or_refuse(self, frame: np.ndarray):
         height, width = frame.shape[:2]
         with self._lock:
-            palette = self.palette
+            palette, epoch = self.palette, self._camera_epoch
             bridge = self._rim_footprint_unlocked(width, height)
         try:
             notes, quality = self._measure(frame, palette, bridge)
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
-        return notes, quality, palette
+        return notes, quality, palette, epoch
 
     def scan_jpeg(self, data: bytes, camera: str | None = None) -> dict[str, Any]:
         """Optional explicit refresh/reset, without blackout or calibration."""
@@ -1097,7 +1156,7 @@ class GameController:
             if self.game is not None and self.game.status == GameStatus.RUNNING and not self.paused:
                 raise RequestError("Terminá o pausá el intento antes de escanear.",
                                    HTTPStatus.CONFLICT)
-        notes, quality, palette = self._measure_or_refuse(frame)
+        notes, quality, palette, epoch = self._measure_or_refuse(frame)
         height, width = frame.shape[:2]
         with self._lock:
             if self.game is not None and self.game.status == GameStatus.RUNNING and not self.paused:
@@ -1105,6 +1164,9 @@ class GameController:
                                    HTTPStatus.CONFLICT)
             if self.palette is not palette:
                 raise RequestError("Los colores cambiaron durante la lectura. Volvé a escanear.",
+                                   HTTPStatus.CONFLICT)
+            if self._camera_epoch != epoch:
+                raise RequestError("La cámara cambió durante la lectura. Volvé a escanear.",
                                    HTTPStatus.CONFLICT)
             self._expire_detection_unlocked()
             _, error = self._store_frame_unlocked(notes, quality, width, height, label)
@@ -1114,7 +1176,7 @@ class GameController:
             self.paused = False
             self._accumulator = 0.0
             self._last_tick = None
-            self.projection_mode = "live"
+            self._live_mode_unlocked()
             self._changed("Tablero actualizado con la detección en vivo.")
             self._log("board_scanned", bumpers=len(self.board.bumpers),
                       camera_width=self.frame_width, camera_height=self.frame_height)

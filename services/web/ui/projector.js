@@ -173,7 +173,9 @@ async function syncProjectionSize() {
 document.addEventListener("keydown", (event) => {
   if (isThemeShortcut(event)) {
     event.preventDefault();
-    setTheme(theme === "dark" ? "light" : "dark");
+    // Not while the camera is capturing what this window shows (a run, a
+    // search or a pick): the light must not change between two captures.
+    if (!localScene && !blackoutForced) setTheme(theme === "dark" ? "light" : "dark");
   }
 });
 

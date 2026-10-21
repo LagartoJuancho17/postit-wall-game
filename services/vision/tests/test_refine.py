@@ -147,31 +147,43 @@ class RefineTests(unittest.TestCase):
 
 
 class BridgeTests(unittest.TestCase):
-    """Contract 2.5: a paper crossed by our own saturated rim stays one paper."""
+    """Contract 2.5: a strip our own saturated rim cut off a paper joins it back;
+    two notes are never joined."""
 
     # 320x240: a note may cover at most 5% of the frame (3840 px).
-    def _split_paper(self):
+    def _cut_paper(self, x: int):
         frame = np.full((240, 320, 3), 205, np.uint8)
         cv2.rectangle(frame, (100, 80), (150, 120), bgr(65), -1)     # one green bumper
-        cv2.line(frame, (125, 70), (125, 130), (255, 255, 255), 3)   # a white rim across it
+        cv2.line(frame, (x, 70), (x, 130), (255, 255, 255), 3)       # a white rim across it
         bridge = np.zeros((240, 320), np.uint8)
-        cv2.line(bridge, (125, 68), (125, 132), 255, 7)              # where the backend draws it
+        cv2.line(bridge, (x, 68), (x, 132), 255, 7)                  # where the backend draws it
         return frame, bridge
 
-    def test_without_the_bridge_the_rim_splits_the_paper(self):
-        frame, _ = self._split_paper()
-        self.assertEqual(len(find_notes(frame)["bumper"]), 2)
-
-    def test_the_bridge_joins_it_back_into_the_whole_paper(self):
-        frame, bridge = self._split_paper()
+    def test_a_strip_cut_off_by_our_rim_joins_its_paper_back(self):
+        frame, bridge = self._cut_paper(144)   # leaves a 5 px strip: not a note by itself
+        self.assertEqual(len(find_notes(frame)["bumper"]), 1, "without the bridge the strip is lost")
         notes = find_notes(frame, bridge=bridge)["bumper"]
         self.assertEqual(len(notes), 1)
         xs = [point.x for point in notes[0].points]
         ys = [point.y for point in notes[0].points]
         self.assertLess(abs(min(xs) - 100), 1.0)
-        self.assertLess(abs(max(xs) - 150), 1.0)
+        self.assertLess(abs(max(xs) - 150), 1.0, "the strip is back in the outline")
         self.assertLess(abs(min(ys) - 80), 1.0)
         self.assertLess(abs(max(ys) - 120), 1.0)
+
+    def test_two_notes_with_our_rim_between_them_stay_two(self):
+        """Regression (review, 2026-10-21): two bumpers a few px apart, our rim
+        in the gap, were joined into one hull; the next rim went around the
+        hull, they split, and the count flipped every frame."""
+        frame, bridge = self._cut_paper(125)   # two 24 px halves: each a note
+        self.assertEqual(len(find_notes(frame, bridge=bridge)["bumper"]), 2)
+        for gap in range(4, 11):
+            wall = np.full((240, 320, 3), 205, np.uint8)
+            cv2.rectangle(wall, (100, 80), (140, 120), bgr(65), -1)
+            cv2.rectangle(wall, (141 + gap, 80), (181 + gap, 120), bgr(65), -1)
+            band = np.zeros((240, 320), np.uint8)
+            cv2.rectangle(band, (138, 70), (143 + gap, 130), 255, -1)   # the rims fill the gap
+            self.assertEqual(len(find_notes(wall, bridge=band)["bumper"]), 2, gap)
 
     def test_the_bridge_adds_nothing_on_bare_wall(self):
         frame = np.full((240, 320, 3), 205, np.uint8)
@@ -196,21 +208,25 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual([c.coarse for c in bridged], [c.coarse for c in plain], inner)
             self.assertEqual(find_notes(frame, bridge=bridge), find_notes(frame), inner)
 
-    def test_a_tilted_paper_cut_by_a_rim_is_whole_again(self):
+    def test_a_tilted_paper_with_a_strip_cut_off_is_whole_again(self):
         frame, paper = tilted_paper()
-        (x0, y0), (x1, y1) = midpoint(paper[0], paper[1]), midpoint(paper[2], paper[3])
+        # A rim across the paper, parallel to its short side, 9 px from one end:
+        # a ~6 px strip (38 px long, not a note) is left beyond it.
+        t = 9 / 52
+        a = (paper[1][0] + t * (paper[0][0] - paper[1][0]), paper[1][1] + t * (paper[0][1] - paper[1][1]))
+        b = (paper[2][0] + t * (paper[3][0] - paper[2][0]), paper[2][1] + t * (paper[3][1] - paper[2][1]))
+        a, b = (round(a[0]), round(a[1])), (round(b[0]), round(b[1]))
         cut = frame.copy()
-        cv2.line(cut, (round(x0), round(y0)), (round(x1), round(y1)), (255, 255, 255), 3)
-        self.assertEqual(len(find_notes(cut)["bumper"]), 2)
+        cv2.line(cut, a, b, (255, 255, 255), 3)
         bridge = np.zeros(frame.shape[:2], np.uint8)
-        cv2.line(bridge, (round(x0), round(y0)), (round(x1), round(y1)), 255, 7)
+        cv2.line(bridge, a, b, 255, 7)
         notes = find_notes(cut, bridge=bridge)["bumper"]
         self.assertEqual(len(notes), 1)
         found = [(point.x, point.y) for point in notes[0].points]
         self.assertLess(max(min(math.dist(p, q) for q in paper) for p in found), 1.0)
 
     def test_a_bridge_of_another_size_is_refused(self):
-        frame, _ = self._split_paper()
+        frame, _ = self._cut_paper(144)
         with self.assertRaises(ValueError):
             find_notes(frame, bridge=np.zeros((10, 10), np.uint8))
 

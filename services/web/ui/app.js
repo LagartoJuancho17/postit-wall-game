@@ -330,11 +330,6 @@ function showOnProjector(message, failure = "La ventana de proyección no respon
   });
 }
 
-function waitForBlackout() {
-  return showOnProjector({ type: "blackout" },
-    "La ventana de proyección no confirmó el fondo negro. Abrila otra vez con J.");
-}
-
 // Colors and camera settings are measured under the play light, minus our
 // own drawing: the theme background only (contract 2.2).
 function waitForNeutral() {
@@ -414,10 +409,21 @@ async function alignProjector() {
       notice(alignment.detail, "error");
     }
   } catch (error) {
-    notice(error.message, "error");
+    // The backend may have ended the run itself (projector resized, camera
+    // changed): its reason beats the 409 the next upload got.
+    let reason = error.message;
+    try {
+      const latest = await responseJSON(await api("/api/state", { cache: "no-store" }));
+      applyState(latest);
+      if (["stale", "none"].includes(latest?.alignment?.status) && latest.alignment.detail) reason = latest.alignment.detail;
+    } catch {
+      // Keep the run's own error.
+    }
+    notice(reason, "error");
   } finally {
     channel.postMessage({ type: "resume" });
     aligning = false;
+    cameraSelect.disabled = cameraSelect.options.length === 0 || !cameraSelect.options[0].value;
     previewGeneration += 1;
     render();
     schedulePreview(0);
@@ -426,7 +432,7 @@ async function alignProjector() {
 
 function maybeAutoAlign(cameraReady, projectionReady) {
   const busy = aligning || scanBusy || Boolean(tuning) || pickBusy;
-  if (shouldAutoAlign({ state, cameraReady, projectorReady: projectionReady, fullscreen: projectorFullscreen,
+  if (shouldAutoAlign({ state, cameraReady, projectorReady: projectionReady, fullscreen: projectorFullscreen && !projectorHidden,
     busy, tried: autoAlignTried })) {
     setTimeout(alignProjector, 0);
   }
@@ -509,6 +515,7 @@ function sampleHex(point) {
 }
 
 async function setColor(role, hex) {
+  if (aligning) return;
   paletteError = null;
   try {
     const before = freshPreview();
@@ -779,6 +786,7 @@ async function restoreProjection() {
 // its theme background only (no outlines, no ball), so the sample matches
 // what live detection will see, in the light theme too (contract 2.2).
 async function pickColor(role, point) {
+  if (aligning) return;
   const projectorReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const darken = projectorReady && attemptPhase(state?.game) !== "running";
   let black = false;
@@ -886,12 +894,12 @@ function drawCameraOverlay() {
 function renderPalette(cameraReady) {
   const palette = state?.palette;
   const editable = Boolean(palette) && previewSupported;
-  if (pickRole && (!editable || !cameraReady || tuning || scanBusy)) pickRole = null;
+  if (pickRole && (!editable || !cameraReady || tuning || scanBusy || aligning)) pickRole = null;
   const lights = roleLights(freshPreview());
   for (const role of PALETTE_ROLES) {
     const swatch = $(`color-${role}`);
     const color = palette?.roles?.[role]?.hex;
-    swatch.disabled = !editable;
+    swatch.disabled = !editable || aligning;
     if (color && document.activeElement !== swatch) swatch.value = color;
     const box = swatch.closest(".palette-role");
     box.style.setProperty("--role-color", color || FALLBACK_COLORS[role]);
@@ -899,7 +907,7 @@ function renderPalette(cameraReady) {
     $(`light-${role}`).dataset.state = lights[role].state;
     $(`seen-${role}`).textContent = lights[role].text;
     $(`seen-${role}`).dataset.state = lights[role].state;
-    $(`pick-${role}`).disabled = !editable || !cameraReady || Boolean(tuning) || scanBusy || pickBusy;
+    $(`pick-${role}`).disabled = !editable || !cameraReady || Boolean(tuning) || scanBusy || pickBusy || aligning;
     $(`pick-${role}`).setAttribute("aria-pressed", String(pickRole === role));
   }
   $("palette-reset").disabled = !editable || !palette.custom;
@@ -927,22 +935,28 @@ function render() {
   const projectionReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
   const controls = controlsFor(state, cameraReady, projectionReady);
   const guide = setupGuide(state, cameraReady, projectionReady);
-  $("scan-button").disabled = scanBusy || Boolean(tuning) || pickBusy || !controls.scan;
+  // An alignment run owns the camera and the projector: nothing else may use them.
+  $("scan-button").disabled = aligning || scanBusy || Boolean(tuning) || pickBusy || !controls.scan;
   const lock = tuning ? { tone: "busy", text: `Buscando ajuste fijo de cámara ${tuning.done}/${tuning.total}…` } : cameraLock;
   $("camera-lock").textContent = lock.text;
   $("camera-lock").title = lock.detail ? `${lock.text}\n\nChrome informa: ${lock.detail}` : lock.text;
   $("camera-lock").dataset.tone = lock.tone;
-  $("camera-tune").disabled = !cameraReady || Boolean(tuning) || scanBusy || pickBusy || !cameraSupport(cameraCaps).any
+  $("camera-tune").disabled = aligning || !cameraReady || Boolean(tuning) || scanBusy || pickBusy || !cameraSupport(cameraCaps).any
     || !state || !("camera_presets" in state) || attemptPhase(state?.game) === "running";
   $("camera-tune").textContent = state?.camera_presets?.[cameraLabel] ? "Buscar otra vez" : "Buscar ajuste fijo";
-  $("launch-button").disabled = !controls.launch;
+  $("launch-button").disabled = aligning || !controls.launch;
   $("launch-button").hidden = controls.resume;
   $("resume-button").hidden = !controls.resume;
-  $("resume-button").disabled = !controls.resume;
-  $("reset-button").disabled = !controls.reset;
-  $("angle-range").disabled = !controls.aim;
-  $("aim-left").disabled = !controls.aim;
-  $("aim-right").disabled = !controls.aim;
+  $("resume-button").disabled = aligning || !controls.resume;
+  $("reset-button").disabled = aligning || !controls.reset;
+  $("angle-range").disabled = aligning || !controls.aim;
+  $("aim-left").disabled = aligning || !controls.aim;
+  $("aim-right").disabled = aligning || !controls.aim;
+  // The light must not change between the captures of a run, a search or a pick.
+  const lightLocked = aligning || Boolean(tuning) || pickBusy;
+  $("theme-dark").disabled = lightLocked;
+  $("theme-light").disabled = lightLocked;
+  if (aligning) cameraSelect.disabled = true;
   $("open-projector").innerHTML = projectionReady
     ? "Enfocar proyección <kbd>J</kbd>"
     : "Abrir proyección <kbd>J</kbd>";
@@ -1019,6 +1033,7 @@ $("align-projector").addEventListener("click", () => alignProjector());
 // starts, so the remembered camera (and the board scanned with it) comes back.
 $("retry-camera").addEventListener("click", () => startCamera(cameraSelect.value || "", !cameraSelect.value));
 cameraSelect.addEventListener("change", () => {
+  if (aligning) return;
   rememberCamera(cameraSelect.selectedOptions[0]?.textContent);
   startCamera(cameraSelect.value, false);
 });
@@ -1043,7 +1058,7 @@ $("palette-reset").addEventListener("click", () => {
   sendAction("palette_reset");
 });
 $("camera-stage").addEventListener("click", (event) => {
-  if (!pickRole || pickBusy || scanBusy || tuning || !stream || !video.videoWidth) return;
+  if (!pickRole || pickBusy || scanBusy || tuning || aligning || !stream || !video.videoWidth) return;
   const point = framePointFromClick(event.clientX, event.clientY,
     $("camera-stage").getBoundingClientRect(), video.videoWidth, video.videoHeight);
   if (!point) return;
@@ -1060,7 +1075,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (isThemeShortcut(event)) {
     event.preventDefault();
-    setProjectorTheme(projectorBackdrop === "dark" ? "light" : "dark");
+    if (!(aligning || tuning || pickBusy)) setProjectorTheme(projectorBackdrop === "dark" ? "light" : "dark");
     return;
   }
   if (pickRole && event.key === "Escape") {
@@ -1070,6 +1085,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (isTypingTarget(event.target) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (aligning) return; // S, A, R, Space and the arrows wait for the run to end
   const key = event.key.toLowerCase();
   if (key === "s") {
     event.preventDefault();
@@ -1097,6 +1113,15 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", drawCameraOverlay);
 window.addEventListener("beforeunload", stopCamera);
+// Leaving mid-run must not leave patterns on the wall (the backend also
+// cancels a run that stops sending frames, after 20 s).
+window.addEventListener("pagehide", () => {
+  if (!aligning) return;
+  channel.postMessage({ type: "resume" });
+  api("/api/action", { method: "POST", keepalive: true,
+    headers: { "Content-Type": "application/json", "X-Postit-Client": "1" },
+    body: JSON.stringify({ action: "align_cancel" }) }).catch(() => {});
+});
 // The iPhone joins the list a few seconds after it wakes up near the Mac,
 // often after the page already fell back to the FaceTime camera.
 navigator.mediaDevices?.addEventListener?.("devicechange", async () => {
@@ -1108,7 +1133,7 @@ navigator.mediaDevices?.addEventListener?.("devicechange", async () => {
       activeId,
       remembered: rememberedCamera(),
       scanned: Boolean(state?.camera_board || state?.board),
-      busy: cameraBusy || scanBusy,
+      busy: cameraBusy || scanBusy || aligning || Boolean(tuning) || pickBusy,
     });
     if (target) await startCamera(target, false);
   } catch {
@@ -1137,6 +1162,7 @@ async function watchCamera() {
   }
 }
 
+let leftoverChecked = false;
 async function pollState() {
   if (polling) return;
   polling = true;
@@ -1147,6 +1173,14 @@ async function pollState() {
     connectionNotice = null;
     applyState(next);
     if (popup && popup.closed) popupReady = false;
+    if (!leftoverChecked) {
+      leftoverChecked = true;
+      // A run this panel did not start (the page was reloaded mid-run).
+      if (next?.alignment?.status === "collecting" && !aligning) {
+        channel.postMessage({ type: "resume" });
+        applyState(await action("align_cancel"));
+      }
+    }
   } catch (error) {
     notice(`No se puede conectar con el servidor local: ${error.message}`, "error");
     connectionNotice = localNotice;

@@ -243,6 +243,13 @@ Invalidation (status -> `stale`, `matrix: null`, log `alignment_invalidated
 - a preview or scan frame whose label differs from `alignment.camera.label`
   (`camera_label`) or whose size differs (`camera_size`).
 
+A check frame whose size differs from `alignment.camera` is refused (400,
+`El cuadro de verificación no coincide con el tamaño de la cámara.`). A
+`camera_changed` bumps a camera epoch; a preview or scan measured across it
+(measured outside the lock, or decoded asynchronously in the browser) is not
+stored, like one measured across a palette change (scan: 409 `La cámara
+cambió durante la lectura. Volvé a escanear.`).
+
 ### 1.5 Game geometry when aligned
 
 When `alignment.status == "ready"`, the live board is mapped into projector
@@ -276,7 +283,11 @@ The projector never puts role-colored light on bare wall.
     by `RIM_OFFSET_PX = 6` projector px (miter join, miter limit 2; 6 rather than 5 so that,
     with the measured outline accuracy, the rim never lies on the paper even
     under the light theme's flood). Color:
-    dark theme `#ffffff`, light theme `#2b2f2e`. No shadow, no blur.
+    dark theme `#ffffff`, light theme `#2b2f2e`. No shadow, no blur. Each
+    rim is clipped out of every *other* note offset outward by
+    `RIM_CLEAR_PX = 3` (canvas `clip("evenodd")`), so our white light never
+    lands on another paper: two papers a few px apart never cut each other,
+    and two pieces of one paper heal on the next frame.
   - Fill: polygon offset **inward** by `FILL_INSET_PX = 5`, `globalAlpha
     0.35`, skipped if the inset polygon degenerates (non-convex or area < 25
     px²), no shadow, no blur. Color: the role's palette hex when
@@ -327,7 +338,14 @@ shorter than 4): `[{"role": "start", "points": [{x, y} x 4]}]` in projector
 px, clockwise from top-left. Deterministic placement (both backends):
 
 - side `s = max(32, py_round(0.05 * min(W_p, H_p)))`;
-- keep-out boxes: every note of the current `live_detection` (all roles),
+- keep-out boxes: every note of the current `live_detection` (all roles).
+  The panel pauses previews for the whole run, which outlasts the 1.5 s
+  life of a detection, so the backend **holds** it: `align_start`, every
+  `align_frame`, a successful `align_solve` and every `check_frame` push the
+  hold to now + 20 s (`ALIGN_HOLD_S`); `check_solve` and every drop of the
+  alignment release it. Without it (review, 2026-10-21) the probes were
+  placed as if the wall were bare, one landed on a paper, and the overlay
+  frame drew no fill because there were no notes to fill;
   mapped through H, its axis-aligned bounding box grown by `s` on every side;
 - candidate centers `(W_p * i / 10, H_p * j / 10)` for `j = 1..9` (outer),
   `i = 1..9` (inner); square `[cx - s/2, cx + s/2] x [cy - s/2, cy + s/2]`;
@@ -470,8 +488,18 @@ joins, it never draws. For every role, with `raw` the role's color mask and
    increasing, so every contour pixel lies in `joined`.
 3. Contours are grouped by the `joined` label of their first point, groups
    in the order of their first contour. A contour alone in its group is
-   kept as is; a group of several becomes the `convexHull` of all their
-   points. The usual filters, polygon and refinement then run per group.
+   kept as is. A group with two or more contours that are notes by
+   themselves (they pass every candidate filter: area, short side, aspect,
+   rectangularity) is kept apart: that is two papers with our rim between
+   them. Any other group becomes the `convexHull` of all its points: a
+   strip our rim cut off a note (in a dark room, the part of the paper our
+   light does not reach) joins it. The usual filters, polygon and
+   refinement then run per group.
+
+Joining two notes was the first rule here. The review of 2026-10-21 found
+two bumpers 5-8 px apart counting 2, 1, 2, 1 on every frame: joined across
+the rim, the next rim went around the hull, they split, and so on. The rim
+clipping (2.1) keeps two notes' light off each other instead.
 
 So a rim beside a paper never changes its outline, coarse or refined, and
 bare wall never changes. Measured, 2026-10-20: the first version added the
@@ -527,6 +555,23 @@ Panel alignment run (`alignProjector()` in `app.js`):
    proyector` (id `align-projector`).
 6. Panel status line shows `alignment.detail` and the overlay detail. The
    setup guide gains a step `align` between `projector` and `play`.
+7. A run owns the camera and the projector until it ends: the eyedropper,
+   the color swatches, scanning, the camera search, the camera selector,
+   launch, reset, aim, resume and the theme (`F`, in both windows) wait.
+   The backend refuses `launch`, `resume`, `projection_black` and
+   `projection_neutral` while collecting and keeps `projection.mode` at
+   `align` (`Esperá a que termine la alineación.`).
+8. Every ack carries the projector's size; one that differs from the
+   layout's voids the run (`Cambió el tamaño de la proyección durante la
+   alineación.`). After a failed run the panel shows the backend's own
+   reason when the backend ended the run (stale, cancelled).
+9. The overlay check settles as slowly as the run that succeeded (a slower
+   retry doubles both).
+10. Leaving the panel mid-run (`pagehide`) resumes the projector and sends
+    `align_cancel` (keepalive). A panel that loads while the backend is
+    collecting cancels that run. The backend itself cancels a run that has
+    received no frame for 20 s (`ALIGN_STALL_S`): the wall never keeps
+    patterns.
 
 Projector:
 

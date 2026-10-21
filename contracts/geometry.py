@@ -1,5 +1,6 @@
 """Geometry shared across service boundaries, without runtime dependencies."""
 
+import math
 from .model import Point, Polygon
 
 
@@ -43,7 +44,7 @@ def offset_convex_polygon(points, distance: float) -> list[tuple[float, float]] 
     for index in range(count):
         x, y = pts[index]
         dx, dy = pts[(index + 1) % count][0] - x, pts[(index + 1) % count][1] - y
-        length = (dx * dx + dy * dy) ** 0.5
+        length = math.sqrt(dx * dx + dy * dy)   # sqrt, not ** 0.5: the JS port gets the same bits
         if length == 0:
             return None
         lines.append((x + sign * dy / length * distance, y - sign * dx / length * distance, dx, dy))

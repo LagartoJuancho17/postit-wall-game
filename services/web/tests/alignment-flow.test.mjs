@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { alignTiming, autoAlignKey, runAlignment, shouldAutoAlign } from "../ui/align-run.mjs";
+import { alignTiming, autoAlignKey, RESIZED, runAlignment, shouldAutoAlign } from "../ui/align-run.mjs";
 
 const FRAMES = Array.from({ length: 7 }, (_, bit) => [{ bit, inverse: false }, { bit, inverse: true }]).flat();
 const LAYOUT = { frames: FRAMES, dots: [] };
@@ -140,4 +140,25 @@ test("automatic alignment starts once per projector size and camera, never after
   assert.equal(ask(), false, "already tried under these exact conditions");
   assert.equal(ask({ state: { ...READY, projection: { width: 1280, height: 720 } } }), true, "a new projector size is new");
   assert.equal(ask({ state: { ...READY, camera: { ...READY.camera, label: "C920" } } }), true, "another camera is new");
+});
+
+test("after a slower retry succeeds, the overlay check settles as slowly", async () => {
+  const { deps, log } = rig({ solves: [{ status: "failed", code: "inaccurate" }, { status: "ready", code: null }] });
+  await runAlignment(deps, { cameraFixed: true });
+  const check = log.slice(log.indexOf("show:neutral"));
+  assert.deepEqual(check.filter((entry) => entry.startsWith("settle:")), ["settle:300", "settle:300"],
+    "the check uses the retry's doubled settle, not the first run's");
+});
+
+test("a projector that redraws at another size voids the run, cancelled and resumed", async () => {
+  const { deps, log } = rig();
+  let shown = 0;
+  deps.show = async (message) => {
+    log.push(`show:${message.type}`);
+    shown += 1;
+    return shown === 3 ? { at: 0, width: 1920, height: 1080 } : { at: 0, width: undefined };
+  };
+  await assert.rejects(runAlignment(deps), new RegExp(RESIZED.slice(0, 30)));
+  assert.deepEqual(log.slice(-2), ["resume", "action:align_cancel"]);
+  assert.ok(!log.includes("action:align_solve"));
 });

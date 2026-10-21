@@ -327,33 +327,50 @@ class RimBridgeTests(unittest.TestCase):
 
     @staticmethod
     def _frames():
-        half = np.full((240, 320, 3), 205, np.uint8)
-        cv2.rectangle(half, (100, 80), (130, 120), bgr(HUES["bumper"]), -1)
+        before = np.full((240, 320, 3), 205, np.uint8)
+        cv2.rectangle(before, (100, 80), (160, 120), bgr(HUES["bumper"]), -1)
         full = np.full((240, 320, 3), 205, np.uint8)
-        cv2.rectangle(full, (100, 80), (170, 120), bgr(HUES["bumper"]), -1)
+        cv2.rectangle(full, (100, 80), (173, 120), bgr(HUES["bumper"]), -1)
         # Unaligned, projector size == camera size: the contain fit is the
-        # identity, so the rim of the half note lies 6 px right of x = 130.
-        cv2.line(full, (136, 70), (136, 130), (255, 255, 255), 3)
-        return half, full
+        # identity, so the rim of the earlier note lies 6 px right of x = 160
+        # and cuts a 5 px strip (not a note by itself) off the paper.
+        cv2.line(full, (166, 70), (166, 130), (255, 255, 255), 3)
+        return before, full
 
-    def test_our_own_rim_across_a_paper_does_not_split_it(self):
+    def test_a_strip_our_rim_cut_off_stays_part_of_the_paper(self):
         rig = Rig(self)
         rig.open()
-        half, full = self._frames()
-        self.assertEqual(rig.preview(half)["roles"]["bumper"]["count"], 1)
+        before, full = self._frames()
+        self.assertEqual(rig.preview(before)["roles"]["bumper"]["count"], 1)
         preview = rig.preview(full)
         self.assertEqual(preview["roles"]["bumper"]["count"], 1)
         xs = [p["x"] for p in preview["roles"]["bumper"]["notes"][0]["points"]]
         self.assertLess(abs(min(xs) - 100), 1.5)
-        self.assertLess(abs(max(xs) - 170), 1.5)
+        self.assertLess(abs(max(xs) - 173), 1.5)
 
     def test_without_our_rim_drawn_nothing_is_discounted(self):
         rig = Rig(self)
         rig.open()
-        half, full = self._frames()
-        rig.preview(half)
+        before, full = self._frames()
+        rig.preview(before)
         rig.act("projection_neutral")   # the projector draws no rims now
-        self.assertEqual(rig.preview(full)["roles"]["bumper"]["count"], 2)
+        xs = [p["x"] for p in rig.preview(full)["roles"]["bumper"]["notes"][0]["points"]]
+        self.assertLess(max(xs), 166, "the strip is lost without the bridge")
+
+    def test_two_close_papers_never_flip_through_the_live_loop(self):
+        """Regression (review, 2026-10-21): bumpers 5-8 px apart counted
+        2, 1, 2, 1... because the bridge joined them across our rim."""
+        for gap in range(3, 11):
+            rig = Rig(self)
+            rig.open()
+            frame = np.full((240, 320, 3), 205, np.uint8)
+            cv2.rectangle(frame, (100, 80), (140, 120), bgr(HUES["bumper"]), -1)
+            cv2.rectangle(frame, (141 + gap, 80), (181 + gap, 120), bgr(HUES["bumper"]), -1)
+            counts = [rig.preview(frame)["roles"]["bumper"]["count"] for _ in range(6)]
+            self.assertEqual(len(set(counts)), 1, f"gap {gap}: {counts}")
+            # Below 5 px the JPEG's half-resolution chroma already joins them, steadily.
+            if gap >= 5:
+                self.assertEqual(counts[0], 2, gap)
 
 
 class HotPathTests(unittest.TestCase):
@@ -418,3 +435,95 @@ class HotPathTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunRobustnessTests(unittest.TestCase):
+    """Regressions from the review of 2026-10-21 (backend)."""
+
+    @staticmethod
+    def _boxes(state):
+        return [(min(p["x"] for p in probe["points"]), min(p["y"] for p in probe["points"]),
+                 max(p["x"] for p in probe["points"]), max(p["y"] for p in probe["points"]))
+                for probe in state["alignment"]["overlay"]["probes"]]
+
+    def test_a_slow_run_keeps_the_detection_so_probes_avoid_the_papers(self):
+        """Previews pause during a run longer than the 1.5 s detection life:
+        the probes were placed as if the wall were bare, one on a paper."""
+        quick, slow = Rig(self), Rig(self)
+        state_quick, _ = quick.align()
+        slow.open()
+        slow.preview()
+        layout = slow.act("align_start")["alignment"]["layout"]
+        G = homography_from_quad(PROJECTOR, QUAD)
+        for bit, inverse in ALIGNMENT_FRAMES:
+            slow.now += 0.5    # 7 s in all, as with an automatic camera
+            frame = project_to_camera(render_pattern(layout, bit, inverse), G, CAMERA)
+            slow.game.align_frame_jpeg(_jpeg(frame), f"{bit}:{int(inverse)}", LABEL)
+        state_slow = slow.act("align_solve")
+        self.assertIsNotNone(state_slow["live_detection"], "the detection is held through the run")
+        self.assertEqual(self._boxes(state_slow), self._boxes(state_quick))
+        # The overlay check comes next: still held after its frames.
+        slow.now += 1.0
+        slow.game.check_frame_jpeg(_jpeg(wall_frame()), "neutral")
+        slow.now += 1.0
+        self.assertIsNotNone(slow.game.snapshot()["live_detection"])
+        slow.game.check_frame_jpeg(_jpeg(wall_frame()), "overlay")
+        checked = slow.act("check_solve")
+        self.assertEqual(checked["alignment"]["overlay"]["status"], "ok", checked["alignment"]["overlay"]["detail"])
+        # After the check the normal life applies again.
+        slow.now += 2.0
+        self.assertIsNone(slow.game.snapshot()["live_detection"])
+
+    def test_an_abandoned_run_is_cancelled_and_never_leaves_patterns_up(self):
+        rig = Rig(self)
+        rig.open()
+        rig.preview()
+        rig.act("align_start")
+        self.assertEqual(rig.open()["projection"]["mode"], "align", "a same-size reopen keeps the patterns")
+        self.assertEqual(rig.act("projection_restore")["projection"]["mode"], "align")
+        for name in ("launch", "resume", "projection_black", "projection_neutral"):
+            with self.assertRaises(RequestError) as caught:
+                rig.act(name)
+            self.assertEqual(str(caught.exception), "Esperá a que termine la alineación.", name)
+        rig.now += 21.0   # the panel reloaded mid-run
+        state = rig.game.snapshot()
+        self.assertEqual(state["alignment"]["status"], "none")
+        self.assertEqual(state["projection"]["mode"], "live")
+        self.assertIn("se interrumpió", state["alignment"]["detail"])
+        self.assertTrue(any(e.get("reason") == "stalled" for e in rig.events() if e["event"] == "alignment_cancelled"))
+
+    def test_check_frames_must_match_the_aligned_camera(self):
+        rig = Rig(self)
+        rig.align()
+        small = cv2.resize(wall_frame(), (160, 120))
+        with self.assertRaises(RequestError) as caught:
+            rig.game.check_frame_jpeg(_jpeg(small), "neutral")
+        self.assertEqual(str(caught.exception), "El cuadro de verificación no coincide con el tamaño de la cámara.")
+
+    def test_a_preview_of_the_old_camera_landing_after_a_change_is_dropped(self):
+        rig = Rig(self)
+        rig.open()
+        rig.preview()
+        original = server.find_notes
+
+        def change_camera_meanwhile(frame, palette, bridge=None):
+            rig.act("camera_changed")   # the operator switches while this frame is measured
+            return original(frame, palette, bridge)
+
+        server.find_notes = change_camera_meanwhile
+        try:
+            answer = rig.game.preview_jpeg(_jpeg(wall_frame()), "Old camera")
+        finally:
+            server.find_notes = original
+        self.assertEqual(answer["roles"]["start"]["count"], 1, "the caller still gets its answer")
+        state = rig.game.snapshot()
+        self.assertIsNone(state["camera"]["label"])
+        self.assertEqual(state["camera"]["width"], 0)
+        self.assertIsNone(state["live_detection"])
+        server.find_notes = change_camera_meanwhile
+        try:
+            with self.assertRaises(RequestError) as caught:
+                rig.game.scan_jpeg(_jpeg(wall_frame()), "Old camera")
+        finally:
+            server.find_notes = original
+        self.assertEqual(str(caught.exception), "La cámara cambió durante la lectura. Volvé a escanear.")

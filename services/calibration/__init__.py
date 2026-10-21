@@ -114,7 +114,9 @@ def reprojection_errors(
     errors = []
     for src, dst in zip(source, target):
         mapped = transform_point(Point(float(src[0]), float(src[1])), matrix)
-        errors.append(math.hypot(mapped.x - dst[0], mapped.y - dst[1]))
+        # sqrt(dx*dx + dy*dy), not hypot: the JS port gets the same bits.
+        dx, dy = mapped.x - dst[0], mapped.y - dst[1]
+        errors.append(math.sqrt(dx * dx + dy * dy))
     return tuple(errors)
 
 

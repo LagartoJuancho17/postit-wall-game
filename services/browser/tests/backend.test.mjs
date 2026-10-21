@@ -229,3 +229,32 @@ test("palette and camera presets survive a reload through storage; damaged stora
   assert.equal(private_.action({ action: "palette_set", role: "goal", hex: "#e0402a" }).palette.roles.goal.hex, "#e0402a");
   assert.deepEqual(logged.filter((e) => e !== "palette_changed"), ["palette_not_saved"]);
 });
+
+test("JPEG headers are checked like the Python server, before decoding", async () => {
+  const { jpegDimensions } = await import("../backend.mjs");
+  const { execFileSync } = await import("node:child_process");
+  // The Python server's own answers for the same bytes.
+  const cases = { png: [0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0], empty: [], truncated: [0xff, 0xd8, 0xff],
+    broken: [0xff, 0xd8, 0x00, 0x00, 0x00], huge: [0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0x10, 0, 0x10, 0, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1],
+    ok: [0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 17, 8, 0x02, 0xd0, 0x03, 0xc0, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1] };
+  const python = JSON.parse(execFileSync("./.venv/bin/python", ["-c", `
+import json, sys
+from services.web.backend.server import _jpeg_dimensions, RequestError
+out = {}
+for name, data in json.loads(sys.argv[1]).items():
+    try:
+        out[name] = {"ok": list(_jpeg_dimensions(bytes(data)))}
+    except RequestError as exc:
+        out[name] = {"error": str(exc), "status": int(exc.status)}
+print(json.dumps(out))`, JSON.stringify(cases)], { encoding: "utf8", env: { ...process.env, PYTHONPATH: "." } }));
+  for (const [name, bytes] of Object.entries(cases)) {
+    let got;
+    try {
+      got = { ok: jpegDimensions(Uint8Array.from(bytes)) };
+    } catch (error) {
+      got = { error: error.message, status: error.status };
+    }
+    assert.deepEqual(got, python[name], name);
+  }
+  assert.deepEqual(python.ok.ok, [960, 720]);
+});

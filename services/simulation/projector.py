@@ -50,6 +50,7 @@ RIM_OFFSET_PX = 6.0
 # background already lights the wall (contract 2.1).
 NEUTRAL_FILL = {"dark": "#ffffff", "light": None}
 FILL_INSET_PX = 5.0
+RIM_CLEAR_PX = 3.0   # a rim stays this far off every other detected note
 RIM_WIDTH_PX = 3.0
 RIM_MITER_LIMIT = 2.0
 FILL_ALPHA = 0.35
@@ -409,7 +410,7 @@ class Canvas:
         self.image[y0:y1, x0:x1] = np.clip(np.rint(region), 0, 255).astype(np.uint8)
 
     def _shape(self, outer: np.ndarray, hole: np.ndarray | None, color: str, alpha: float,
-               shadow: tuple[str, float] | None) -> None:
+               shadow: tuple[str, float] | None, exclude=()) -> None:
         if not np.isfinite(outer).all() or (hole is not None and not np.isfinite(hole).all()):
             return
         sigma = shadow[1] / 2 if shadow else 0.0
@@ -419,6 +420,8 @@ class Canvas:
         coverage = convex_coverage(outer, roi)
         if hole is not None:
             coverage = np.clip(coverage - convex_coverage(hole, roi), 0.0, 1.0)
+        for region in exclude:   # a clip path: nothing lands inside these polygons
+            coverage = coverage * (1.0 - np.clip(convex_coverage(region, roi), 0.0, 1.0))
         if shadow is not None and sigma > 0:
             # Canvas draws the blurred shadow first, then the shape over it.
             blurred = cv2.GaussianBlur(coverage, (0, 0), sigma, borderType=cv2.BORDER_CONSTANT)
@@ -434,7 +437,7 @@ class Canvas:
 
     def stroke(self, polygon, width: float, color: str, *,
                miter_limit: float = CANVAS_MITER_LIMIT, alpha: float = 1.0,
-               shadow: tuple[str, float] | None = None) -> None:
+               shadow: tuple[str, float] | None = None, exclude=()) -> None:
         """Closed-path stroke of a convex polygon, centered on it, miter joins."""
         if not is_convex(polygon):
             polygon = convex_hull(polygon)  # every stroked shape here is convex anyway
@@ -444,7 +447,7 @@ class Canvas:
         if outer is None:
             return
         # Thinner than the line: the stroke covers the whole inside.
-        self._shape(outer, offset_polygon(polygon, -width / 2), color, alpha, shadow)
+        self._shape(outer, offset_polygon(polygon, -width / 2), color, alpha, shadow, exclude)
 
     def segment(self, start, end, width: float, color: str) -> None:
         """A butt-capped line, like the canvas default ``lineCap``."""
@@ -660,7 +663,11 @@ def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | No
     """``drawProjectorScene`` (contract 2.1), and the overlay check's probes (2.3)."""
     rim = RIM_COLOR[theme]
     preview = state.get("live_detection") if fresh else None
-    for role, shape in _projected_notes(preview, mapping, canvas.width, canvas.height):
+    notes = list(_projected_notes(preview, mapping, canvas.width, canvas.height))
+    # Contract 2.1: a rim never lights another detected note (grown by
+    # RIM_CLEAR_PX); a paper our rim would cross stays whole.
+    keep_clear = [offset_polygon(shape, RIM_CLEAR_PX) if is_convex(shape) else None for _, shape in notes]
+    for index, (role, shape) in enumerate(notes):
         # Aligned: role color inside the paper once the overlay check allowed
         # it; otherwise neutral light there in the dark theme (contract 2.1),
         # so a dark room still sees the whole paper and a ghost stays gray.
@@ -672,7 +679,8 @@ def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | No
                 canvas.fill(inner, color, FILL_ALPHA)
         outline = rim_polygon(shape)
         if outline is not None:
-            canvas.stroke(outline, RIM_WIDTH_PX, rim, miter_limit=RIM_MITER_LIMIT)
+            canvas.stroke(outline, RIM_WIDTH_PX, rim, miter_limit=RIM_MITER_LIMIT,
+                          exclude=[region for k, region in enumerate(keep_clear) if k != index and region is not None])
     if probes and fill:
         alignment = state.get("alignment") if isinstance(state.get("alignment"), Mapping) else {}
         overlay = alignment.get("overlay") if isinstance(alignment.get("overlay"), Mapping) else {}

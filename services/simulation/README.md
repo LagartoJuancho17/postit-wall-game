@@ -40,15 +40,16 @@ byte-identical JPEGs, so evals built on it never flake.
   `(96,52) (1190,74) (1166,668) (112,646)` (keystone plus rotation, about
   1.75 projector px per camera px), the camera itself slightly tilted.
   `scale=` shrinks everything alike for gate tests.
-- **Projector rules**, mirroring `services/web/ui/live-view.mjs` as of
-  2026-10-19:
+- **Projector rules**, mirroring `services/web/ui/live-view.mjs`:
   - `"old"`: the projector before the contract (commit 8238278):
     `drawLiveDetection` through the contain transform (role fill alpha .3,
     18 px colored shadow, white 2 px rim that still casts the colored
     shadow) plus the old `drawLiveGame`.
   - `"new"`: `drawProjectorScene` (contract 2.1). Aligned: neutral rim on
-    the polygon offset 5 px outward (width 3, miter limit 2, convex hull
-    fallback), optional fill inset 5 px at alpha .35, ball and aim line
+    the polygon offset 6 px outward (width 3, miter limit 2, convex hull
+    fallback), fill inset 5 px at alpha .35 (the role color when the
+    overlay check allowed it, else neutral white in the dark theme), the
+    check's probe squares when forced, ball and aim line
     through H with H's local scale, horizon side taken from the camera
     center. Unaligned: rims through the contain transform, no fill, the
     `Sin alinear · pulsá A en el panel` hint. `matrix=` overrides
@@ -84,7 +85,9 @@ fixed or automatic exposure.
 - **Text**: the hint and result texts use a Hershey font at the right size
   and place, not the browser's glyphs.
 - **Drift from the JS**: `projector.py` re-implements `live-view.mjs`; a
-  change there needs the same change here (no automatic parity check yet).
+  change there needs the same change here. No automatic parity check covers
+  this pair; `tests/closed-loop-browser.mjs` runs the real renderer in Chrome
+  instead.
 
 ## Run
 
@@ -102,63 +105,78 @@ byte-identical with 1 and 2 jobs).
 ## Feedback eval
 
 Each case: 10 warm-up frames, then 60 measured frames (15 s of previews) of
-the real `GameController.preview_jpeg`. Aligned cases hand the projector
-`inverse(G)` (or that plus a 2.0 px translation) because the backend has no
-alignment endpoints yet. Fixed exposure is metered once before play: under
-the neutral projection for NEW cases (contract 2.2), with the projector black
-for OLD ones (what the old panel did). Removal cases take the goal down at
-frame 20. Scored (NEW cases only): 0 flips, 0 wrong-ready frames, 0
-phantoms, area growth <= 5% both vs the true paper and vs the same paper
-detected under the neutral projection, ghost lifetime <= 3 frames, rim
-corner error <= 3 projector px.
+the real `GameController.preview_jpeg`. Renderer-isolating cases (`new_*`)
+give the backend and the projector the same known H (`inverse(G)`, or that
+plus a 2.0 px translation) without decoding; `system_*` cases run the whole
+system: the 14 coded frames through `/api/align_frame`, `align_solve`, then
+the overlay check with its probes, and play with the fill the check allowed.
+Fixed exposure is metered once before play: under the neutral projection for
+NEW cases (contract 2.2), with the projector black for OLD ones (what the old
+panel did). Removal cases take the goal down at frame 20.
 
-Numbers from 2026-10-19 (score 0.2308 = 3 of 13 NEW cases pass):
+Scored (NEW cases, not the stress one): 0 flips, 0 wrong-ready frames, 0
+phantoms, area growth <= 5% against the true paper, ghost lifetime <= 3
+frames, rim corner error <= 4 projector px plus any injected alignment
+error, rim clearance >= 0 (the rim never lights the paper). The stress case
+forces the colored fill in a dark room, which the overlay check would turn
+off; it is reported, not scored.
 
-| case | flips | wrong ready | phantoms | growth vs neutral | min area vs neutral | ghost | rim corner max | no projection | rim clearance |
+Numbers from 2026-10-21 (`score 1.0`, 18 of 18):
+
+| case | flips | wrong ready | phantoms | growth vs paper | ghost | rim corner max | p95 | rim clearance | overlay |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| old_unaligned_dark (baseline) | 10 | 5 | 0 | +1354% | 0.980 | | | | |
-| old_unaligned_light (baseline) | 0 | 60 | 0 | +2.7% | 0.988 | | | | |
-| old_unaligned_dark_goal_removed (baseline) | 4 | 4 | 6 | +1150% | 0.980 | 1 | | | |
-| new_unaligned_dark | 0 | 0 | 0 | +1.7% | 0.980 | | | | |
-| new_unaligned_light | 0 | 0 | 0 | +2.4% | 0.988 | | | | |
-| new_unaligned_dark_goal_removed | 0 | 0 | 0 | +1.7% | 0.980 | 0 | | | |
-| new_aligned_fill_off | 0 | 0 | 0 | +1.3% | 0.980 | | 5.93 | 5.93 | -2.24 |
-| new_aligned_fill_on | 0 | 0 | 0 | +2.4% | 0.977 | | 6.38 | 5.93 | -2.57 |
-| new_aligned_error2px_fill_off | 0 | 0 | 0 | +2.4% | 0.980 | | 9.37 | 6.90 | -5.45 |
-| new_aligned_error2px_fill_on | 0 | 0 | 0 | +2.4% | 0.962 | | 9.38 | 6.90 | -5.45 |
-| new_aligned_fill_on_goal_removed | 0 | 0 | 0 | +2.4% | 0.977 | 0 | 6.38 | 5.93 | -2.57 |
-| new_aligned_fill_on_dark_room | 0 | 0 | 0 | +1.2% | 0.886 | | 11.93 | 5.93 | -8.01 |
-| new_aligned_fill_on_dark_room_goal_removed | 0 | 0 | 0 | +1.2% | 0.886 | 1 | 11.93 | 5.93 | -8.01 |
-| new_aligned_fill_on_bright_room | 0 | 0 | 0 | +0.3% | 0.978 | | 6.72 | 5.93 | -2.80 |
-| new_aligned_fill_on_light_theme | 0 | 0 | 0 | +4.7% | 0.969 | | 10.76 | 6.02 | -6.93 |
-| new_aligned_fill_on_auto_exposure | 0 | 0 | 0 | +1.3% | 0.977 | | 6.38 | 5.93 | -2.57 |
+| old_unaligned_dark (baseline) | 12 | 6 | 0 | +1260.0% |  |  |  |  |  |
+| old_unaligned_light (baseline) | 0 | 60 | 0 | -2.1% |  |  |  |  |  |
+| old_unaligned_dark_goal_removed (baseline) | 4 | 5 | 7 | +1178.3% | 1 |  |  |  |  |
+| new_unaligned_dark | 0 | 0 | 0 | -1.0% |  |  |  |  |  |
+| new_unaligned_light | 0 | 0 | 0 | -3.0% |  |  |  |  |  |
+| new_unaligned_dark_goal_removed | 0 | 0 | 0 | -1.0% | 0 |  |  |  |  |
+| new_aligned_fill_off | 0 | 0 | 0 | -0.8% |  | 1.71 | 1.56 | 3.08 |  |
+| new_aligned_fill_on | 0 | 0 | 0 | -1.7% |  | 2.19 | 2.04 | 2.68 |  |
+| new_aligned_error2px_fill_off | 0 | 0 | 0 | -0.8% |  | 3.57 | 3.35 | 1.07 |  |
+| new_aligned_error2px_fill_on | 0 | 0 | 0 | -1.6% |  | 4.37 | 3.78 | 0.57 |  |
+| new_aligned_fill_on_goal_removed | 0 | 0 | 0 | -1.8% | 0 | 2.19 | 2.07 | 2.68 |  |
+| new_aligned_fill_on_dark_room | 0 | 0 | 0 | -1.2% |  | 2.60 | 2.12 | 2.22 |  |
+| new_aligned_fill_on_bright_room | 0 | 0 | 0 | -1.3% |  | 1.89 | 1.71 | 3.01 |  |
+| new_aligned_fill_on_light_theme | 0 | 0 | 0 | -3.5% |  | 3.76 | 3.31 | 1.65 |  |
+| new_aligned_fill_on_auto_exposure | 0 | 0 | 0 | -1.8% |  | 2.46 | 2.20 | 2.48 |  |
+| system_dark | 0 | 0 | 0 | -1.8% |  | 2.28 | 2.07 | 2.59 | ok |
+| system_light | 0 | 0 | 0 | -3.5% |  | 3.78 | 3.31 | 1.54 | ok |
+| system_dark_room | 0 | 0 | 0 | +2.7% |  | 1.62 | 1.31 | 3.34 | fill_off |
+| system_dark_room_goal_removed | 0 | 0 | 0 | +2.7% | 0 | 1.62 | 1.32 | 3.34 | fill_off |
+| system_bright_room | 0 | 0 | 0 | -1.3% |  | 2.12 | 1.69 | 2.53 | ok |
+| system_auto_exposure | 0 | 0 | 0 | -1.8% |  | 2.49 | 2.20 | 2.48 | ok |
+| new_aligned_fill_on_dark_room_goal_removed (stress, not scored) | 0 | 2 | 0 | -1.3% | 5 | 2.59 | 1.95 | 2.22 |  |
 
-Rim corner errors and clearance are projector px; "no projection" is the
-same metric for detections under the neutral projection (detection alone,
-no feedback); a negative clearance means the rim stroke lands on the paper.
+Rim corner errors and clearance are projector px; a negative clearance would
+mean the rim stroke lands on the paper.
 
 Reading:
 
-- **The old projector feeds back**, as measured on the wall: 10 ready/invalid
+- **The old projector feeds back**, as measured on the wall: 12 ready/invalid
   flips in 15 s in the dark theme (the field log had 28 per minute), the
-  goal's own halo merging into it (area x14.5). In the light theme the old
-  exposure (metered with the projector black) clips 69% of the frame and the
-  board is never ready.
+  goal's own halo merging into it (area x13). In the light theme the old
+  exposure (metered with the projector black) clips most of the frame and
+  the board is never ready.
 - **The new rules remove the feedback** in every regime: 0 flips, 0
-  wrong-ready frames, 0 phantoms, growth <= +4.7% against the open-loop
-  detection, a removed goal gone within 1 frame (0 in normal light).
-- **The rim corner check fails everywhere aligned**, and mostly not because
-  of the rules: with no projection at all, detections already put the rim
-  5.93 px off. `find_notes` returns integer contour vertices on boundary
-  pixel centers after a 3x3 open/close, so detected notes run 1-3 camera px
-  inside the paper (areas 8-12% small). Even a perfect binary mask through
-  that contour path is 1.2 camera px off at the corners (2.1 projector px),
-  and the 3x3 open/close makes it 2.1 camera px (3.7 projector px): over
-  the 3 px budget before color thresholds or JPEG.
-- **Where the rule set itself adds error**: the rim's inner edge lands on
-  the paper at the corners (clearance < 0), and where the rim contrasts
-  strongly with the paper it eats the edge and pulls itself further in. In
-  a dark room (white rim, gain 20) notes shrink to 0.886 of the open-loop
-  area and the corner error doubles (11.9 px); in the light theme (dark rim
-  on a flooded wall) it reaches 10.8 px. Stable (no flips), but the outline
-  no longer lands on the paper.
+  wrong-ready frames, 0 phantoms, outlines within a few % of the paper.
+- **The rim lands where it should.** On 2026-10-19 the rim was 6-12 px off
+  and lay on the paper (clearance down to -8 px): detections ran 1-3 camera
+  px inside the paper. Three changes closed it: sub-pixel outline refinement
+  on the saturation channel in two passes (contract 2.4), the rim moved to
+  6 px, and neutral white fill in the dark theme so a dark room still sees
+  the whole paper. Since then the projector keeps each rim off every other
+  note (2.1), and the rim bridge (2.5) joins a strip our rim cut off a paper
+  back to it, never two notes and never moving an outline. Without the
+  bridge, `system_dark_room` puts a corner 66 px off (17 px with the rim
+  clipping alone): the strip a rim leaves in the dark is not lit enough to
+  rejoin by itself.
+- **The light theme is the floor** (3.8 px): its flood lowers the paper's
+  saturation edge contrast; with no projection at all detection alone gives
+  ~3 px there.
+- **Stress**: with the colored fill forced on in a dark room, a removed
+  goal's fill keeps a ghost for 5 frames (1.25 s) as it shrinks by the inset
+  each frame. The overlay check turns that fill off in a dark room
+  (`system_dark_room`: `fill_off`), which is why the case is not scored. If
+  the room is darkened after a check that allowed the fill, the ghost can
+  occur; aligning again (`A`) re-runs the check.

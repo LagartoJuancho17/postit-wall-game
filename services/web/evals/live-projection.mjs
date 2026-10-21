@@ -73,6 +73,7 @@ function recordingCanvas() {
     stroke() { draws.push({ kind: "stroke", points: path, ...snapshot(this) }); },
     fillText(text, x, y) { draws.push({ kind: "text", text, x, y, ...snapshot(this) }); },
     fillRect(...rect) { draws.push({ kind: "rect", rect, ...snapshot(this) }); }, drawImage() { draws.push({ kind: "image" }); },
+    rect() {}, clip() {},
   };
 }
 

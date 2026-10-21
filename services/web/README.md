@@ -3,22 +3,26 @@
 Panel de control y ventana del proyector en el navegador, con un servidor
 local en Python. El navegador abre la webcam y envía imágenes JPEG para la
 detección en vivo; `/projector` dibuja esas mismas detecciones y la pelota.
-La interfaz web no usa homografía ni pasos de calibración.
+No hay pasos manuales de calibración: el panel alinea cámara y proyector con
+patrones codificados (`ui/align-run.mjs`, contrato
+`docs/alignment-and-color.md`) y desde ahí el juego corre en píxeles del
+proyector.
 
 | Carpeta | Contenido |
 | --- | --- |
 | `backend/` | Servidor HTTP en `127.0.0.1`, estado del juego y contrato HTTP. Ver `backend/README.md`. |
-| `ui/` | `index.html` + `app.js` (panel), `projector.html` + `projector.js` (proyector), `ui-core.mjs` (controles) y `live-view.mjs` (contornos y pelota compartidos). |
+| `ui/` | `index.html` + `app.js` (panel), `projector.html` + `projector.js` (proyector), `ui-core.mjs` (controles), `live-view.mjs` (lo que proyecta cada modo), `align-run.mjs` (secuencia de la alineación y del chequeo de color) y `api.mjs` (servidor Python o backend del navegador, con plazo por pedido). |
 | `contract/` | `state-matrix.json`: snapshot real de `/api/state` en cada fase y qué acciones acepta el backend allí. `preview-samples.json`: respuestas reales de `/api/preview`, con la paleta que las produjo y si un escaneo de esa misma foto funciona. |
 | `tests/` | Pruebas rápidas: `*.test.mjs` (Node), `test_contract_matrix.py` y `test_palette_api.py`. |
 | `evals/` | `flows.mjs`: acuerdo entre botones y backend. `live-projection.mjs`: colores y geometría de las dos vistas. `eyedropper.py`: tasa de acierto del gotero. |
 
 ## Matriz de estados
 
-`contract/matrix.py` lleva el `GameController` real a once fases (proyector
+`contract/matrix.py` lleva el `GameController` real a doce fases (proyector
 cerrado, esperando cámara, detección parcial, listo sin esquinas, listo,
-listo sin proyector, en juego, en pausa con y sin proyector, llegada y fuera).
-En cada fase prueba las cinco acciones del panel sobre un controlador recién construido y guarda
+listo sin proyector, en juego, en pausa con y sin proyector, llegada, fuera y
+listo alineado, con una alineación real de patrones codificados).
+En cada fase prueba las seis acciones del panel (incluida alinear) sobre una copia de esa fase y guarda
 si el backend las acepta. El navegador decide sus botones solo con el
 snapshot, así que las pruebas de JavaScript usan estos snapshots reales en
 lugar de estados inventados.
@@ -114,11 +118,12 @@ tocado. `framePointFromClick()` descarta las bandas negras de
 `object-fit: contain`. `noteColorHex()` se queda con la mediana de la mitad
 más saturada del cuadrito: si pisa el borde del post-it, la pared (menos
 saturada) queda afuera en vez de lavar el color. Antes de leer, con el
-proyector abierto y sin intento en curso, `pickColor()` lo pone en negro
-(`projection_black`, confirmación, espera de `scanSettleMs()`) y
-después lo restaura. Mientras tanto quedan deshabilitados el gotero,
-releer y la búsqueda de ajuste. Si el proyector no confirma el
-negro, el panel igual restaura la proyección y explica el motivo.
+proyector abierto y sin intento en curso, `pickColor()` lo deja solo con el
+fondo del tema (`projection_neutral`, confirmación `neutral`, espera de
+`scanSettleMs()`): el color se lee con la luz del juego, también con fondo
+claro (contrato 2.2). Después lo restaura. Mientras tanto quedan
+deshabilitados el gotero, releer y la búsqueda de ajuste. Si el proyector no
+confirma, el panel igual restaura la proyección y explica el motivo.
 
 Ambos caminos (gotero y selector) envían `palette_set`. Hay tres avisos, que
 quedan junto a los controles durante 8 segundos:
@@ -138,10 +143,13 @@ durante una relectura o una búsqueda de cámara. `roleLights()` convierte la re
 - ámbar si la cuenta es incorrecta;
 - apagada si no ve ninguno.
 
-Sobre la imagen, cada post-it detectado recibe un halo del color de su rol.
-`live-view.mjs` dibuja el mismo halo, borde blanco y polígono en `/projector`.
-Solo el panel muestra el video. Los dos lienzos usan `containTransform()`:
-escalado uniforme y bandas centradas cuando cambia la proporción de pantalla.
+Sobre la imagen, el panel dibuja un halo del color de cada rol. El proyector
+no pone color sobre la pared: `drawProjectorScene()` en `live-view.mjs` dibuja
+un borde neutro 6 px por fuera de cada papel y, adentro, luz neutra (fondo
+oscuro) o el color del rol solo si el chequeo de color lo permitió (contrato
+2.1). Sin alinear, encaja la imagen de cámara con `containTransform()` y
+muestra `Sin alinear · pulsá A en el panel`; alineado, lleva cada nota por la
+homografía. Solo el panel muestra el video.
 
 `state.live_detection` contiene la última respuesta de `/api/preview`. Caduca
 a los 1,5 segundos sin una foto nueva y entonces desaparecen los contornos;
@@ -150,12 +158,14 @@ contornos de un escaneo anterior. El modo de proyección es `live` desde que
 se abre la ventana, y cambiar su tamaño conserva el intento.
 
 La detección válida prepara el juego automáticamente. La física y la pelota
-usan coordenadas de cámara; `game.width` y `game.height` identifican el
-encuadre del intento. Mientras la pelota corre, las colisiones conservan el
+usan coordenadas de cámara sin alinear y de proyector una vez alineado
+(`game.space`); `game.width` y `game.height` identifican el encuadre del
+intento. Mientras la pelota corre, las colisiones conservan el
 tablero de lanzamiento aunque cambien los contornos en vivo. `reset` usa el
 tablero válido más reciente. `scan` sigue disponible como relectura expresa
-sin negro previo. Las acciones de calibración ya no forman parte del
-contrato web.
+sin cambiar la proyección. La alineación reemplazó a la calibración: acciones
+`align_*` y `check_solve`, rutas `/api/align_frame` y `/api/check_frame`
+(ver `backend/README.md`).
 
 Si el servidor no tiene esta función (un `web.py` iniciado antes de este
 cambio), `/api/preview` responde 404 y el estado no trae `palette`. En ese
@@ -182,13 +192,13 @@ tolerancia.
 ## Fondo del proyector
 
 `PROJECTOR_THEMES` en `ui-core.mjs` define el fondo y la pelota de los temas
-`dark` (negro) y `light` (blanco suave `#f3f2ec`). Los halos de los post-its
-usan la paleta elegida y bordes blancos en ambos temas, igual que la vista
-en vivo. La proyección clara no agrega rebordes negros.
+`dark` (negro) y `light` (blanco suave `#f3f2ec`). Los bordes son neutros en
+los dos: blancos en el oscuro y grafito (`#2b2f2e`) en el claro.
 
-`projectorBackground(theme, forcedBlack)` devuelve `#000000` mientras la
-ventana está forzada a negro por el gotero o una búsqueda de cámara,
-cualquiera sea el tema. Si no, devuelve el fondo del tema.
+El gotero y la búsqueda de cámara dejan la ventana con el fondo del tema
+(modo `neutral`). `projectorBackground(theme, forcedBlack)` devuelve
+`#000000` solo con el negro forzado (`projection_black`) y antes del primer
+patrón de una alineación, cualquiera sea el tema.
 
 El panel guarda la elección en `localStorage` (`postit-wall:projector-theme`)
 y la avisa por el `BroadcastChannel` que ya comparte con la ventana del
@@ -198,9 +208,11 @@ cualquiera de las dos ventanas.
 
 El caso **projector_theme** del eval exige, en los dos temas:
 
-- negro absoluto durante el gotero o la búsqueda de cámara;
-- contraste de los colores del juego contra su fondo. Los contornos vivos
-  conservan la paleta del panel, independientemente del tema.
+- negro absoluto con el negro forzado;
+- contraste de cada trazo contra su fondo (4:1; la grilla, 2,5:1).
+
+Que ningún color de rol caiga fuera del papel, en ningún modo ni tema, lo
+exige `evals/live-projection.mjs`.
 
 ## Cámara fija
 
@@ -261,8 +273,8 @@ La búsqueda tiene tres etapas:
 Cada prueba espera `settleMs()` (tres cuadros de exposición más 250 ms) y
 puntúa con `presetScore()`. Durante la búsqueda se pausan la vista previa
 normal y el escaneo, y se bloquea el cambio de cámara. Si el proyector está
-listo, se pone en negro; al terminar, `projection_restore` y `resume`
-devuelven la imagen.
+listo, queda solo con el fondo del tema (`projection_neutral`); al terminar,
+`projection_restore` y `resume` devuelven la imagen.
 
 Probado en el navegador con una cámara simulada que respeta
 `applyConstraints()`, con luz de 3000 K, exposición ideal de 30 ms y nitidez
@@ -321,7 +333,16 @@ un módulo ya instalado:
 
 ```sh
 POSTIT_PLAYWRIGHT_MODULE=/ruta/a/playwright/index.mjs node tests/live-browser.mjs
+POSTIT_PLAYWRIGHT_MODULE=/ruta/a/playwright/index.mjs node tests/closed-loop-browser.mjs
 ```
+
+`tests/closed-loop-browser.mjs` es el lazo cerrado en Chrome: una cámara
+simulada filma la pared iluminada por el lienzo real del proyector, a través
+de una homografía conocida. Corre la alineación real del panel, el chequeo de
+color, la detección en vivo y un intento, con el servidor Python y con el
+build estático (backend del navegador), en sala normal e iluminada. Exige la
+alineación a menos de 1 px de la verdad, contornos a menos de 1,5 px de los
+papeles, bordes al menos a 1 px por fuera de cada papel y 0 parpadeos.
 
 El script inicia su propio servidor local y escribe capturas e informe en
 `/tmp/postit-live-browser/`. Verifica detección antes del lanzamiento, partida

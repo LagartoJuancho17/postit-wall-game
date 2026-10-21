@@ -56,6 +56,20 @@ export function pyRound(x, digits = 0) {
   return result === 0 && sign < 0n ? -0 : result;
 }
 
+// Every character for which Python's str.isspace() is true (str.strip() set).
+const PY_SPACE = "[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]";
+const PY_STRIP = new RegExp(`^${PY_SPACE}+|${PY_SPACE}+$`, "gu");
+
+/** Python's `str.strip()`: not String#trim, whose set differs (BOM, U+001C-U+001F). */
+export function pyStrip(value) {
+  return value.replace(PY_STRIP, "");
+}
+
+/** Python's `len(str)`: code points, not UTF-16 units. */
+export function pyLength(value) {
+  return [...value].length;
+}
+
 /** Python truthiness for JSON values: None, False, 0, "", [] and {} are false. */
 export function pyTruthy(value) {
   if (value === null || value === undefined || value === false) return false;

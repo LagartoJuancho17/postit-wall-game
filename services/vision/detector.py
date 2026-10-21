@@ -299,16 +299,34 @@ def _clean(mask: np.ndarray) -> np.ndarray:
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, CLEAN_KERNEL)
 
 
-def _joined(contours, raw: np.ndarray, bridge: np.ndarray) -> list[np.ndarray]:
-    """Contract 2.5: contours our own rim splits become one, their convex hull.
+def _is_note_shape(contour: np.ndarray, min_area: float, max_area: float) -> bool:
+    """The size and shape filters every candidate passes (``_find_candidates``)."""
+    area = cv2.contourArea(contour)
+    if area < min_area or area > max_area:
+        return False
+    (_, _), (rect_width, rect_height), _ = cv2.minAreaRect(contour)
+    short_side = min(rect_width, rect_height)
+    long_side = max(rect_width, rect_height)
+    if short_side < 5 or long_side / short_side > 4.0:
+        return False
+    return area / (rect_width * rect_height) >= 0.55
+
+
+def _joined(contours, raw: np.ndarray, bridge: np.ndarray, min_area: float,
+            max_area: float) -> list[np.ndarray]:
+    """Contract 2.5: the pieces of a paper our own rim cut become one, their convex hull.
 
     White light saturates a paper a rim crosses and leaves a colorless gap
     that splits it. In ``joined`` the rim pixels next to the color (within
-    2 px) count as the color, so the pieces of one paper share a component.
-    The bridge only decides which contours belong together: a contour alone
-    in its component is returned as is, so a rim beside a paper never moves
-    its outline. Opening and closing are increasing, so every contour pixel
-    lies in ``joined`` (label >= 1).
+    2 px) count as the color, so the pieces share a component. A component
+    with two or more pieces that are notes by themselves (they pass every
+    candidate filter) stays apart: that is two papers with our rim between
+    them, and joining them made the count flip every frame (review,
+    2026-10-21). A piece that is not a note (a strip a rim cut off, in a dark
+    room the part our light does not reach) joins its note. A contour alone
+    in its group is returned as is, so a rim beside a paper never moves its
+    outline. Opening and closing are increasing, so every contour pixel lies
+    in ``joined`` (label >= 1).
     """
     joined = _clean(raw | (bridge & cv2.dilate(raw, BRIDGE_KERNEL)))
     _, labels = cv2.connectedComponents(joined, connectivity=8)
@@ -316,8 +334,14 @@ def _joined(contours, raw: np.ndarray, bridge: np.ndarray) -> list[np.ndarray]:
     for contour in contours:
         x, y = contour[0, 0]
         groups.setdefault(int(labels[y, x]), []).append(contour)
-    return [members[0] if len(members) == 1 else cv2.convexHull(np.vstack(members))
-            for members in groups.values()]
+    out: list[np.ndarray] = []
+    for members in groups.values():
+        notes = sum(1 for member in members if _is_note_shape(member, min_area, max_area))
+        if len(members) == 1 or notes >= 2:
+            out.extend(members)
+        else:
+            out.append(cv2.convexHull(np.vstack(members)))
+    return out
 
 
 def _find_candidates(hsv: np.ndarray, rule: ColorRule,
@@ -334,19 +358,12 @@ def _find_candidates(hsv: np.ndarray, rule: ColorRule,
     max_area = width * height * MAX_NOTE_FRACTION
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if bridge is not None:
-        contours = _joined(contours, raw, bridge)
+        contours = _joined(contours, raw, bridge, min_area, max_area)
     candidates: list[_Candidate] = []
     for contour in contours:
+        if not _is_note_shape(contour, min_area, max_area):
+            continue
         area = cv2.contourArea(contour)
-        if area < min_area or area > max_area:
-            continue
-        (_, _), (rect_width, rect_height), _ = cv2.minAreaRect(contour)
-        short_side = min(rect_width, rect_height)
-        long_side = max(rect_width, rect_height)
-        if short_side < 5 or long_side / short_side > 4.0:
-            continue
-        if area / (rect_width * rect_height) < 0.55:
-            continue
         coarse = _polygon_from_contour(contour)
         # Contract 2.4: F is the saturation channel of this same HSV image.
         polygon, outcome = _refined(hsv[..., 1], coarse)

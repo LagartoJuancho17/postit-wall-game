@@ -44,7 +44,7 @@ test("the next setup step is shown above the buttons it unblocks", () => {
 test("a paused attempt shows a working resume button", () => {
   assert.match(operatorPage, /<button id="resume-button"[^>]*\shidden[\s>]/);
   assert.match(operator, /\$\(["']resume-button["']\)\.hidden\s*=\s*!controls\.resume;/);
-  assert.match(operator, /\$\(["']resume-button["']\)\.disabled\s*=\s*!controls\.resume;/);
+  assert.match(operator, /\$\(["']resume-button["']\)\.disabled\s*=\s*aligning \|\| !controls\.resume;/);
   assert.match(operator, /\$\(["']resume-button["']\)\.addEventListener\(["']click["'],\s*\(\)\s*=>\s*sendAction\(["']resume["']\)\)/);
   assert.match(operator, /event\.code\s*===\s*["']Space["']\s*&&\s*!\$\(["']resume-button["']\)\.disabled\)\s*\{\s*event\.preventDefault\(\);\s*sendAction\(["']resume["']\)/);
   assert.match(operator, /\$\(["']game-pill["']\)\.dataset\.tone\s*=\s*attempt\.phase/);
@@ -114,7 +114,7 @@ test("the server-unreachable notice clears once the server answers again", () =>
 // visibility and the panel warns.
 test("the projector opens as a named popup window", () => {
   const calls = [];
-  const source = operator.slice(operator.indexOf("function openProjector()"), operator.indexOf("function waitForBlackout()"));
+  const source = operator.slice(operator.indexOf("function openProjector()"), operator.indexOf("function waitForNeutral()"));
   const context = vm.createContext({ window: { open: (...args) => {
     calls.push(args);
     return { closed: false, focus() {} };
@@ -126,4 +126,22 @@ test("the projector opens as a named popup window", () => {
   assert.equal(calls[0][2], "popup=yes,width=1280,height=720", "its own window, movable to the projector");
   assert.match(projector, /document\.addEventListener\("visibilitychange", \(\) => \{\s*channel\.postMessage\(\{ type: "visibility", hidden: document\.hidden \}\);/);
   assert.match(operator, /La ventana de proyección está oculta: movela a su propia ventana en el proyector\./);
+});
+
+test("an alignment run owns the camera and the projector until it ends (review, 2026-10-21)", () => {
+  const keys = operator.slice(operator.indexOf('document.addEventListener("keydown"'));
+  assert.match(keys, /if \(aligning\) return; \/\/ S, A, R, Space and the arrows wait for the run to end/);
+  assert.match(keys, /if \(!\(aligning \|\| tuning \|\| pickBusy\)\) setProjectorTheme/);
+  for (const id of ["launch-button", "reset-button", "aim-left", "aim-right", "angle-range"]) {
+    assert.match(operator, new RegExp(`\\$\\("${id}"\\)\\.disabled = aligning \\|\\| `), id);
+  }
+  assert.match(operator, /\$\("theme-dark"\)\.disabled = lightLocked;/);
+  assert.match(operator, /if \(aligning\) cameraSelect\.disabled = true;/);
+  assert.match(operator, /async function pickColor\(role, point\) \{\n  if \(aligning\) return;/);
+  // Leaving mid-run cancels it; a run left by an earlier page is cancelled on load.
+  const leave = operator.slice(operator.indexOf('window.addEventListener("pagehide"'));
+  assert.match(leave, /keepalive: true[\s\S]*action: "align_cancel"/);
+  assert.match(operator, /next\?\.alignment\?\.status === "collecting" && !aligning[\s\S]{0,120}align_cancel/);
+  // The projector keeps its light while the camera captures it.
+  assert.match(projector, /if \(!localScene && !blackoutForced\) setTheme/);
 });

@@ -61,12 +61,49 @@ function percentile(sorted, fraction) {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
 }
 
+const FRAME_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+
+/**
+ * server.py `_jpeg_dimensions`: the SOF size read before anything is
+ * decoded, so a non-JPEG body (a PNG) or an oversized frame is refused
+ * without allocating it. Same messages and statuses.
+ */
+export function jpegDimensions(data) {
+  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) throw new RequestError("La captura debe ser un JPEG válido.");
+  let offset = 2;
+  while (offset + 3 < data.length) {
+    if (data[offset] !== 0xff) throw new RequestError("La captura JPEG está dañada.");
+    while (offset < data.length && data[offset] === 0xff) offset += 1;
+    if (offset >= data.length) break;
+    const marker = data[offset];
+    offset += 1;
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > data.length) break;
+    const length = (data[offset] << 8) | data[offset + 1];
+    if (length < 2 || offset + length > data.length) throw new RequestError("La captura JPEG está dañada.");
+    if (FRAME_MARKERS.has(marker)) {
+      if (length < 7) throw new RequestError("La captura JPEG está dañada.");
+      const height = (data[offset + 3] << 8) | data[offset + 4];
+      const width = (data[offset + 5] << 8) | data[offset + 6];
+      if (width <= 0 || height <= 0) throw new RequestError("La captura JPEG no tiene dimensiones válidas.");
+      if (width * height > MAX_FRAME_PIXELS) {
+        throw new RequestError("La captura supera el límite de 12 megapíxeles.", HTTP.REQUEST_ENTITY_TOO_LARGE);
+      }
+      return [width, height];
+    }
+    offset += length;
+  }
+  throw new RequestError("La captura JPEG no contiene una imagen válida.");
+}
+
 /** A decoded camera JPEG as a BGR cv.Mat, with the server's size limits. */
 export async function decodeJpeg(cv, blob, doc = globalThis.document) {
   if (!blob || typeof blob.arrayBuffer !== "function") throw new RequestError("La captura debe ser un JPEG válido.");
   if (blob.size > MAX_BODY_BYTES) {
     throw new RequestError("La captura o acción supera 8 MB.", HTTP.REQUEST_ENTITY_TOO_LARGE);
   }
+  jpegDimensions(new Uint8Array(await blob.arrayBuffer()));
   let bitmap;
   try {
     bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
@@ -90,6 +127,21 @@ export async function decodeJpeg(cv, blob, doc = globalThis.document) {
     return bgr;
   } finally {
     bitmap.close?.();
+  }
+}
+
+/** Python's urllib.parse.unquote: a malformed escape stays as written instead of throwing. */
+export function unquote(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value.replace(/(?:%[0-9a-fA-F]{2})+/g, (run) => {
+      try {
+        return decodeURIComponent(run);
+      } catch {
+        return run;
+      }
+    });
   }
 }
 
@@ -151,7 +203,7 @@ export class BrowserBackend {
       if (path === "/api/frame" || path === "/api/preview" || path === "/api/align_frame" ||
           path === "/api/check_frame") {
         const label = headers.get("x-postit-camera");
-        return this.frameRoute(path, init.body, label ? decodeURIComponent(label) : null, headers)
+        return this.frameRoute(path, init.body, label ? unquote(label) : null, headers)
           .catch((error) => this.error(error));
       }
       const text = typeof init.body === "string" ? init.body : "";
@@ -175,6 +227,7 @@ export class BrowserBackend {
   }
 
   async frameRoute(path, blob, label, headers = new Map()) {
+    const ticket = this.controller.ticket();   // what this frame belongs to, before the decode awaits
     // Header checks first, as the Python handler does before decoding.
     if (path === "/api/check_frame") this.controller.checkKind(headers.get("x-postit-check") ?? null);
     else this.controller.scanLabel(label);
@@ -187,7 +240,7 @@ export class BrowserBackend {
     }
     const frame = await this.decode(cv, blob);
     try {
-      if (path === "/api/frame") return { status: 200, body: this.controller.scan(frame, label) };
+      if (path === "/api/frame") return { status: 200, body: this.controller.scan(frame, label, ticket) };
       if (path === "/api/align_frame") {
         return { status: 200, body: this.controller.alignFrame(frame, headers.get("x-postit-align") ?? null, label) };
       }
@@ -195,7 +248,7 @@ export class BrowserBackend {
         return { status: 200, body: this.controller.checkFrame(frame, headers.get("x-postit-check") ?? null) };
       }
       const started = this.now();
-      const body = this.controller.preview(frame, label);
+      const body = this.controller.preview(frame, label, ticket);
       this.recordTiming(this.now() - started, frame);
       return { status: 200, body };
     } finally {

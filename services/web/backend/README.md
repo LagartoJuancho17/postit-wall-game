@@ -3,7 +3,10 @@
 El navegador abre la webcam con `getUserMedia`. Python recibe imágenes JPEG
 unas cuatro veces por segundo y devuelve los post-its detectados. El mismo
 resultado alimenta la vista en vivo del panel y `/projector`. Python no abre
-la cámara y la interfaz web no usa calibración ni homografía.
+la cámara. No hay calibración manual: la alineación por patrones codificados
+mide la homografía cámara → proyector (contrato `docs/alignment-and-color.md`,
+secciones 1.3-1.5 y 2.3) y, una vez lista, el juego corre en píxeles del
+proyector.
 
 El servidor escucha únicamente en `127.0.0.1`. `create_server(port=0)` devuelve
 un `ThreadingHTTPServer` sin iniciar; `serve(port=8765)` lo inicia hasta que se
@@ -21,6 +24,8 @@ handlers sin abrir sockets.
 | `POST /api/preview` | JPEG del video. Actualiza `live_detection` y prepara el tablero cuando corresponde. |
 | `POST /api/frame` | JPEG para releer expresamente y preparar otro intento. No requiere proyector abierto ni negro previo. Durante un intento activo debe pausarse primero. |
 | `POST /api/action` | Objeto JSON con una acción de la tabla siguiente. |
+| `POST /api/align_frame` | JPEG de un patrón de alineación, con `X-Postit-Align: <bit>:<0\|1>`. Solo durante `alignment.status == "collecting"` y del tamaño de la cámara. Responde `{"received", "needed"}`. |
+| `POST /api/check_frame` | JPEG del chequeo de color, con `X-Postit-Check: neutral` u `overlay`. Solo con la alineación lista. |
 | `GET /api/camera?vendor=046d&product=082d` | Controles USB en vocabulario de Chrome: `{"available", "device", "capabilities", "settings"}`, o `{"available": false, "reason"}`. Sin ids usa la única cámara USB conectada. |
 | `POST /api/camera` | JSON `{"vendor", "product", "settings"}`: fija la cámara USB en modo `manual`; responde 502 si la cámara rechaza el pedido. |
 
@@ -35,7 +40,12 @@ de 8 MB y el JPEG de 12 megapíxeles, comprobado antes de decodificarlo.
 | `projection_open` | `width`, `height` en píxeles CSS | Abre o redimensiona en modo `live`; conserva tablero e intento. |
 | `projection_close` | ninguno | Marca la ventana cerrada y pausa el intento. |
 | `camera_changed` | ninguno | Borra detección, tablero e intento del encuadre anterior. |
-| `projection_black` | ninguno | Negro para tomar colores o buscar ajustes de cámara; requiere pausar un intento activo. |
+| `projection_black` | ninguno | Negro absoluto; requiere pausar un intento activo. |
+| `projection_neutral` | ninguno | Solo el fondo del tema, sin bordes ni pelota: así se toman colores y se busca el ajuste de cámara, con la luz del juego. Requiere pausar un intento activo. |
+| `align_start` | ninguno | Empieza una alineación: publica `alignment.layout` y pone el modo `align`. Requiere proyector abierto, imagen de cámara y ningún intento en marcha. |
+| `align_solve` | ninguno | Decodifica los 14 patrones: `alignment.status` pasa a `ready` (con `matrix`, `quality` y las sondas del chequeo) o a `failed` (con `code` y `detail` en español). |
+| `align_cancel`, `align_clear` | ninguno | Cancela la alineación en curso; borra la alineación. |
+| `check_solve` | ninguno | Juzga los dos cuadros del chequeo: `alignment.overlay.status` pasa a `ok` (relleno de color permitido) o `fill_off`. |
 | `projection_restore` | ninguno | Vuelve al modo `live`. |
 | `aim` | `degrees` | Dirección del próximo lanzamiento. |
 | `aim_left`, `aim_right` | ninguno | Ajusta la dirección 5°. |
@@ -51,6 +61,13 @@ de 8 MB y el JPEG de 12 megapíxeles, comprobado antes de decodificarlo.
 Las antiguas acciones `calibrate`, `calibration_move` y
 `calibration_confirm` devuelven 400 como acciones desconocidas. No hay
 `calibration` en el estado ni `projection.target`.
+
+`state.alignment` trae `status` (`none`, `collecting`, `ready`, `failed`,
+`stale`), `layout` mientras se recolecta, `matrix`, `camera` y `projector`
+con los que se midió, `quality`, `detail`, `code` y `overlay` (`status`,
+`fill`, `detail`, `probes`). Una alineación lista pasa a `stale` si cambia el
+tamaño del proyector, la cámara o su resolución. `state.game.space` dice si
+el tablero está en píxeles de cámara o de proyector.
 
 ## Detección y partida
 

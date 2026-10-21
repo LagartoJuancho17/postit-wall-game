@@ -117,14 +117,14 @@ test("the panel wires pickers, eyedropper and live preview to the backend", () =
   assert.match(operator, /if \(black\) \{\s*await restoreProjection\(\);\s*channel\.postMessage\(\{ type: "resume" \}\);\s*\}\s*pickBusy = false;/);
   // Pale picks are flagged; no picking while the camera search runs.
   assert.match(operator, /if \(weakColor\(hex\)\) \{/);
-  assert.match(operator, /\$\(`pick-\$\{role\}`\)\.disabled = !editable \|\| !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy;/);
+  assert.match(operator, /\$\(`pick-\$\{role\}`\)\.disabled = !editable \|\| !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\| aligning;/);
   // A pick during a scan would restore the projection mid-scan, so it waits.
-  assert.match(operator, /if \(pickRole && \(!editable \|\| !cameraReady \|\| tuning \|\| scanBusy\)\) pickRole = null;/);
-  assert.match(operator, /if \(!pickRole \|\| pickBusy \|\| scanBusy \|\| tuning \|\| !stream \|\| !video\.videoWidth\) return;/);
+  assert.match(operator, /if \(pickRole && \(!editable \|\| !cameraReady \|\| tuning \|\| scanBusy \|\| aligning\)\) pickRole = null;/);
+  assert.match(operator, /if \(!pickRole \|\| pickBusy \|\| scanBusy \|\| tuning \|\| aligning \|\| !stream \|\| !video\.videoWidth\) return;/);
   // While a pick holds the projector black, the buttons that would also use it wait.
-  assert.match(operator, /\$\("scan-button"\)\.disabled = scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.scan;/);
+  assert.match(operator, /\$\("scan-button"\)\.disabled = aligning \|\| scanBusy \|\| Boolean\(tuning\) \|\| pickBusy \|\| !controls\.scan;/);
   assert.doesNotMatch(operator, /calibrate-button/);
-  assert.match(operator, /\$\("camera-tune"\)\.disabled = !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\|/);
+  assert.match(operator, /\$\("camera-tune"\)\.disabled = aligning \|\| !cameraReady \|\| Boolean\(tuning\) \|\| scanBusy \|\| pickBusy \|\|/);
   assert.match(operator, /api\("\/api\/preview"/);
   assert.doesNotMatch(operator, /tuning \|\| document\.hidden/);
   assert.match(operator, /response\.status === 404\) \{\s*previewSupported = false;/);

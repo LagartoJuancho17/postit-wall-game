@@ -13,6 +13,17 @@ export function alignTiming(cameraFixed) {
   return cameraFixed ? { warmup: 300, settle: 150 } : { warmup: 1000, settle: 350 };
 }
 
+export const RESIZED = "Cambió el tamaño de la proyección durante la alineación. Volvé a alinear.";
+
+/** The projector drew the pattern at the layout's size, or the run is void. */
+function sameSize(ack, layout) {
+  if (ack && Number.isFinite(ack.width) && Number.isFinite(ack.height)
+      && (ack.width !== layout.width || ack.height !== layout.height)) {
+    throw new Error(RESIZED);
+  }
+  return ack;
+}
+
 /** Decoder failures that a slower run can fix (frames caught mid-change). */
 export const RETRY_CODES = new Set(["inaccurate", "inconsistent"]);
 
@@ -31,10 +42,10 @@ async function collect(deps, timing) {
   const started = await deps.action("align_start");
   const layout = started.alignment.layout;
   try {
-    await deps.show({ type: "align_pattern", layout, frame: "warmup" });
+    sameSize(await deps.show({ type: "align_pattern", layout, frame: "warmup" }), layout);
     await deps.sleep(timing.warmup);
     for (const [index, frame] of layout.frames.entries()) {
-      const ack = await deps.show({ type: "align_pattern", layout, frame });
+      const ack = sameSize(await deps.show({ type: "align_pattern", layout, frame }), layout);
       await deps.settle(ack, timing.settle);
       const blob = await deps.capture();
       await deps.upload("/api/align_frame", blob, { "X-Postit-Align": `${frame.bit}:${frame.inverse ? 1 : 0}` });
@@ -59,11 +70,13 @@ async function collect(deps, timing) {
  * waits. Returns the last backend state.
  */
 export async function runAlignment(deps, { cameraFixed = false } = {}) {
-  const timing = alignTiming(cameraFixed);
+  let timing = alignTiming(cameraFixed);
   let state = await collect(deps, timing);
   if (state.alignment.status === "failed" && RETRY_CODES.has(state.alignment.code)) {
     deps.progress?.("Repitiendo la alineación más despacio…");
-    state = await collect(deps, { warmup: timing.warmup * 2, settle: timing.settle * 2 });
+    // The camera needed the slower waits: so does the overlay check after it.
+    timing = { warmup: timing.warmup * 2, settle: timing.settle * 2 };
+    state = await collect(deps, timing);
   }
   if (state.alignment.status !== "ready") return state;
   return runOverlayCheck(deps, timing);
