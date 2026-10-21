@@ -45,11 +45,16 @@ ROLES = ("start", "goal", "bumper", "marker")  # PALETTE_ROLES draw order
 
 # Contract section 2.1 (live-view.mjs constants)
 RIM_OFFSET_PX = 6.0
-# Light that fills a paper when its role color is not allowed: neutral, so it
-# can never be taken for a post-it; none under the light theme, whose
-# background already lights the wall (contract 2.1).
-NEUTRAL_FILL = {"dark": "#ffffff", "light": None}
-FILL_INSET_PX = 5.0
+# Aligned: the paper glows in its role color up to FILL_INSET_PX from its
+# edge, with a brighter border of the same color just inside it, and no rim
+# outside (contract 2.1, Tobias's choice of 2026-10-21). Measured in
+# feedback_eval: an inset of 0-1 px spills color on the wall with alignment
+# error and the outline grows 5-7%; 2 px leaves a dark room 9 px off; a
+# border at alpha .9 washes the paper's saturation edge out under a dark
+# room's gain (corner 18 px). 3 px and alpha .35: every case passes.
+FILL_INSET_PX = 3.0
+BORDER_WIDTH_PX = 4.0
+BORDER_ALPHA = 0.35
 RIM_CLEAR_PX = 3.0   # a rim stays this far off every other detected note
 RIM_WIDTH_PX = 3.0
 RIM_MITER_LIMIT = 2.0
@@ -679,15 +684,16 @@ def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | No
     # RIM_CLEAR_PX); a paper our rim would cross stays whole.
     keep_clear = [offset_polygon(shape, RIM_CLEAR_PX) if is_convex(shape) else None for _, shape in notes]
     for index, (role, shape) in enumerate(notes):
-        # Aligned: role color inside the paper once the overlay check allowed
-        # it; otherwise neutral light there in the dark theme (contract 2.1),
-        # so a dark room still sees the whole paper and a ghost stays gray.
-        color = (_role_hex(state.get("palette"), role, strict=True) if fill
-                 else NEUTRAL_FILL.get(theme) if mapping is not None else None)
-        if color is not None:
+        if mapping is not None:
+            # Aligned: the role color strictly inside the paper, nothing outside.
+            color = _role_hex(state.get("palette"), role, strict=True)
             inner = fill_polygon(shape)
             if inner is not None:
                 canvas.fill(inner, color, FILL_ALPHA)
+            band = offset_polygon(shape, -(FILL_INSET_PX + BORDER_WIDTH_PX / 2))
+            if band is not None and is_convex(band):
+                canvas.stroke(band, BORDER_WIDTH_PX, color, miter_limit=RIM_MITER_LIMIT, alpha=BORDER_ALPHA)
+            continue
         outline = rim_polygon(shape)
         if outline is not None:
             canvas.stroke(outline, RIM_WIDTH_PX, rim, miter_limit=RIM_MITER_LIMIT,

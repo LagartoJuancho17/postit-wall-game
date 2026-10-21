@@ -137,11 +137,16 @@ test("a bad camera label is refused before the frame is decoded; decoder errors 
 });
 
 test("alignment and the overlay check work through the routes, as with the Python server", async () => {
-  const { act, frame, events } = setup();
+  const { act, frame, events, controller } = setup();
   const label = "Cámara de iPhone de Tobias";
   const camera = { ...JPEG, "X-Postit-Camera": encodeURIComponent(label) };
   assert.equal((await frame("/api/preview", "wall_430", camera)).status, 200);
   act("projection_open", { width: 1280, height: 800 });
+  // Contract 2.5: the bridge covers the unaligned rims only.
+  const { width, height } = controller.liveDetection;
+  const unaligned = controller.rimFootprint(width, height);
+  assert.notEqual(unaligned, null, "unaligned rims exist");
+  unaligned.delete();
   const started = act("align_start").body.alignment;
   assert.equal(started.status, "collecting");
   for (const { bit, inverse } of started.layout.frames) {
@@ -154,6 +159,7 @@ test("alignment and the overlay check work through the routes, as with the Pytho
   assert.ok(solved.alignment.quality.holdout_p95_px < 1.0, JSON.stringify(solved.alignment.quality));
   assert.equal(solved.game.space, "projector");
   assert.deepEqual([solved.game.width, solved.game.height], [1280, 800]);
+  assert.equal(controller.rimFootprint(width, height), null, "aligned, the color stays inside the papers");
   for (const [kind, name] of [["neutral", "wall_430"], ["overlay", "probe_hit"]]) {
     const answer = await frame("/api/check_frame", name, { ...JPEG, "X-Postit-Check": kind });
     assert.equal(answer.status, 200, answer.body.error);
@@ -161,7 +167,7 @@ test("alignment and the overlay check work through the routes, as with the Pytho
   const checked = act("check_solve").body.alignment.overlay;
   assert.equal(checked.status, "fill_off");
   assert.equal(checked.fill, false);
-  assert.match(checked.detail, /post-it de llegada; se proyectan solo bordes/);
+  assert.match(checked.detail, /post-it de llegada\. Si sacás un papel, su luz puede tardar unos segundos en apagarse\./);
   const names = events.map((e) => e.event);
   for (const event of ["alignment_started", "alignment_ready", "overlay_check"]) assert.ok(names.includes(event), event);
 });

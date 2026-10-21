@@ -29,16 +29,18 @@ import {
 export const LIVE_MAX_AGE_MS = 1500;
 export const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
 
-/** Projector px between a paper's edge and its rim (outward) or its fill (inward). */
+/** Projector px between a paper's edge and its rim (unaligned, outward). */
 export const RIM_OFFSET_PX = 6;
 /**
- * Light inside a paper when its role color is not allowed (aligned only):
- * neutral, so it can never be taken for a post-it, yet a dark room still
- * sees the whole paper. None under the light theme, whose background
- * already lights the wall (contract 2.1).
+ * Aligned (contract 2.1): the paper glows in its role color up to
+ * FILL_INSET_PX from its edge, with a border of the same color just inside
+ * it, and no rim outside. Measured in the closed-loop eval: less inset
+ * spills color on the wall and the outline grows; a brighter border washes
+ * the paper's saturation edge out in a dark room.
  */
-export const NEUTRAL_FILL = Object.freeze({ dark: "#ffffff", light: null });
-export const FILL_INSET_PX = 5;
+export const FILL_INSET_PX = 3;
+export const BORDER_WIDTH_PX = 4;
+export const BORDER_ALPHA = 0.35;
 export const RIM_WIDTH_PX = 3;
 /** The rim stroke's canvas miter limit; the offset path itself is a pure miter. */
 export const RIM_MITER_LIMIT = 2;
@@ -240,6 +242,17 @@ function drawFill(ctx, points, color) {
   ctx.globalAlpha = FILL_ALPHA;
   ctx.fillStyle = color;
   ctx.fill();
+  // The border: the same color again along the inside of the fill's edge.
+  const band = offsetConvexPolygon(points, -(FILL_INSET_PX + BORDER_WIDTH_PX / 2));
+  if (band) {
+    tracePolygon(ctx, band);
+    ctx.globalAlpha = BORDER_ALPHA;
+    ctx.lineWidth = BORDER_WIDTH_PX;
+    ctx.lineJoin = "miter";
+    ctx.miterLimit = RIM_MITER_LIMIT;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -342,22 +355,20 @@ export function drawProjectorScene(ctx, {
   let matrix = alignedMatrix(state, width, height);
   if (matrix && !previewFitsAlignment(state.alignment, notes)) matrix = null;
   const mapping = matrix && { matrix, toProjector: cameraToProjector(matrix, state.alignment.camera) };
-  const fill = Boolean(matrix) && (forceFill || state.alignment.overlay?.fill === true);
-  const neutralFill = matrix && !fill ? NEUTRAL_FILL[projectorTheme(theme)] : null;
   ctx.save();
   plainEffects(ctx);
   const projected = [...projectedNotes(notes, mapping?.toProjector, width, height)];
   const clear = projected.map(({ points }) => offsetConvexPolygon(points, RIM_CLEAR_PX));
   for (const [index, { role, points }] of projected.entries()) {
-    if (fill) {
+    if (matrix) {
+      // Aligned: the role color strictly inside the paper, nothing outside.
       const hex = palette?.roles?.[role]?.hex;
       drawFill(ctx, points, HEX.test(hex ?? "") ? hex : FALLBACK_COLORS[role]);
-    } else if (neutralFill) {
-      drawFill(ctx, points, neutralFill);
+    } else {
+      drawRim(ctx, points, colors.rim, clear.filter((region, k) => k !== index && region));
     }
-    drawRim(ctx, points, colors.rim, clear.filter((region, k) => k !== index && region));
   }
-  if (fill && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
+  if (matrix && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
   drawGame(ctx, state, mapping, width, height, colors.ball);
   if (!matrix) drawHint(ctx, height, colors.rim);
   ctx.restore();

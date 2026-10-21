@@ -27,7 +27,7 @@ Measured after warm-up (docs/alignment-and-color.md, "Measurable outcomes"):
 - rim corner error (aligned): the rim the projector draws for the detection
   vs the rim the true outline would get, both offset 6 px, projector px. The
   same metric under the neutral projection (``neutral_reference``) says how
-  much of it detection costs with no feedback at all; ``min_rim_clearance_px``
+  much of it detection costs with no feedback at all; ``min_color_clearance_px``
   < 0 means the rim stroke lands on the paper.
 
 Pass for the NEW rules: 0 flips, 0 wrong-ready frames, 0 phantoms, both
@@ -71,11 +71,11 @@ PASS_THRESHOLD = 1.0
 # px that is ~2 projector px, plus the rim corner's miter. Measured without
 # any projection (neutral reference): 2.0 px in the dark theme, 3.0 px under
 # the light theme's flood. A scenario that injects an alignment error gets
-# that error added on top. With a real (not injected) alignment the rim must
-# never touch the paper: clearance >= 0.
+# that error added on top. With a real (not injected) alignment the role color
+# must never reach the wall: color clearance >= 0 (contract 2.1).
 LIMITS = {"flips": 0, "phantoms": 0, "max_area_growth": 0.05,
           "ghost_lifetime_frames": 3, "max_rim_corner_error_px": 4.0,
-          "min_rim_clearance_px": 0.0, "wrong_ready_frames": 0}
+          "min_color_clearance_px": 0.0, "wrong_ready_frames": 0}
 DARK_ROOM = 0.01    # ambient irradiance; the projector's full white is 1.0
 NORMAL_ROOM = 0.1
 BRIGHT_ROOM = 1.0
@@ -89,8 +89,10 @@ class Scenario:
     theme: str = "dark"
     aligned: str | None = None    # None, "true" (inverse(G)), "error_2px", or "system":
     #                               the real coded alignment and overlay check
-    #                               through the backend, fill as the check decides
-    fill: bool = False
+    #                               through the backend
+    fill: bool = False            # alignment.overlay.fill; aligned, the projector draws
+    #                               the color either way (contract 2.3), so fill_off and
+    #                               fill_on cases must give the same numbers
     ambient: float = NORMAL_ROOM
     auto_exposure: bool = False
     remove: bool = False          # take the goal down at REMOVE_AT
@@ -116,9 +118,11 @@ SCENARIOS = (
              aligned="true", fill=True, remove=True),
     Scenario("new_aligned_fill_on_dark_room", "Alineado con relleno, sala a oscuras", "new",
              aligned="true", fill=True, ambient=DARK_ROOM),
+    # Was the unscored stress case while the check could turn the color off in
+    # a dark room; the color now stays on, so this is a real state and scored.
     Scenario("new_aligned_fill_on_dark_room_goal_removed",
-             "Relleno forzado en sala a oscuras, se saca la llegada (el chequeo lo apagaría)", "new",
-             aligned="true", fill=True, ambient=DARK_ROOM, remove=True, stress=True),
+             "Alineado con relleno, sala a oscuras, se saca la llegada", "new",
+             aligned="true", fill=True, ambient=DARK_ROOM, remove=True),
     Scenario("new_aligned_fill_on_bright_room", "Alineado con relleno, sala iluminada", "new",
              aligned="true", fill=True, ambient=BRIGHT_ROOM),
     Scenario("new_aligned_fill_on_light_theme", "Alineado con relleno, tema claro (pared inundada)", "new",
@@ -126,7 +130,7 @@ SCENARIOS = (
     Scenario("new_aligned_fill_on_auto_exposure", "Alineado con relleno, exposición automática", "new",
              aligned="true", fill=True, auto_exposure=True),
     # The whole system as it runs: coded alignment, overlay check with
-    # probes, then play with the fill the check allowed.
+    # probes, then play (the check is a diagnostic: the color stays on).
     Scenario("system_dark", "Sistema completo, tema oscuro", "new", aligned="system"),
     Scenario("system_light", "Sistema completo, tema claro", "new", theme="light", aligned="system"),
     Scenario("system_dark_room", "Sistema completo, sala a oscuras", "new", aligned="system",
@@ -223,7 +227,7 @@ def run_case(name: str) -> dict[str, Any]:
         _inject_alignment(controller, matrix, size)
     if scenario.aligned == "system":
         matrix, system = _align_and_check(controller, wall, projector, camera, scenario.theme, clock)
-        fill = None   # the projector reads alignment.overlay.fill, as the real window does
+        fill = None   # the projector reads alignment.overlay as the real window does
         if matrix is not None:
             corners = np.vstack([paper.polygon() for paper in wall.papers])
             alignment_error = float(np.linalg.norm(apply_homography(matrix, corners)
@@ -322,7 +326,7 @@ def summarize(scenario: Scenario, records: list[dict[str, Any]], wall, reference
         ghost_frames = [record["frame"] for record in records[REMOVE_AT:] if record["ghosts"]]
         ghost_lifetime = (ghost_frames[-1] - REMOVE_AT + 1) if ghost_frames else 0
     corners = [error for record in window for error in record["corner_errors_px"] if error is not None]
-    clearances = [value for record in window for value in record["rim_clearances_px"] if value is not None]
+    clearances = [value for record in window for value in record["color_clearances_px"] if value is not None]
     corner_max, corner_p95 = _stats(corners)
     reference_max, reference_p95 = _stats(reference_corners)
     result: dict[str, Any] = {
@@ -348,7 +352,7 @@ def summarize(scenario: Scenario, records: list[dict[str, Any]], wall, reference
         "alignment_error_px": _round(alignment_error, 3),
         "max_rim_corner_error_px": corner_max,
         "p95_rim_corner_error_px": corner_p95,
-        "min_rim_clearance_px": _round(min(clearances), 3) if clearances else None,
+        "min_color_clearance_px": _round(min(clearances), 3) if clearances else None,
         "neutral_reference": {"frames": REFERENCE_FRAMES, "max_rim_corner_error_px": reference_max,
                               "p95_rim_corner_error_px": reference_p95},
         "gain": [records[0]["gain"], records[-1]["gain"]],
@@ -377,10 +381,10 @@ def summarize(scenario: Scenario, records: list[dict[str, Any]], wall, reference
         if corner_max is None or corner_max > corner_limit:
             failures.append(f"max_rim_corner_error_px {corner_max} > {round(corner_limit, 3)} "
                             f"(no projection: {reference_max})")
-        clearance = result["min_rim_clearance_px"]
-        if scenario.aligned in ("true", "system") and (clearance is None or clearance < LIMITS["min_rim_clearance_px"]):
-            failures.append(f"min_rim_clearance_px {clearance} < {LIMITS['min_rim_clearance_px']} "
-                            "(the rim lies on the paper)")
+        clearance = result["min_color_clearance_px"]
+        if scenario.aligned in ("true", "system") and (clearance is None or clearance < LIMITS["min_color_clearance_px"]):
+            failures.append(f"min_color_clearance_px {clearance} < {LIMITS['min_color_clearance_px']} "
+                            "(role color on the wall)")
     result["pass"] = not failures
     result["failures"] = failures
     return result

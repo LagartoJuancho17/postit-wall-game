@@ -28,7 +28,7 @@ detection always runs with the projector lit (light theme floods the wall).
 | Outcome | Where it is measured | Pass |
 |---|---|---|
 | Alignment accuracy | `alignment_ready` log: holdout p95/max px; sim eval vs ground truth | holdout p95 <= 1.5 px, max <= 3 px; sim truth error p95 <= 1.5 px |
-| Outline lands on paper | sim eval + Chrome e2e: projected rim vs the rim of the true paper, projector px | max corner error <= 4 px (camera-limited: 2.0 px dark theme, 3.0 px light theme with no projection at all), plus any injected alignment error; rim clearance >= 0 (never on the paper) with a real alignment |
+| Outline lands on paper | sim eval + Chrome e2e: the outline's rim polygon vs the rim of the true paper, projector px | max corner error <= 4 px (camera-limited: 2.0 px dark theme, 3.0 px light theme with no projection at all), plus any injected alignment error; color clearance >= 0 (the role color never reaches the wall) with a real alignment |
 | No feedback | sim eval: static wall, 60 closed-loop frames, both themes | 0 ready/invalid flips, 0 phantom notes, note area growth <= 5% |
 | Ghosts die | sim eval: paper removed while projecting | gone within 3 frames |
 | Colors picked under play light | sim eval: pick under neutral, detect under live | role counts correct in both themes |
@@ -288,38 +288,54 @@ the English `ValueError` texts):
 
 ### 2.1 What the projector may emit
 
-The projector never puts role-colored light on bare wall.
+Aligned, the projector lights each paper from inside in its role color and
+draws nothing on the wall around it. Unaligned it draws only neutral rims.
 
 - **Aligned** (`alignment.status == "ready"` and the projector viewport equals
   `alignment.projector`): each detected note (camera px) is mapped through H.
-  - Rim: neutral stroke, `lineWidth 3`, along the polygon offset **outward**
-    by `RIM_OFFSET_PX = 6` projector px (miter join, miter limit 2; 6 rather than 5 so that,
-    with the measured outline accuracy, the rim never lies on the paper even
-    under the light theme's flood). Color:
-    dark theme `#ffffff`, light theme `#2b2f2e`. No shadow, no blur. Each
-    rim is clipped out of every *other* note offset outward by
-    `RIM_CLEAR_PX = 3` (canvas `clip("evenodd")`), so our white light never
-    lands on another paper: two papers a few px apart never cut each other,
-    and two pieces of one paper heal on the next frame.
-  - Fill: polygon offset **inward** by `FILL_INSET_PX = 5`, `globalAlpha
-    0.35`, skipped if the inset polygon degenerates (non-convex or area < 25
-    px²), no shadow, no blur. Color: the role's palette hex when
-    `alignment.overlay.fill` is true; otherwise neutral light,
-    `NEUTRAL_FILL` = `#ffffff` in the dark theme and none in the light theme
-    (its background already lights the wall). Neutral light can never be
-    taken for a post-it, yet in a dark room it lets the camera see the whole
-    paper: measured in `services.simulation.feedback_eval`, without it the
-    projector lit only the part it had detected and a paper stayed half
-    detected. Because a colored fill is strictly inside the paper, a ghost
-    (fill seen on bare wall after a paper is removed) is re-detected smaller
-    every frame and disappears; the overlay check's probes (2.3) turn the
-    colored fill off where even that would be seen.
-- **Not aligned**: rims only (neutral, through the old contain transform),
-  never fills. A neutral hint `Sin alinear · pulsá A en el panel` at the
-  bottom-left in the rim color, 16 px.
+  - Fill: polygon offset **inward** by `FILL_INSET_PX = 3` projector px,
+    `globalAlpha 0.35`, the role's palette hex, skipped if the inset polygon
+    degenerates (non-convex or area < 25 px²), no shadow, no blur.
+  - Border: the same role color stroked just inside the fill's edge: the
+    polygon offset inward by `FILL_INSET_PX + BORDER_WIDTH_PX / 2`, `lineWidth
+    BORDER_WIDTH_PX = 4`, `globalAlpha BORDER_ALPHA = 0.35`, miter join, miter
+    limit 2, skipped if that polygon degenerates. Its outer edge is the fill's
+    edge, so nothing is drawn beyond `FILL_INSET_PX` inside the paper.
+  - No rim: no light at all outside the paper.
+  - The color is drawn whatever `alignment.overlay` says; the check (2.3) is
+    a diagnostic.
+
+  Why (2026-10-21): on Tobias's wall the white rim read as a dark ring
+  around each paper and the color was off (the check said `fill_off`).
+  Tobias asked for the paper to glow in its color up to the edge with a stronger
+  border of the same color, and no rim. The cost is the feedback risk this
+  contract was written against: role-colored light that spills on bare wall
+  can be detected as a paper. Measured in `services.simulation.feedback_eval`
+  with perfect alignment:
+  - inset 0-1 px spills: outlines grow 5-7% a frame and keep growing;
+  - inset 2 px with the border at alpha 0.9: in a dark room the bright border
+    washes the paper's saturation edge out under the high gain, a corner
+    lands 18 px off and a removed paper leaves a ghost for 9 frames;
+  - inset 3 px with the border at alpha 0.35 (adopted): every case passes,
+    outline area within -2.7% to +2.7% of the paper, ghosts 0-2 frames
+    (stress: 1).
+  A removed paper's color stays until its detection lapses, and it shrinks
+  by the inset each frame, so a ghost dies in a few frames. The overlay
+  check's fill_off text says this.
+- **Not aligned**: rims only, never fills, never a role hue. Each note goes
+  through the old contain transform; rim: neutral stroke, `lineWidth 3`,
+  along the polygon offset **outward** by `RIM_OFFSET_PX = 6` projector px
+  (miter join, miter limit 2, convex hull for a non-convex outline). Color:
+  dark theme `#ffffff`, light theme `#2b2f2e`. No shadow, no blur. Each rim
+  is clipped out of every *other* note offset outward by `RIM_CLEAR_PX = 3`
+  (canvas `clip("evenodd")`), so our white light never lands on another
+  paper: two papers a few px apart never cut each other, and two pieces of
+  one paper heal on the next frame. A neutral hint `Sin alinear · pulsá A en
+  el panel` at the bottom-left in the rim color, 16 px.
 - Ball, aim line and result text: neutral only (dark theme `#f6fbfc`, light
   theme `#17211f`). The won/lost texts (`¡LLEGASTE!`, `FUERA DEL CAMPO`)
-  use the same neutral color. Nothing projected uses a role hue.
+  use the same neutral color. Apart from the aligned papers' own color,
+  nothing projected uses a role hue.
 - The panel's own overlay on the camera video (not projected) keeps colored
   halos; it is drawn by a separate function.
 
@@ -396,12 +412,15 @@ px, clockwise from top-left. Deterministic placement (both backends):
    - Pass (no hit and papers pass) -> `overlay = {"status": "ok", "fill": true,
      "detail": "Relleno de color verificado con la cámara."}`.
    - A hit -> `{"status": "fill_off", "fill": false, "detail": "La cámara toma
-     el color proyectado sobre la pared por un post-it de {label}; se
-     proyectan solo bordes."}` (label of the first probe hit, in role order).
+     el color proyectado sobre la pared por un post-it de {label}. Si sacás
+     un papel, su luz puede tardar unos segundos en apagarse."}` (label of the
+     first probe hit, in role order).
    - Otherwise -> `{"status": "fill_off", "fill": false, "detail": "El color
-     proyectado cambiaba la detección ({label}: {before} → {after}); se
-     proyectan solo bordes."}` for the first failing role (counts in N and F;
-     `{label}: forma` when the counts match but IoU fails).
+     proyectado cambiaba la detección ({label}: {before} → {after}). Si sacás
+     un papel, su luz puede tardar unos segundos en apagarse."}` for the
+     first failing role (counts in N and F; `{label}: forma` when the counts
+     match but IoU fails). Both texts end in `FILL_OFF_FADE`, identical in
+     both backends.
    - `{label}` is the role's Spanish label (`ROLE_LABELS`: inicio, llegada,
      rebotes, esquinas).
    - Logs `overlay_check {result: "ok" | "fill_off", fill, probes_hit: [role],
@@ -410,6 +429,11 @@ px, clockwise from top-left. Deterministic placement (both backends):
    `/api/check_frame` returns `{"received": ["neutral", ...]}` (sorted);
    400 `Cabecera X-Postit-Check inválida.` for a bad header value; 409
    `Primero alineá el proyector.` unless alignment is `ready`.
+
+**Diagnostic only** (since 2026-10-21): the projector draws the color when
+aligned whatever the result (2.1). `fill` stays in the state for the panel
+and the logs. `fill_off` tells the person that the wall or the light can make
+a removed paper's color linger on the wall for a moment.
 
 Until the check passes, `overlay = {"status": "unchecked", "fill": false,
 "detail": "El relleno de color todavía no se verificó.", "probes": [...]}`.
@@ -476,7 +500,8 @@ paper color in linear light (our own white rim pulls the edge out: 7-35 px)
 and linear-light chroma (noise at low light: 11-19 px). Saturation is immune
 to the neutral rim because white light adds no saturation. A fill inset of
 8 px instead of 5 helped the light theme (3.6 px) but hurt the dark room
-(4.3 px), so it stays 5.
+(4.3 px), so it stayed 5 until the color moved to the paper's edge (2.1:
+inset 3, with a border).
 
 ### 2.5 The detector discounts the projector's own rims
 
@@ -524,9 +549,10 @@ against a 4 px limit). Now the band's margin does not affect any outline
 (the same case gives 2.36 px with a margin of 2 or 4).
 
 The footprint (both backends, identical): only while `projection.mode ==
-"live"` and the projector is open, from the current `live_detection` (its
-rounded points) if its frame size equals this frame's. Mapping camera ->
-projector: H when alignment is `ready`, else the contain fit the unaligned
+"live"`, the projector is open and alignment is **not** `ready` (aligned, the
+projector draws no rim, 2.1, so there is nothing to discount), from the
+current `live_detection` (its rounded points) if its frame size equals this
+frame's. Mapping camera -> projector: the contain fit the unaligned
 projector uses (`scale = min(W_p / W_c, H_p / H_c)`, centered). Each note
 goes to projector px, is offset outward by `RIM_OFFSET_PX` with
 `offset_convex_polygon` (contracts/geometry.py; miter joins, no limit), and

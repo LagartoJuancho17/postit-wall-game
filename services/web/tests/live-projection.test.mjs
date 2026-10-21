@@ -22,6 +22,8 @@ import {
 import * as liveView from "../ui/live-view.mjs";
 import {
   AIM_WIDTH_PX,
+  BORDER_ALPHA,
+  BORDER_WIDTH_PX,
   alignedMatrix,
   drawLiveDetection,
   drawProjectorScene,
@@ -128,7 +130,9 @@ test("contract constants and neutral colors", () => {
   assert.equal(RIM_MITER_LIMIT, 2);
   assert.equal(AIM_WIDTH_PX, 3);
   assert.deepEqual(RESULT_TEXTS, { won: "¡LLEGASTE!", lost: "FUERA DEL CAMPO" });
-  assert.equal(FILL_INSET_PX, 5);
+  assert.equal(FILL_INSET_PX, 3);
+  assert.equal(BORDER_WIDTH_PX, 4);
+  assert.equal(BORDER_ALPHA, 0.35);
   assert.equal(FILL_ALPHA, 0.35);
   assert.equal(MIN_FILL_AREA_PX, 25);
   assert.deepEqual(NEUTRAL, { dark: { rim: "#ffffff", ball: "#f6fbfc" }, light: { rim: "#2b2f2e", ball: "#17211f" } });
@@ -266,52 +270,33 @@ test("alignment that is not ready, malformed or for another viewport draws the u
 
 // --- Projector: aligned. ---
 
-test("aligned projector maps each note through H and rims it 6 px outside; neutral light inside until checked", () => {
-  for (const theme of ["dark", "light"]) {
-    const ctx = canvas({ dirty: true });
-    drawProjectorScene(ctx, { state: aligned(), preview, palette, theme, width: 1280, height: 800 });
-    // overlay.fill is false: no role color. The dark theme lights each paper
-    // with neutral white (a dark room still sees the whole paper; white can
-    // never be taken for a post-it); the light theme's flood already lights it.
-    const fills = ctx.draws.filter((d) => d.kind === "fill");
-    if (theme === "dark") {
-      assert.equal(fills.length, 4);
-      for (const fill of fills) assert.deepEqual([fill.fillStyle, fill.globalAlpha], ["#ffffff", 0.35]);
-    } else {
-      assert.equal(fills.length, 0);
-    }
-    assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
-    const strokes = ctx.draws.filter((d) => d.kind === "stroke");
-    assert.equal(strokes.length, 4);
-    const mapped = rectangle.points.map((p) => applyHomography(H, p));
-    for (const stroke of strokes) {
-      assert.equal(stroke.strokeStyle, NEUTRAL[theme].rim);
-      assert.ok(noEffects(stroke));
-      samePolygon(offsetConvexPolygon(points(stroke.path), -RIM_OFFSET_PX), mapped, 1e-6, "H mapping");
-      for (const vertex of points(stroke.path)) assert.ok(!insideConvex(vertex, mapped, 0), "rim lies outside the paper");
-    }
-  }
-});
-
-test("checked overlay fills each note 5 px inside the mapped paper, in its palette color, without halo", () => {
-  const ctx = canvas({ dirty: true });
-  drawProjectorScene(ctx, { state: aligned({ overlay: { status: "ok", fill: true } }), preview, palette, width: 1280, height: 800 });
-  const fills = ctx.draws.filter((d) => d.kind === "fill");
-  assert.equal(fills.length, 4);
-  assert.deepEqual(fills.map((d) => d.fillStyle), colors);
+test("aligned projector lights each paper in its role color 3 px inside, with a border of that color inside it and no rim outside", () => {
+  // Contract 2.1 (2026-10-21): the color does not wait for the overlay check.
   const mapped = rectangle.points.map((p) => applyHomography(H, p));
-  for (const fill of fills) {
-    assert.equal(fill.globalAlpha, FILL_ALPHA);
-    assert.ok(noEffects(fill), "no colored shadow or blur around a fill");
-    const polygon = points(fill.path);
-    samePolygon(polygon, offsetConvexPolygon(mapped, -FILL_INSET_PX), 1e-9, "inset");
-    for (const vertex of polygon) assert.ok(insideConvex(vertex, mapped, FILL_INSET_PX - 1e-6), "fill strictly inside the paper");
-    assert.ok(polygonArea(polygon) < polygonArea(mapped));
-  }
-  // Every stroke after a fill is opaque and neutral: alpha does not leak into the rim.
-  for (const stroke of ctx.draws.filter((d) => d.kind === "stroke")) {
-    assert.equal(stroke.globalAlpha, 1);
-    assert.ok(isNeutral(stroke.strokeStyle));
+  for (const theme of ["dark", "light"]) {
+    for (const overlay of [{ status: "unchecked", fill: false }, { status: "fill_off", fill: false }, { status: "ok", fill: true }]) {
+      const ctx = canvas({ dirty: true });
+      drawProjectorScene(ctx, { state: aligned({ overlay }), preview, palette, theme, width: 1280, height: 800 });
+      assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
+      const fills = ctx.draws.filter((d) => d.kind === "fill");
+      const strokes = ctx.draws.filter((d) => d.kind === "stroke");
+      assert.deepEqual(fills.map((d) => d.fillStyle), colors, `${theme} ${overlay.status}: each paper in its color`);
+      assert.deepEqual(strokes.map((d) => d.strokeStyle), colors, "one border per paper, in its color; no neutral rim");
+      for (const fill of fills) {
+        assert.equal(fill.globalAlpha, FILL_ALPHA);
+        assert.ok(noEffects(fill), "no colored shadow or blur");
+        samePolygon(points(fill.path), offsetConvexPolygon(mapped, -FILL_INSET_PX), 1e-9, "fill inset");
+      }
+      for (const stroke of strokes) {
+        assert.deepEqual([stroke.globalAlpha, stroke.lineWidth], [BORDER_ALPHA, BORDER_WIDTH_PX]);
+        assert.ok(noEffects(stroke));
+        samePolygon(points(stroke.path), offsetConvexPolygon(mapped, -(FILL_INSET_PX + BORDER_WIDTH_PX / 2)), 1e-9, "border");
+        // Its outer edge is the fill's edge: the paper's last 3 px get no light, the wall none.
+        for (const vertex of offsetConvexPolygon(points(stroke.path), BORDER_WIDTH_PX / 2)) {
+          assert.ok(insideConvex(vertex, mapped, FILL_INSET_PX - 1e-6));
+        }
+      }
+    }
   }
 });
 
@@ -324,22 +309,20 @@ test("the overlay check's forced fill works only when aligned", () => {
   assert.equal(unaligned.draws.filter((d) => d.kind === "fill").length, 0);
 });
 
-test("a fill too small after the inset is skipped; the rim stays", () => {
+test("once aligned, a paper too small for the inset gets no light at all", () => {
   const tiny = { points: [{ x: 100, y: 100 }, { x: 106, y: 100 }, { x: 106, y: 106 }, { x: 100, y: 106 }] };
   const small = { width: 640, height: 480, roles: { goal: { notes: [tiny] } } };
   const ctx = canvas();
-  drawProjectorScene(ctx, { state: aligned({ overlay: { fill: true } }), preview: small, palette, width: 1280, height: 800 });
-  assert.equal(ctx.draws.filter((d) => d.kind === "fill").length, 0);
-  assert.equal(ctx.draws.filter((d) => d.kind === "stroke").length, 1);
-  // The inset survives as a valid 4 x 0.5 px sliver, but under 25 px² it is noise, not a note.
-  const thin = { points: [{ x: 100, y: 100 }, { x: 114, y: 100 }, { x: 114, y: 110.5 }, { x: 100, y: 110.5 }] };
-  const identity = aligned({ matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], overlay: { fill: true } });
+  drawProjectorScene(ctx, { state: aligned(), preview: small, palette, width: 1280, height: 800 });
+  assert.equal(ctx.draws.length, 0);
+  // The inset survives as a valid sliver, but under 25 px² it is noise, not a note.
+  const thin = { points: [{ x: 100, y: 100 }, { x: 114, y: 100 }, { x: 114, y: 106.5 }, { x: 100, y: 106.5 }] };
+  const identity = aligned({ matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] });
   const sliver = offsetConvexPolygon(thin.points, -FILL_INSET_PX);
   assert.ok(sliver && polygonArea(sliver) > 0 && polygonArea(sliver) < MIN_FILL_AREA_PX);
   const thinCtx = canvas();
   drawProjectorScene(thinCtx, { state: identity, preview: { ...small, roles: { goal: { notes: [thin] } } }, palette, width: 1280, height: 800 });
-  assert.equal(thinCtx.draws.filter((d) => d.kind === "fill").length, 0);
-  assert.equal(thinCtx.draws.filter((d) => d.kind === "stroke").length, 1);
+  assert.equal(thinCtx.draws.length, 0);
 });
 
 test("a ghost fill seen on bare wall is re-detected strictly smaller every frame and dies", () => {
@@ -368,7 +351,7 @@ test("a note behind the homography's horizon is not drawn", () => {
   const ctx = canvas();
   drawProjectorScene(ctx, { state: aligned({ matrix: horizon, overlay: { fill: true } }),
     preview: { width: 640, height: 480, roles: { start: { notes: [behind, rectangle] } } }, palette, width: 1280, height: 800 });
-  assert.equal(ctx.draws.filter((d) => d.kind === "stroke").length, 1, "only the note in front is drawn");
+  assert.equal(ctx.draws.filter((d) => d.kind === "fill").length, 1, "only the note in front is drawn");
 });
 
 test("stale detections draw no notes, and nothing projected is non-finite", () => {
@@ -472,8 +455,10 @@ test("nothing the projector draws outside a paper carries a role color", () => {
         assert.ok(noEffects(draw), `${draw.kind} has no shadow or blur`);
         const color = draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle;
         if (isNeutral(color)) continue;
-        assert.ok(roleHues.has(color) && draw.kind === "fill" && mapped, `${draw.kind} ${color} only as an aligned fill`);
-        for (const vertex of points(draw.path)) assert.ok(insideConvex(vertex, mapped, FILL_INSET_PX - 1e-6));
+        assert.ok(roleHues.has(color) && mapped, `${draw.kind} ${color} only when aligned`);
+        // A stroke reaches half its width beyond its path.
+        const reach = draw.kind === "stroke" ? offsetConvexPolygon(points(draw.path), draw.lineWidth / 2) : points(draw.path);
+        for (const vertex of reach) assert.ok(insideConvex(vertex, mapped, FILL_INSET_PX - 1e-6));
       }
     }
   }
@@ -481,15 +466,17 @@ test("nothing the projector draws outside a paper carries a role color", () => {
 
 // --- Robustness beyond what the detector reports. ---
 
-test("a note that is not convex still gets a rim around its hull, never a fill", () => {
-  // The detector reports convex quads only; a malformed one must not vanish from the wall.
+test("a note that is not convex gets a rim around its hull when unaligned, and no color when aligned", () => {
+  // The detector reports convex quads only; a malformed one must not light the wall.
   const notch = { points: [{ x: 100, y: 50 }, { x: 140, y: 50 }, { x: 125, y: 70 }, { x: 140, y: 90 }, { x: 100, y: 90 }] };
-  const identity = aligned({ matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], overlay: { status: "ok", fill: true } });
+  const identity = aligned({ matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] });
   const ctx = canvas();
   drawProjectorScene(ctx, { state: identity, preview: { width: 640, height: 480, roles: { start: { notes: [notch] } } },
     palette, width: 1280, height: 800 });
-  assert.equal(ctx.draws.filter((d) => d.kind === "fill").length, 0, "fill needs a convex inset");
-  const [rim] = ctx.draws.filter((d) => d.kind === "stroke");
+  assert.equal(ctx.draws.length, 0, "color needs a convex inset");
+  const unaligned = canvas();
+  drawProjectorScene(unaligned, { preview: { width: 1280, height: 800, roles: { start: { notes: [notch] } } }, palette, width: 1280, height: 800 });
+  const [rim] = unaligned.draws.filter((d) => d.kind === "stroke");
   samePolygon(points(rim.path), offsetConvexPolygon(convexHull(notch.points), RIM_OFFSET_PX), 1e-12, "hull rim");
   for (const vertex of notch.points) assert.ok(insideConvex(vertex, points(rim.path), RIM_OFFSET_PX - 1e-9), "rim outside the paper");
   assert.equal(fillPolygon(notch.points), null);
@@ -522,7 +509,7 @@ test("H scaled by any factor, even a negative one, draws the same notes and ball
     const ctx = canvas();
     drawProjectorScene(ctx, { state: aligned({ matrix }), preview: { width: 640, height: 480, roles: { start: { notes: [behind, rectangle] } } },
       palette, width: 1280, height: 800 });
-    assert.equal(ctx.draws.filter((d) => d.kind === "stroke").length, 1);
+    assert.equal(ctx.draws.filter((d) => d.kind === "fill").length, 1);
   }
 });
 
@@ -574,14 +561,14 @@ test("projector.js imports only what live-view exports, and uses all of it", () 
   assert.doesNotMatch(source, /drawLiveDetection|drawLiveGame/, "the projector never draws the panel's colored overlay");
 });
 
-test("a rim is clipped out of every other note grown by RIM_CLEAR_PX, so it never lights a neighbor", () => {
+test("unaligned, a rim is clipped out of every other note grown by RIM_CLEAR_PX, so it never lights a neighbor", () => {
   const square = (x, y) => ({ points: [{ x, y }, { x: x + 40, y }, { x: x + 40, y: y + 40 }, { x, y: y + 40 }] });
   const two = { width: 640, height: 480, roles: { start: { notes: [] }, goal: { notes: [] }, marker: { notes: [] },
     bumper: { notes: [square(200, 200), square(246, 200)], count: 2 } } };
   const ctx = canvas();
-  drawProjectorScene(ctx, { state: aligned(), preview: two, width: 1280, height: 800 });
+  drawProjectorScene(ctx, { preview: { ...two, width: 1280, height: 800 }, width: 1280, height: 800 });   // unaligned: rims
   assert.equal(ctx.clips.length, 2, "one keep-clear region per rim: the other note");
-  const mapped = two.roles.bumper.notes.map((note) => note.points.map((p) => applyHomography(H, p)));
+  const mapped = two.roles.bumper.notes.map((note) => note.points);
   ctx.clips.forEach((clip, k) => {
     assert.equal(clip.rule, "evenodd");
     assert.equal(clip.path[0][0], "rect", "everything but the region");
@@ -590,7 +577,7 @@ test("a rim is clipped out of every other note grown by RIM_CLEAR_PX, so it neve
   });
   // One note alone: nothing to keep clear of.
   const alone = canvas();
-  drawProjectorScene(alone, { state: aligned(), preview: { ...two, roles: { ...two.roles, bumper: { notes: [square(200, 200)] } } },
+  drawProjectorScene(alone, { preview: { ...two, width: 1280, height: 800, roles: { ...two.roles, bumper: { notes: [square(200, 200)] } } },
     width: 1280, height: 800 });
   assert.equal(alone.clips.length, 0);
   assert.equal(liveView.RIM_CLEAR_PX, 3);

@@ -41,7 +41,7 @@ code and writes `parity/golden/` (gitignored); the tests replay every case:
 - 15 controller scripts (406 steps), including a whole alignment with the
   overlay check, every refusal and every invalidation reason.
 
-2065 of 2065 cases agree. To get the same bits, Python and JS avoid the few
+2116 of 2116 cases agree. To get the same bits, Python and JS avoid the few
 operations whose last bit differs between them: Python 3.12's compensated
 `sum()` (both sum left to right), `hypot` (both use `sqrt(dx*dx + dy*dy)`
 where it decides a pixel), and numpy's pairwise reductions (spelled out as

@@ -19,11 +19,10 @@
  * Passes when, for each backend: the alignment decodes the true mapping
  * (projector px error at the papers < 1 px), the overlay check completes,
  * the live outlines sit on the true papers (< 1.5 camera px), every paper
- * keeps a rim with clearance >= 1 camera px (our rim never lights the
- * paper), detection never flips, and an attempt plays in projector px. The
- * papers carry the role color only when the overlay check allowed it, and
- * neutral light otherwise: a normal room turns the fill off (the probes
- * read as post-its), a bright room keeps it.
+ * carries its role color with no projector light on the wall around it,
+ * detection never flips, and an attempt plays in projector px. The color is
+ * on whatever the overlay check says (ok or fill_off): the check is only a
+ * diagnostic now (contract 2.3).
  * Writes report.json and screenshots to POSTIT_BROWSER_OUTPUT.
  */
 import assert from "node:assert/strict";
@@ -266,11 +265,13 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
     },
     png: () => canvas.toDataURL("image/png"),
     /**
-     * Per paper: rim-bright projector light (>= 0.6) near it, and how far
-     * outside it stays. `exclude`: capsules {a, b, r} in camera coordinates
-     * (the ball and its aim line, white by design and drawn on the start).
+     * Per paper: projector light above the black level within 12 camera px
+     * outside it, skipping other papers. Aligned, the color stays inside each
+     * paper, so `reach` (the farthest lit pixel, positive outside) stays <= 0.
+     * `exclude`: capsules {a, b, r} in camera coordinates (the ball and its aim
+     * line, white by design and drawn on the start).
      */
-    rims(exclude = []) {
+    wall(exclude = []) {
       const excluded = (x, y) => exclude.some(({ a, b, r }) => {
         const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
         const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1)));
@@ -279,21 +280,20 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
       return papers.map((paper) => {
         const xs = paper.points.map(([x]) => x);
         const ys = paper.points.map(([, y]) => y);
-        let count = 0;
-        let clearance = Infinity;
-        let onPaper = 0;
+        let reach = -Infinity;
+        let wallPixels = 0;
         for (let j = Math.floor(Math.min(...ys) - 14); j <= Math.ceil(Math.max(...ys) + 14); j += 1) {
           for (let i = Math.floor(Math.min(...xs) - 14); i <= Math.ceil(Math.max(...xs) + 14); i += 1) {
             const k = j * width + i;
-            if (Math.max(light[3 * k], light[3 * k + 1], light[3 * k + 2]) < 0.6) continue;
+            if (Math.max(light[3 * k], light[3 * k + 1], light[3 * k + 2]) - blackLevel < 0.03) continue;
             const d = outside(paper.points, i + 0.5, j + 0.5);
             if (d > 12 || excluded(i + 0.5, j + 0.5)) continue;
-            count += 1;
-            clearance = Math.min(clearance, d);
-            if (d < 0) onPaper += 1;
+            if (d > 0 && papers.some((other) => other !== paper && outside(other.points, i + 0.5, j + 0.5) < 0)) continue;
+            reach = Math.max(reach, d);
+            if (d > 0) wallPixels += 1;
           }
         }
-        return { role: paper.role, rimPixels: count, clearance, onPaper };
+        return { role: paper.role, reach, wallPixels };
       });
     },
   };
@@ -442,7 +442,7 @@ async function run({ kind, room, url }) {
       `${alignment.quality.total} dots, holdout p95 ${alignment.quality.holdout_p95_px} px, truth error ${worst.toFixed(3)} px`);
     report.checks.push(`overlay check: ${alignment.overlay.status} (${alignment.overlay.detail})`);
 
-    // The live loop: outlines on the papers, rims off them, no flips.
+    // The live loop: outlines on the papers, color only on them, no flips.
     await new Promise((done) => setTimeout(done, 2500));
     const samples = [];
     for (let k = 0; k < 10; k += 1) {
@@ -466,7 +466,7 @@ async function run({ kind, room, url }) {
       samples.push({ ready: s.live_detection?.quality?.ready,
         counts: Object.fromEntries(Object.entries(s.live_detection?.roles ?? {}).map(([r, v]) => [r, v.count])),
         notes: s.live_detection?.roles, space: s.game?.space,
-        rims: await panel.evaluate((capsules) => window.closedLoopCamera.rims(capsules), exclude) });
+        wall: await panel.evaluate((capsules) => window.closedLoopCamera.wall(capsules), exclude) });
       await new Promise((done) => setTimeout(done, 300));
     }
     const flips = samples.filter((sample, k) => k && sample.ready !== samples[k - 1].ready).length;
@@ -485,26 +485,18 @@ async function run({ kind, room, url }) {
     }
     report.cornerErrorCameraPx = cornerWorst;
     assert.ok(cornerWorst < 1.5, `live outline corners ${cornerWorst.toFixed(2)} camera px from the papers`);
-    const rims = samples.flatMap((sample) => sample.rims);
-    report.rims = { minClearanceCameraPx: Math.min(...rims.map((r) => r.clearance)), onPaper: rims.reduce((sum, r) => sum + r.onPaper, 0),
-      minRimPixels: Math.min(...rims.map((r) => r.rimPixels)) };
-    assert.ok(report.rims.minRimPixels > 40, `every paper has its rim (${report.rims.minRimPixels} px)`);
-    assert.equal(report.rims.onPaper, 0, "no rim light on any paper");
-    assert.ok(report.rims.minClearanceCameraPx >= 1.0, `rims clear the papers by ${report.rims.minClearanceCameraPx.toFixed(2)} camera px`);
-    report.checks.push(`live loop: 0 flips, outline corners within ${cornerWorst.toFixed(2)} camera px, rims ` +
-      `${report.rims.minClearanceCameraPx.toFixed(2)} camera px off every paper`);
-    // What lights the papers: their role color only when the check allowed it.
+    const wall = samples.flatMap((sample) => sample.wall);
+    report.wall = { maxReachCameraPx: Math.max(...wall.map((w) => w.reach)), wallPixels: wall.reduce((sum, w) => sum + w.wallPixels, 0) };
+    assert.equal(report.wall.wallPixels, 0, `no projector light on the wall around any paper (${JSON.stringify(report.wall)})`);
+    report.checks.push(`live loop: 0 flips, outline corners within ${cornerWorst.toFixed(2)} camera px, light reaches ` +
+      `${report.wall.maxReachCameraPx.toFixed(2)} camera px from the paper edges, none on the wall`);
+    // Aligned, every paper carries its role color, whatever the overlay check said (contract 2.3).
     const fills = await panel.evaluate(() => window.closedLoopCamera.fills());
     const spreads = fills.map(({ light }) => Math.max(...light) - Math.min(...light));
     report.fills = fills.map((fill, k) => ({ role: fill.role, light: fill.light.map((v) => +v.toFixed(3)), spread: +spreads[k].toFixed(3) }));
-    if (alignment.overlay.fill) {
-      assert.ok(spreads.every((spread) => spread > 0.08), `every paper carries its role color (${JSON.stringify(report.fills)})`);
-      report.checks.push(`fill on: every paper lit in its role color (min spread ${Math.min(...spreads).toFixed(2)})`);
-    } else {
-      assert.ok(spreads.every((spread) => spread < 0.02), `fill off: neutral light only (${JSON.stringify(report.fills)})`);
-      assert.ok(fills.every(({ light }) => light[0] > 0.2), "the dark theme still lights the papers (neutral fill)");
-      report.checks.push("fill off: papers lit only by neutral white");
-    }
+    assert.ok(spreads.every((spread) => spread > 0.08), `every paper carries its role color (${JSON.stringify(report.fills)})`);
+    report.checks.push(`color on (overlay ${alignment.overlay.status}): every paper lit in its role color ` +
+      `(min spread ${Math.min(...spreads).toFixed(2)})`);
 
     // An attempt in projector px.
     assert.equal(samples.at(-1).space, "projector");

@@ -4,13 +4,16 @@
  *
  * Expectations are checked geometrically and independently of the renderer:
  * camera px are mapped with this file's own contain and homography math,
- * and each rim (fill) edge must lie exactly RIM_OFFSET_PX outside
- * (FILL_INSET_PX inside) the mapped paper edge.
+ * and each rim edge (unaligned) must lie exactly RIM_OFFSET_PX outside, each
+ * fill edge (aligned) FILL_INSET_PX inside the mapped paper edge.
  *
  * Ghosts: with the paper removed, the camera re-detects the projected fill
  * itself, grown by a blur `bleed` (projector px) and with corner jitter of
  * up to half a camera pixel. Each frame's fill must be strictly smaller and
- * the ghost must disappear.
+ * the ghost must disappear. The bleed must stay under FILL_INSET_PX (3) for
+ * that to hold; 1.5 px is ~4x the outline growth the closed-loop eval
+ * measures with sub-pixel refinement (at most +2.7% area, ~0.4 px a side),
+ * where ghosts die in 0-2 frames.
  *
  * Patterns (1.2): for the contract 1.1 layout of every screen (computed
  * here, independently of any backend), the warm-up and the 14 frames are
@@ -30,6 +33,8 @@ import {
   alignmentCode,
   drawAlignmentPattern,
   drawProjectorScene,
+  BORDER_ALPHA,
+  BORDER_WIDTH_PX,
   FILL_ALPHA,
   FILL_INSET_PX,
   HINT_MARGIN_PX,
@@ -48,7 +53,7 @@ const screens = [[1280, 720], [1920, 1080], [1280, 800], [800, 600], [600, 1000]
 const themes = ["dark", "light"];
 const MAPPING_TOLERANCE_PX = 1e-6;
 const GHOST_FRAME_LIMIT = 40;
-const GHOST_BLEEDS = [0, 1, 2, 3];
+const GHOST_BLEEDS = [0, 1, 1.5];
 const PATTERN_SCREENS = [...screens, [320, 240], [1024, 768], [1366, 768], [3840, 2160]];
 /** Two separate blobs per neighbor pair after blur: at least two radii of black between lit dots. */
 const PATTERN_MIN_GAP_RADII = 2;
@@ -198,39 +203,30 @@ for (const [name, { preview, palette }] of Object.entries(samples)) {
       for (const [kind, matrix] of Object.entries(matricesFor(preview.width, preview.height, width, height))) {
         const alignment = (fill) => ({ status: "ready", matrix, projector: { width, height },
           camera: { label: "Cámara", width: preview.width, height: preview.height }, overlay: { status: fill ? "ok" : "unchecked", fill } });
-        check(`aligned:${kind}:${screen}`, () => {
-          const ctx = recordingCanvas();
-          drawProjectorScene(ctx, { state: { alignment: alignment(false) }, preview, palette, theme, width, height });
-          assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
-          // Unchecked: never a role color. Neutral white light inside each paper
-          // in the dark theme (contract 2.1); nothing under the light flood.
-          const fills = ctx.draws.filter((d) => d.kind === "fill");
-          const neutralFill = theme === "dark" ? "#ffffff" : null;
-          assert.ok(fills.every((d) => d.fillStyle === neutralFill && d.globalAlpha === 0.35), "only neutral fill");
-          if (!neutralFill) assert.equal(fills.length, 0, "no fill under the light flood");
-          const strokes = ctx.draws.filter((d) => d.kind === "stroke");
-          assert.equal(strokes.length, notes.length);
-          strokes.forEach((stroke, i) => {
-            assert.ok(stroke.strokeStyle === ink.rim && plain(stroke) && stroke.globalAlpha === 1, "neutral plain rim");
-            assertOffset(stroke.points, notes[i].shape.points.map((p) => project(matrix, p)), RIM_OFFSET_PX, "H rim");
+        for (const fill of [false, true]) {
+          check(`aligned${fill ? "_checked" : ""}:${kind}:${screen}`, () => {
+            // Contract 2.1: aligned, every paper glows in its role color FILL_INSET_PX
+            // inside its edge with a border of that color just inside, whatever the
+            // overlay check said; no rim outside, no hint.
+            const ctx = recordingCanvas();
+            drawProjectorScene(ctx, { state: { alignment: alignment(fill) }, preview, palette, theme, width, height });
+            assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
+            const fills = ctx.draws.filter((d) => d.kind === "fill");
+            const strokes = ctx.draws.filter((d) => d.kind === "stroke");
+            assert.equal(fills.length, notes.length, "every real note is big enough for its color");
+            assert.equal(strokes.length, notes.length, "one inner border per note, no rim");
+            notes.forEach((note, i) => {
+              const paper = note.shape.points.map((p) => project(matrix, p));
+              const hex = palette.roles[note.role].hex;
+              assert.ok(fills[i].fillStyle === hex && fills[i].globalAlpha === FILL_ALPHA && plain(fills[i]), "translucent role fill");
+              assertOffset(fills[i].points, paper, -FILL_INSET_PX, "fill inset");
+              assert.ok(polygonArea(fills[i].points) >= MIN_FILL_AREA_PX);
+              assert.ok(strokes[i].strokeStyle === hex && strokes[i].globalAlpha === BORDER_ALPHA && plain(strokes[i]), "role border");
+              assert.equal(strokes[i].lineWidth, BORDER_WIDTH_PX);
+              assertOffset(strokes[i].points, paper, -(FILL_INSET_PX + BORDER_WIDTH_PX / 2), "border inside the paper");
+            });
           });
-        });
-        check(`aligned_fill:${kind}:${screen}`, () => {
-          const ctx = recordingCanvas();
-          drawProjectorScene(ctx, { state: { alignment: alignment(true) }, preview, palette, theme, width, height });
-          const fills = ctx.draws.filter((d) => d.kind === "fill");
-          assert.equal(fills.length, notes.length, "every real note is big enough for a fill");
-          fills.forEach((fill, i) => {
-            const paper = notes[i].shape.points.map((p) => project(matrix, p));
-            assert.equal(fill.fillStyle, palette.roles[notes[i].role].hex);
-            assert.ok(fill.globalAlpha === FILL_ALPHA && plain(fill), "translucent fill without halo");
-            assertOffset(fill.points, paper, -FILL_INSET_PX, "fill inset");
-            assert.ok(polygonArea(fill.points) >= MIN_FILL_AREA_PX);
-          });
-          for (const stroke of ctx.draws.filter((d) => d.kind === "stroke")) {
-            assert.ok(stroke.strokeStyle === ink.rim && stroke.globalAlpha === 1 && plain(stroke));
-          }
-        });
+        }
         check(`resized:${kind}:${screen}`, () => {
           const ctx = recordingCanvas();
           const stale = { ...alignment(true), projector: { width: width + 1, height } };
@@ -266,12 +262,13 @@ for (const [name, { state }] of Object.entries(phases)) {
         check(`ball:${space}:${theme}:${name}:${width}x${height}`, () => {
           const ctx = recordingCanvas();
           drawProjectorScene(ctx, { state: expected.state, theme, width, height });
-          // The ball is the one arc fill; aligned dark scenes also light each
-          // live paper with a neutral polygon fill (contract 2.1).
+          // The ball is the one arc fill; aligned scenes also light each live
+          // paper in its role color (contract 2.1), checked geometrically above.
           const balls = ctx.draws.filter((d) => d.kind === "fill" && Number.isFinite(d.points?.[0]?.radius));
           assert.equal(balls.length, 1, "one ball, no frozen board polygons");
-          assert.ok(ctx.draws.filter((d) => d.kind === "fill" && !Number.isFinite(d.points?.[0]?.radius))
-            .every((d) => d.fillStyle === "#ffffff"), "any other fill is neutral paper light");
+          const roleHexes = new Set(Object.values(state.palette?.roles ?? {}).map((role) => role.hex));
+          const paperLight = (draw) => !Number.isFinite(draw.points?.[0]?.radius) && expected.state.alignment
+            && roleHexes.has(draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle);
           const [{ x, y, radius }] = balls[0].points;
           assert.ok(Math.abs(x - expected.center.x) <= MAPPING_TOLERANCE_PX && Math.abs(y - expected.center.y) <= MAPPING_TOLERANCE_PX,
             `center ${x},${y} vs ${expected.center.x},${expected.center.y}`);
@@ -279,7 +276,8 @@ for (const [name, { state }] of Object.entries(phases)) {
           for (const draw of ctx.draws) {
             assert.notEqual(draw.kind, "image");
             const color = draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle;
-            assert.ok([ink.ball, ink.rim].includes(color) && plain(draw), `${draw.kind} ${color} is neutral and plain`);
+            assert.ok(([ink.ball, ink.rim].includes(color) || paperLight(draw)) && plain(draw),
+              `${draw.kind} ${color} is neutral, or a paper's own color, and plain`);
           }
           const texts = ctx.draws.filter((d) => d.kind === "text").map((d) => d.text);
           if (state.game.status === "won") assert.ok(texts.includes("¡LLEGASTE!"));

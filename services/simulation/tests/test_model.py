@@ -112,7 +112,7 @@ class GeometryTests(unittest.TestCase):
         sliver = np.array([(0, 0), (100, 0), (50, 20)], float)  # 43 degree corners exceed miter limit 2
         self.assertEqual(len(offset_polygon(sliver, 5, 2.0)), 5)
         self.assertEqual(len(offset_polygon(sliver, 5)), 3)
-        self.assertIsNone(fill_polygon(np.array([(0, 0), (14, 0), (14, 14), (0, 14)], float)))  # 4x4 < 25 px2
+        self.assertIsNone(fill_polygon(np.array([(0, 0), (10, 0), (10, 10), (0, 10)], float)))  # 4x4 < 25 px2
 
 
 class CameraModelTests(unittest.TestCase):
@@ -177,10 +177,16 @@ class RendererTests(unittest.TestCase):
                 filled = render_scene(state, theme, PROJECTOR, "new", matrix=ALIGNMENT, fill=True)
                 self.assertLessEqual(int(chroma(filled)[~aligned].max()), NEUTRAL_CHROMA)
                 self.assertGreater(int(chroma(filled)[aligned].max()), 40)  # the fill is really there
-                # Fill strictly inside: nothing colored within the inset band at the edge.
+                # Color strictly inside: nothing colored within FILL_INSET_PX of the edge.
                 inner = note_mask([fill_polygon(apply_homography(ALIGNMENT, np.asarray(quad)))
                                    for quads in NOTES.values() for quad in quads], PROJECTOR)
                 self.assertLessEqual(int(chroma(filled)[~inner].max()), NEUTRAL_CHROMA)
+                # Aligned, the color does not wait for the overlay check, and
+                # there is no rim outside the paper: the wall stays background.
+                unchecked = render_scene(state, theme, PROJECTOR, "new", matrix=ALIGNMENT, fill=False)
+                np.testing.assert_array_equal(unchecked, filled)
+                rim = rgb(RIM_COLOR[theme])   # the ball and aim line stay neutral, drawn anywhere
+                self.assertEqual(int((unchecked[~aligned] == rim).all(axis=1).sum()), 0)
                 rims_only = render_scene(state, theme, PROJECTOR, "new", fill=True)  # unaligned: fill ignored
                 self.assertLessEqual(int(chroma(rims_only).max()), NEUTRAL_CHROMA)
                 self.assertTrue(unaligned.any())

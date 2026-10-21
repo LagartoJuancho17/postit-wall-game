@@ -35,6 +35,9 @@ export const RIM_WIDTH_PX = 3.0;
 export const RIM_MARGIN_PX = 4.0;
 const CHECK_KINDS = ["neutral", "overlay"];
 const OVERLAY_MIN_IOU = 0.85;
+// fill_off is diagnostic only: the color stays on, so a removed paper keeps its light until
+// the detection drops it (contract 2.3).
+const FILL_OFF_FADE = "Si sacás un papel, su luz puede tardar unos segundos en apagarse.";
 const PROBE_GRID = [1, 2, 3, 4, 5, 6, 7, 8, 9];   // candidate centers at tenths of the viewport
 const PROBE_CAMERA_MARGIN = 8;                     // camera px a probe corner keeps from the frame edge
 const STALE_DETAILS = Object.freeze({
@@ -886,21 +889,19 @@ export class GameController {
 
   /**
    * Where the projector's own rims fall in this camera frame (contract 2.5):
-   * a CV_8UC1 Mat the caller deletes, or null.
+   * a CV_8UC1 Mat the caller deletes, or null. Only unaligned: aligned, the
+   * projector lights each paper from inside and draws nothing on the wall.
    */
   rimFootprint(width, height) {
     const detection = this.liveDetection;
     if (detection === null || !this.projectorOpen || this.projectionMode !== "live" ||
         detection.width !== width || detection.height !== height ||
         this.projectorWidth <= 0 || this.projectorHeight <= 0) return null;
-    let toProjector;
-    if (this.alignStatus === "ready" && this.alignMatrix !== null) {
-      toProjector = this.alignMatrix;
-    } else {
-      const scale = Math.min(this.projectorWidth / width, this.projectorHeight / height);
-      toProjector = [[scale, 0.0, (this.projectorWidth - width * scale) / 2],
-        [0.0, scale, (this.projectorHeight - height * scale) / 2], [0.0, 0.0, 1.0]];
-    }
+    // Aligned, the color stays inside each paper: no rim lands on the wall.
+    if (this.alignStatus === "ready" && this.alignMatrix !== null) return null;
+    const scale = Math.min(this.projectorWidth / width, this.projectorHeight / height);
+    const toProjector = [[scale, 0.0, (this.projectorWidth - width * scale) / 2],
+      [0.0, scale, (this.projectorHeight - height * scale) / 2], [0.0, 0.0, 1.0]];
     const toCamera = normalizedInverse(toProjector);
     const cv = this.requireCv();
     const footprint = cv.Mat.zeros(height, width, cv.CV_8UC1);
@@ -1190,13 +1191,13 @@ export class GameController {
     const probesHit = ROLES.filter((role) => hitRoles.has(role));
     if (probesHit.length) {
       const detail = "La cámara toma el color proyectado sobre la pared por un post-it de " +
-        `${ROLE_LABELS[probesHit[0]]}; se proyectan solo bordes.`;
+        `${ROLE_LABELS[probesHit[0]]}. ${FILL_OFF_FADE}`;
       this.overlay = overlayState("fill_off", probes, detail);
     } else if (failing !== null) {
       const [role, before, after] = failing;
       const what = before !== after ? `${ROLE_LABELS[role]}: ${before} → ${after}` : `${ROLE_LABELS[role]}: forma`;
       this.overlay = overlayState("fill_off", probes,
-        `El color proyectado cambiaba la detección (${what}); se proyectan solo bordes.`);
+        `El color proyectado cambiaba la detección (${what}). ${FILL_OFF_FADE}`);
     } else {
       this.overlay = overlayState("ok", probes);
     }

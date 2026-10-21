@@ -144,12 +144,15 @@ durante una relectura o una búsqueda de cámara. `roleLights()` convierte la re
 - apagada si no ve ninguno.
 
 Sobre la imagen, el panel dibuja un halo del color de cada rol. El proyector
-no pone color sobre la pared: `drawProjectorScene()` en `live-view.mjs` dibuja
-un borde neutro 6 px por fuera de cada papel y, adentro, luz neutra (fondo
-oscuro) o el color del rol solo si el chequeo de color lo permitió (contrato
-2.1). Sin alinear, encaja la imagen de cámara con `containTransform()` y
-muestra `Sin alinear · pulsá A en el panel`; alineado, lleva cada nota por la
-homografía. Solo el panel muestra el video.
+no pone color sobre la pared (`drawProjectorScene()` en `live-view.mjs`,
+contrato 2.1). Alineado, lleva cada nota por la homografía y la ilumina por
+dentro con el color de su rol: relleno a `FILL_INSET_PX` (3 px) del borde y
+un borde del mismo color de `BORDER_WIDTH_PX` (4 px) justo adentro, sin
+borde neutro afuera. Lo dibuja diga lo que diga el chequeo de color, que es
+solo un aviso. Sin alinear, encaja la imagen de cámara con
+`containTransform()`, dibuja un borde neutro 6 px por fuera de cada papel,
+sin color, y muestra `Sin alinear · pulsá A en el panel`. Solo el panel
+muestra el video.
 
 `state.live_detection` contiene la última respuesta de `/api/preview`. Caduca
 a los 1,5 segundos sin una foto nueva y entonces desaparecen los contornos;
@@ -192,8 +195,8 @@ tolerancia.
 ## Fondo del proyector
 
 `PROJECTOR_THEMES` en `ui-core.mjs` define el fondo y la pelota de los temas
-`dark` (negro) y `light` (blanco suave `#f3f2ec`). Los bordes son neutros en
-los dos: blancos en el oscuro y grafito (`#2b2f2e`) en el claro.
+`dark` (negro) y `light` (blanco suave `#f3f2ec`). Sin alinear, los bordes son
+neutros en los dos: blancos en el oscuro y grafito (`#2b2f2e`) en el claro.
 
 El gotero y la búsqueda de cámara dejan la ventana con el fondo del tema
 (modo `neutral`). `projectorBackground(theme, forcedBlack)` devuelve
@@ -324,7 +327,9 @@ cada `id` que buscan los scripts exista en su HTML.
 comprobar los cuatro colores, el halo, las bandas horizontales y verticales,
 las entradas inválidas y que la pelota se transforme una sola vez. El eval
 `live-projection.mjs` recorre las muestras de detección del contrato en varios
-tamaños; exige una puntuación de 1.0.
+tamaños; exige una puntuación de 1.0. Sus fantasmas simulan un contorno
+corrido hasta 1,5 px hacia afuera, menos que `FILL_INSET_PX`: el simulador
+mide un crecimiento de 0,4 px por lado.
 
 La prueba de navegador usa Playwright y Chrome en un perfil aislado, con una
 cámara sintética. No abre la webcam física ni cambia los datos guardados del
@@ -342,7 +347,8 @@ de una homografía conocida. Corre la alineación real del panel, el chequeo de
 color, la detección en vivo y un intento, con el servidor Python y con el
 build estático (backend del navegador), en sala normal e iluminada. Exige la
 alineación a menos de 1 px de la verdad, contornos a menos de 1,5 px de los
-papeles, bordes al menos a 1 px por fuera de cada papel y 0 parpadeos.
+papeles, cada papel con su color, ninguna luz del proyector sobre la pared
+alrededor de los papeles y 0 parpadeos.
 
 El script inicia su propio servidor local y escribe capturas e informe en
 `/tmp/postit-live-browser/`. Verifica detección antes del lanzamiento, partida
