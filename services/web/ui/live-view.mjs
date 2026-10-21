@@ -47,6 +47,9 @@ export const FILL_ALPHA = 0.35;
 export const MIN_FILL_AREA_PX = 25;
 export const BALL_RADIUS_PX = 10;
 export const AIM_LENGTH_PX = 70;
+/** Under gravity the aim shows this much of the real flight, in steps. */
+export const AIM_PREVIEW_S = 0.3;
+const AIM_PREVIEW_STEPS = 12;
 export const AIM_WIDTH_PX = 3;
 export const RESULT_TEXTS = Object.freeze({ won: "¡LLEGASTE!", lost: "FUERA DEL CAMPO" });
 export const UNALIGNED_HINT = "Sin alinear · pulsá A en el panel";
@@ -247,29 +250,42 @@ function drawFill(ctx, points, color) {
  * through H when aligned, radius scaled by H's local stretch, or through
  * the contain transform when not.
  */
-function placeBall(game, camera, mapping, width, height) {
+/**
+ * The aim in game px: the first AIM_PREVIEW_S of the real flight when the
+ * backend says how it launches (gravity pulls toward +y), else a straight
+ * AIM_LENGTH_PX segment.
+ */
+export function aimPath(game) {
   const position = game.position;
   const angle = (game.aim_degrees ?? -45) * Math.PI / 180;
   const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+  const gravity = game.gravity_px_s2;
+  const speed = game.launch_speed_px_s;
+  if (!(Number.isFinite(gravity) && gravity > 0 && positive(speed))) {
+    return [position, { x: position.x + AIM_LENGTH_PX * direction.x, y: position.y + AIM_LENGTH_PX * direction.y }];
+  }
+  return Array.from({ length: AIM_PREVIEW_STEPS + 1 }, (_, k) => {
+    const t = AIM_PREVIEW_S * k / AIM_PREVIEW_STEPS;
+    return { x: position.x + speed * direction.x * t, y: position.y + speed * direction.y * t + 0.5 * gravity * t * t };
+  });
+}
+
+function placeBall(game, camera, mapping, width, height) {
+  const position = game.position;
+  const path = aimPath(game);
   if (game.space !== "projector" && mapping) {
     const center = mapping.toProjector(position);
     const stretch = center && homographyLocalScale(mapping.matrix, position);
     if (!center || !positive(stretch)) return null;
-    const tip = mapping.toProjector({
-      x: position.x + AIM_LENGTH_PX * direction.x, y: position.y + AIM_LENGTH_PX * direction.y,
-    });
-    return { center, radius: BALL_RADIUS_PX * stretch, tip };
+    const aim = path.map((point) => mapping.toProjector(point));
+    return { center, radius: BALL_RADIUS_PX * stretch, aim: aim.every(Boolean) ? aim : [] };
   }
   const fit = game.space === "projector"
     ? fitFrame(game.width || width, game.height || height, width, height)
     : fitFrame(game.width || camera?.width, game.height || camera?.height, width, height);
   if (!fit) return null;
-  const center = { x: fit.offsetX + position.x * fit.scale, y: fit.offsetY + position.y * fit.scale };
-  return {
-    center,
-    radius: BALL_RADIUS_PX * fit.scale,
-    tip: { x: center.x + AIM_LENGTH_PX * fit.scale * direction.x, y: center.y + AIM_LENGTH_PX * fit.scale * direction.y },
-  };
+  const place = (point) => ({ x: fit.offsetX + point.x * fit.scale, y: fit.offsetY + point.y * fit.scale });
+  return { center: place(position), radius: BALL_RADIUS_PX * fit.scale, aim: path.map(place) };
 }
 
 function drawGame(ctx, state, mapping, width, height, color) {
@@ -277,13 +293,14 @@ function drawGame(ctx, state, mapping, width, height, color) {
   if (!game) return;
   const ball = validPoint(game.position) ? placeBall(game, state.camera, mapping, width, height) : null;
   if (ball) {
-    if (game.status === "ready" && validPoint(ball.tip)) {
+    if (game.status === "ready" && ball.aim.length > 1 && ball.aim.every(validPoint)) {
       ctx.strokeStyle = color;
       ctx.lineWidth = AIM_WIDTH_PX;
+      ctx.lineJoin = "round";
       ctx.beginPath();
-      ctx.moveTo(ball.center.x, ball.center.y);
-      ctx.lineTo(ball.tip.x, ball.tip.y);
+      ball.aim.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
       ctx.stroke();
+      ctx.lineJoin = "miter";
     }
     ctx.fillStyle = color;
     ctx.beginPath();

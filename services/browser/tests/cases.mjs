@@ -55,7 +55,7 @@ export function physicsVerdicts(golden) {
     const board = boardFromGolden(c.board);
     let state;
     try {
-      state = launch(board, c.angle, c.speed);
+      state = launch(board, c.angle, c.speed, c.gravity ?? 0);
     } catch (error) {
       return verdict(`physics ${i} refusal`, { ok: false, error: error.message }, expected(c));
     }

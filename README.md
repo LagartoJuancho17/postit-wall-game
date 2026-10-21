@@ -47,7 +47,11 @@ Con la cámara y la proyección listas:
 1. Revisá en la vista en vivo que estén detectados el inicio y la llegada.
    Los contornos del proyector siguen esas mismas detecciones, incluso antes
    de que el tablero esté completo.
-2. Ajustá la dirección desde el control principal y lanzá con `Espacio`.
+2. Ajustá la dirección desde el control principal y lanzá con `Espacio`. La
+   pelota tiene gravedad: cae hacia abajo de la pared en una parábola, y el
+   proyector dibuja el comienzo de esa curva para apuntar. Rebota en los
+   post-its de rebote perdiendo algo de fuerza; sale del campo por cualquier
+   borde, también por abajo, y pierde.
 3. Tras ganar o perder, `R` inicia otro intento con el tablero detectado más
    reciente. `S` permite releerlo expresamente sin apagar la proyección.
 
@@ -367,6 +371,7 @@ El script ejecuta estas pruebas y evaluaciones (unos 2 minutos):
 ./.venv/bin/python -m services.calibration.evals.coded
 ./.venv/bin/python -m services.vision.eval
 ./.venv/bin/python -m services.physics.evals.scenarios
+./.venv/bin/python -m services.physics.evals.gravity
 ./.venv/bin/python -m services.runtime.eval
 ./.venv/bin/python -m services.web.backend.eval
 ./.venv/bin/python -m tests.eval_web_flow

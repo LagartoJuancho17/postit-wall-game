@@ -11,6 +11,7 @@ fi
 "$PY" -m services.calibration.evals.coded
 "$PY" -m services.vision.eval
 "$PY" -m services.physics.evals.scenarios
+"$PY" -m services.physics.evals.gravity
 "$PY" -m services.runtime.eval
 "$PY" -m services.web.backend.eval
 "$PY" -m tests.eval_web_flow

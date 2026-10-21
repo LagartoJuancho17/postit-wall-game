@@ -9,6 +9,12 @@
  */
 
 export const BALL_RADIUS_PX = 10.0;
+// services/physics/engine.py: the web game's gravity, its bounces, its limit.
+export const GRAVITY_SHARE = 1.6;
+export const LAUNCH_SPEED_SHARE = 1.7;
+const RESTITUTION = 0.8;
+const REST_STEPS = 2.5;
+export const MAX_ATTEMPT_S = 20.0;
 const EPS = 1e-9;
 const POSITION_NUDGE_PX = 1e-7;
 const MAX_EVENTS_PER_STEP = 1024;
@@ -20,8 +26,8 @@ const dot = (a, b) => a.x * b.x + a.y * b.y;
 const sub = (a, b) => point(a.x - b.x, a.y - b.y);
 const addScaled = (a, v, t) => point(a.x + v.x * t, a.y + v.y * t);
 
-function gameState(position, velocity, elapsed, bounces, status) {
-  return Object.freeze({ position, velocity, elapsed_s: elapsed, bounce_count: bounces, status });
+function gameState(position, velocity, elapsed, bounces, status, gravity = 0.0) {
+  return Object.freeze({ position, velocity, elapsed_s: elapsed, bounce_count: bounces, status, gravity_px_s2: gravity });
 }
 
 function edges(polygon) {
@@ -109,15 +115,19 @@ export function readyState(board) {
   return gameState(position, point(0.0, 0.0), 0.0, 0, GameStatus.READY);
 }
 
-/** Launch from the start note. An angle of 0° aims right; 90° aims down. */
-export function launch(board, angleDegrees, speedPxS) {
+/**
+ * Launch from the start note. An angle of 0° aims right; 90° aims down.
+ * `gravityPxS2` pulls toward +y (down the wall); 0 keeps the classic motion.
+ */
+export function launch(board, angleDegrees, speedPxS, gravityPxS2 = 0.0) {
   if (!Number.isFinite(angleDegrees) || !Number.isFinite(speedPxS) || speedPxS <= 0) {
     throw new Error("angle must be finite and speed_px_s must be positive and finite");
   }
+  if (!Number.isFinite(gravityPxS2) || gravityPxS2 < 0) throw new Error("gravity_px_s2 must be nonnegative and finite");
   const state = readyState(board);
   const angle = angleDegrees * (Math.PI / 180);
   return gameState(state.position, point(speedPxS * Math.cos(angle), speedPxS * Math.sin(angle)),
-    state.elapsed_s, state.bounce_count, GameStatus.RUNNING);
+    state.elapsed_s, state.bounce_count, GameStatus.RUNNING, gravityPxS2);
 }
 
 function sweptPolygonHit(position, velocity, polygon) {
@@ -186,28 +196,44 @@ export function step(board, state, dtS) {
   if (!Number.isFinite(dtS) || dtS < 0) throw new Error("dt_s must be nonnegative and finite");
   if (state.status !== GameStatus.RUNNING || dtS === 0) return state;
   if (!fitsPlayfield(state.position, board.playfield)) {
-    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.LOST);
+    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.LOST,
+      state.gravity_px_s2 ?? 0.0);
   }
   if (overlapsPolygon(state.position, board.goal)) {
-    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.WON);
+    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.WON,
+      state.gravity_px_s2 ?? 0.0);
+  }
+  const gravity = state.gravity_px_s2 ?? 0.0;
+  if (gravity > 0 && state.elapsed_s >= MAX_ATTEMPT_S) {
+    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.LOST, gravity);
   }
   let { position, velocity } = state;
   let elapsed = state.elapsed_s;
   let bounces = state.bounce_count;
   let remaining = dtS;
-  const running = () => gameState(addScaled(position, velocity, remaining), velocity,
-    elapsed + remaining, bounces, GameStatus.RUNNING);
+  let support = null; // a surface the ball rests on for the rest of this step
+  // Without the component into the supporting surface: the ball slides.
+  const along = (vector) => {
+    if (support === null) return vector;
+    const into = dot(vector, support);
+    return into >= 0 ? vector : point(vector.x - into * support.x, vector.y - into * support.y);
+  };
+  // The chord with the mean velocity ends exactly on the parabola.
+  const chordOver = (travel) => along(point(velocity.x, velocity.y + 0.5 * gravity * travel));
+  const running = (travel) => gameState(addScaled(position, chordOver(travel), travel),
+    along(point(velocity.x, velocity.y + gravity * travel)), elapsed + travel, bounces, GameStatus.RUNNING, gravity);
   for (let event = 0; event < MAX_EVENTS_PER_STEP; event += 1) {
+    const chord = chordOver(remaining);
     const events = [];
-    const goal = sweptPolygonHit(position, velocity, board.goal);
+    const goal = sweptPolygonHit(position, chord, board.goal);
     if (goal !== null) events.push({ ...goal, kind: "goal" });
     for (const obstacle of board.bumpers) {
-      const hit = sweptPolygonHit(position, velocity, obstacle);
+      const hit = sweptPolygonHit(position, chord, obstacle);
       if (hit !== null) events.push({ ...hit, kind: "bumper" });
     }
-    const exitHit = playfieldExit(position, velocity, board.playfield);
+    const exitHit = playfieldExit(position, chord, board.playfield);
     if (exitHit !== null) events.push(exitHit);
-    if (!events.length) return running();
+    if (!events.length) return running(remaining);
     // A simultaneous goal contact takes priority over a bumper or boundary.
     let hit = events[0];
     for (const candidate of events.slice(1)) {
@@ -215,18 +241,30 @@ export function step(board, state, dtS) {
         hit = candidate;
       }
     }
-    if (hit.time > remaining + EPS) return running();
+    if (hit.time > remaining + EPS) return running(remaining);
     const travel = Math.min(hit.time, remaining);
-    position = addScaled(position, velocity, travel);
+    position = addScaled(position, chord, travel);
+    velocity = along(point(velocity.x, velocity.y + gravity * travel));
     elapsed += travel;
     remaining -= travel;
-    if (hit.kind === "goal") return gameState(position, velocity, elapsed, bounces, GameStatus.WON);
-    if (hit.kind === "exit") return gameState(position, velocity, elapsed, bounces, GameStatus.LOST);
+    if (hit.kind === "goal") return gameState(position, velocity, elapsed, bounces, GameStatus.WON, gravity);
+    if (hit.kind === "exit") return gameState(position, velocity, elapsed, bounces, GameStatus.LOST, gravity);
     const { normal } = hit;
-    velocity = sub(velocity, point(2 * dot(velocity, normal) * normal.x, 2 * dot(velocity, normal) * normal.y));
+    const into = dot(velocity, normal);
+    if (gravity > 0) {
+      // Lose part of the normal speed; too weak a bounce rests and slides.
+      let out = -RESTITUTION * into;
+      if (out < REST_STEPS * gravity * dtS) {
+        out = 0.0;
+        support = normal;
+      }
+      velocity = point(velocity.x + (out - into) * normal.x, velocity.y + (out - into) * normal.y);
+    } else {
+      velocity = sub(velocity, point(2 * into * normal.x, 2 * into * normal.y));
+    }
     position = addScaled(position, normal, POSITION_NUDGE_PX);
-    bounces += 1;
-    if (remaining <= EPS) return running();
+    if (support === null || support !== normal) bounces += 1; // resting contact is not a bounce
+    if (remaining <= EPS) return running(remaining);
   }
   throw new Error(`more than ${MAX_EVENTS_PER_STEP} collisions in one step; reduce dt_s or speed`);
 }

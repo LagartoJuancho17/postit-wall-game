@@ -514,6 +514,17 @@ def physics_cases() -> list[dict[str, Any]]:
         speed = rng.choice([150.0, 320.0, 900.0, 4000.0])
         dt = rng.choice([1 / 120, 1 / 60, 0.05])
         cases.append(_physics_case(board, angle, speed, dt, 900))
+    # Gravity (the web game): parabolas, lossy bounces, resting and sliding, the time limit.
+    for index in range(80):
+        start = _rotated(rng.uniform(150, 350), rng.uniform(250, 650), 60, 60, rng.uniform(-20, 20))
+        goal = _rotated(rng.uniform(800, 1100), rng.uniform(150, 650), 60, 60, rng.uniform(-20, 20))
+        floor = _rect(rng.uniform(80, 400), rng.uniform(690, 720), rng.uniform(800, 1200), 750)
+        bumpers = (floor,) + tuple(_rotated(rng.uniform(450, 800), rng.uniform(100, 600), rng.uniform(40, 220),
+                                            rng.uniform(20, 60), rng.uniform(-30, 30))
+                                   for _ in range(rng.randrange(0, 4)))
+        board = Board(field, start, goal, bumpers, ())
+        cases.append(_physics_case(board, rng.uniform(-90, 10), rng.uniform(300, 1300),
+                                   rng.choice([1 / 120, 1 / 60, 0.05]), 900, rng.uniform(300, 1800)))
     bad = Board(field, _rect(100, 100, 160, 160), _rect(120, 120, 180, 180), (), ())
     cases.append(_physics_case(bad, 0, 100, 1 / 120, 3))
     outside = Board(field, _rect(0, 0, 40, 40), _rect(600, 300, 660, 360), (), ())
@@ -524,10 +535,11 @@ def physics_cases() -> list[dict[str, Any]]:
     return cases
 
 
-def _physics_case(board: Board, angle: float, speed: float, dt: float, steps: int) -> dict[str, Any]:
-    case = {"board": _board(board), "angle": angle, "speed": speed, "dt": dt}
+def _physics_case(board: Board, angle: float, speed: float, dt: float, steps: int,
+                  gravity: float = 0.0) -> dict[str, Any]:
+    case = {"board": _board(board), "angle": angle, "speed": speed, "dt": dt, "gravity": gravity}
     try:
-        state = launch(board, angle, speed)
+        state = launch(board, angle, speed, gravity)
     except ValueError as exc:
         case.update(ok=False, error=str(exc))
         return case
@@ -618,7 +630,7 @@ def controller_scripts() -> dict[str, list[dict[str, Any]]]:
     play = [{"op": "tick", "advance": 0.1} for _ in range(30)]
     ready = [{"op": "preview", "frame": "wall_430", "camera": "Cámara de iPhone de Tobias"}, open_]
     return {
-        "win": [*ready, act("aim", degrees=0), act("launch"), *play, {"op": "state"}],
+        "win": [*ready, act("aim", degrees=-10), act("launch"), *play, {"op": "state"}],
         "lose": [*ready, act("aim", degrees=180), act("launch"), *play],
         "aim_buttons": [*ready, act("aim_left"), act("aim_left"), act("aim_right"),
                         act("aim", degrees=725.5), act("aim", degrees=-190), act("aim", degrees="x"),

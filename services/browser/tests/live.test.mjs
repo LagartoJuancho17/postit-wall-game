@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GameController } from "../controller.mjs";
+import { LAUNCH_SPEED_SHARE } from "../physics.mjs";
 import { frameMat, loadCv, loadGolden } from "./golden.mjs";
 
 const golden = loadGolden();
@@ -106,7 +107,7 @@ test("projector resize preserves attempt and camera geometry; speed uses camera 
     assert.deepEqual(after.game, before.game);
     assert.deepEqual(after.live_detection, before.live_detection);
     assert.equal(after.projection.mode, "live");
-    assert.ok(Math.abs(Math.hypot(env.game.game.velocity.x, env.game.game.velocity.y) - 720 * 0.4) < 1e-8);
+    assert.ok(Math.abs(Math.hypot(env.game.game.velocity.x, env.game.game.velocity.y) - 720 * LAUNCH_SPEED_SHARE) < 1e-8);
   } finally { env.close(); }
 });
 

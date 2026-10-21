@@ -595,3 +595,23 @@ test("a rim is clipped out of every other note grown by RIM_CLEAR_PX, so it neve
   assert.equal(alone.clips.length, 0);
   assert.equal(liveView.RIM_CLEAR_PX, 3);
 });
+
+test("under gravity the aim shows the first 0.3 s of the real flight, bending down", () => {
+  const game = { status: "ready", space: "projector", width: 1280, height: 800, position: { x: 200, y: 600 },
+    aim_degrees: -45, gravity_px_s2: 1280, launch_speed_px_s: 1360 };
+  const ctx = canvas();
+  drawProjectorScene(ctx, { state: { game }, width: 1280, height: 800 });
+  const aim = ctx.draws.find((draw) => draw.kind === "stroke" && draw.lineWidth === AIM_WIDTH_PX);
+  assert.ok(aim, "the aim is drawn");
+  const path = points(aim.path);
+  assert.equal(path.length, 13);
+  const v = 1360 / Math.SQRT2;
+  path.forEach((point, k) => {
+    const t = liveView.AIM_PREVIEW_S * k / 12;
+    near(point.x, 200 + v * t, 1e-9, `x${k}`);
+    near(point.y, 600 - v * t + 0.5 * 1280 * t * t, 1e-9, `y${k}`);
+  });
+  // Without the launch fields (an older backend) the aim stays straight.
+  const straight = liveView.aimPath({ position: { x: 0, y: 0 }, aim_degrees: 0 });
+  assert.deepEqual(straight, [{ x: 0, y: 0 }, { x: liveView.AIM_LENGTH_PX, y: 0 }]);
+});

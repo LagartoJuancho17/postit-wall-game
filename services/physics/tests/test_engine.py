@@ -106,3 +106,95 @@ class PhysicsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GravityTests(unittest.TestCase):
+    """The web game's ball falls down the wall (+y)."""
+
+    G = 400.0
+
+    def _fly(self, game, state, dt, seconds):
+        for _ in range(round(seconds / dt)):
+            state = step(game, state, dt)
+        return state
+
+    def test_free_flight_lands_exactly_on_the_parabola_whatever_the_step(self):
+        game = board()
+        start = launch(game, -30, 200.0, self.G)
+        vx, vy = 200 * math.cos(math.radians(-30)), 200 * math.sin(math.radians(-30))
+        for dt in (1 / 120, 1 / 30):
+            state = self._fly(game, start, dt, 0.5)
+            self.assertEqual(state.status, GameStatus.RUNNING)
+            self.assertAlmostEqual(state.position.x, 50 + vx * 0.5, places=6)
+            self.assertAlmostEqual(state.position.y, 150 + vy * 0.5 + 0.5 * self.G * 0.25, places=6)
+            self.assertAlmostEqual(state.velocity.y, vy + self.G * 0.5, places=6)
+
+    def test_a_ball_falls_off_the_bottom_and_is_lost(self):
+        game = board()
+        state = self._fly(game, launch(game, 0, 20.0, self.G), 1 / 120, 3.0)
+        self.assertEqual(state.status, GameStatus.LOST)
+        self.assertGreater(state.position.y, 280)   # the bottom edge, not a side
+
+    def test_a_bounce_keeps_eighty_percent_of_the_normal_speed(self):
+        floor = rectangle(20, 220, 480, 260)
+        game = board(bumpers=(floor,))
+        state = launch(game, 90, 50.0, self.G)   # straight down onto the floor
+        before = None
+        for _ in range(240):
+            previous, state = state, step(game, state, 1 / 120)
+            if state.bounce_count == 1:
+                before = previous
+                break
+        self.assertIsNotNone(before, "the ball reached the floor")
+        # Hit speed from energy: v^2 = v0^2 + 2 g h, h = floor top - radius - start.
+        h = 220 - BALL_RADIUS_PX - 150
+        speed = math.sqrt(50 ** 2 + 2 * self.G * h)
+        apex = state
+        while apex.velocity.y < 0:
+            apex = step(game, apex, 1 / 240)
+        rebound = math.sqrt(2 * self.G * (220 - BALL_RADIUS_PX - apex.position.y))
+        self.assertAlmostEqual(rebound / speed, 0.8, delta=0.02)
+
+    def test_a_ball_settles_on_a_floor_without_endless_bounces_then_times_out(self):
+        floor = rectangle(20, 220, 480, 260)
+        game = board(bumpers=(floor,))
+        state = launch(game, 90, 50.0, self.G)
+        bounces = []
+        for _ in range(round(25 * 120)):
+            state = step(game, state, 1 / 120)
+            bounces.append(state.bounce_count)
+            if state.status != GameStatus.RUNNING:
+                break
+        self.assertEqual(state.status, GameStatus.LOST, "resting forever ends the attempt")
+        self.assertAlmostEqual(state.elapsed_s, 20.0, delta=0.02)
+        self.assertAlmostEqual(state.position.y, 220 - BALL_RADIUS_PX, delta=0.01, msg="it rests on the floor")
+        self.assertLess(state.bounce_count, 30, "resting contact does not count as bounces")
+
+    def test_without_gravity_motion_is_straight_and_elastic_as_before(self):
+        game = board()
+        state = step(game, launch(game, 0, 100.0), 1.0)
+        self.assertEqual(state.position, Point(150, 150))
+        self.assertEqual(state.gravity_px_s2, 0.0)
+
+    def test_gravity_must_be_finite_and_not_negative(self):
+        for bad in (-1.0, math.inf, math.nan):
+            with self.assertRaises(ValueError):
+                launch(board(), 0, 100.0, bad)
+
+
+class BallisticAimTests(unittest.TestCase):
+    def test_the_aim_passes_through_the_target_on_both_sides(self):
+        from services.physics import ballistic_aim_degrees
+        g, v = 400.0, 300.0
+        for dx, dy in ((200, 0), (150, -60), (-180, 40), (120, 100)):
+            aim = ballistic_aim_degrees(dx, dy, v, g)
+            self.assertIsNotNone(aim, (dx, dy))
+            vx, vy = v * math.cos(math.radians(aim)), v * math.sin(math.radians(aim))
+            t = dx / vx
+            self.assertGreater(t, 0)
+            self.assertAlmostEqual(vy * t + 0.5 * g * t * t, dy, places=6)
+
+    def test_out_of_reach_and_no_gravity(self):
+        from services.physics import ballistic_aim_degrees
+        self.assertIsNone(ballistic_aim_degrees(5000, 0, 100, 400))
+        self.assertAlmostEqual(ballistic_aim_degrees(10, 10, 100, 0), 45.0)
