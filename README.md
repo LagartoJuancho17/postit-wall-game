@@ -104,7 +104,8 @@ hasta 12 veces el papel.
 
 ## Versión web (Vercel)
 
-La misma interfaz corre entera en el navegador, sin Python ni instalación.
+**https://postit-wall-game.vercel.app**: la misma interfaz corre entera en el
+navegador, sin Python ni instalación.
 El backend es un port a JavaScript de los servicios de Python (visión,
 alineación, física y estado del juego) sobre OpenCV.js 4.12, la misma versión
 de OpenCV que usa Python. Las pruebas de paridad exigen que el port dé las
@@ -125,8 +126,11 @@ npm run build                     # dist/
 node scripts/serve-static.mjs     # http://localhost:4870/
 ```
 
-`vercel --prod` lo publica: `vercel.json` define el build y `.vercelignore`
-sube solo los 21 archivos que el build necesita.
+`vercel deploy --prod` lo publica: `vercel.json` define el build y
+`.vercelignore` sube solo los 21 archivos que el build necesita. El proyecto
+de Vercel está conectado al repositorio de GitHub: cada push genera un
+deploy de vista previa. Para probar en Chrome el sitio publicado:
+`node tests/closed-loop-browser.mjs https://postit-wall-game.vercel.app`.
 
 ## Usar la cámara del celular
 
