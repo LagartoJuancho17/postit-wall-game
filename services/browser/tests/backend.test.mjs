@@ -105,7 +105,7 @@ test("the whole operator journey works through the routes", async () => {
 
   assert.equal(controller.snapshot().phase, "ready");
   assert.equal(controller.snapshot().projection.mode, "live");
-  act("aim", { degrees: 0 });
+  act("aim", { degrees: -10 }); // under gravity: the lower arc to the goal of wall_430
   assert.equal(act("launch").body.phase, "running");
   let state;
   for (let i = 0; i < 30; i += 1) {
@@ -114,7 +114,7 @@ test("the whole operator journey works through the routes", async () => {
     if (state.game.status !== "running") break;
   }
   assert.equal(state.game.status, "won");
-  assert.ok(state.game.elapsed_s > 1.5 && state.game.elapsed_s < 2.5, state.game.elapsed_s);
+  assert.ok(state.game.elapsed_s > 0.3 && state.game.elapsed_s < 1.0, state.game.elapsed_s);
   assert.deepEqual(decoded, ["wall_430", "wall_430", "wall_430"]);
   const names = events.map((e) => e.event);
   for (const event of ["board_scanned", "live_board_ready", "attempt_started", "attempt_finished"]) {

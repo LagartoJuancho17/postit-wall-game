@@ -15,7 +15,7 @@ import { ALIGNMENT_FRAMES, alignmentLayout, decodeAlignment, frameKey } from "./
 import { offsetConvexPolygon, transformBoard, transformPoint } from "./calibration.mjs";
 import { isPlainObject, pyJsonLength, pyLength, pyMod, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
-import { GameStatus, launch, readyState, step } from "./physics.mjs";
+import { GameStatus, GRAVITY_SHARE, launch, LAUNCH_SPEED_SHARE, readyState, step } from "./physics.mjs";
 import { boardFromNotes, findNotes, inspectFrame } from "./vision.mjs";
 
 const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
@@ -457,6 +457,9 @@ export class GameController {
         bounces: game ? game.bounce_count : 0,
         elapsed_s: game ? pyRound(game.elapsed_s, 3) : 0.0,
         aim_degrees: pyRound(this.aimDegrees, 3),
+        // What a launch now would use (the projector draws its path).
+        gravity_px_s2: pyRound(Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE, 3),
+        launch_speed_px_s: pyRound(Math.min(this.boardWidth, this.boardHeight) * LAUNCH_SPEED_SHARE, 3),
         attempts: this.attempts,
         paused: this.paused,
       },
@@ -729,8 +732,10 @@ export class GameController {
       if (this.game.status !== GameStatus.READY) {
         throw new RequestError("Reiniciá el intento antes de volver a lanzar.", HTTP.CONFLICT);
       }
-      const speed = Math.min(this.boardWidth, this.boardHeight) * 0.4;
-      this.game = launch(this.board, this.aimDegrees, speed);
+      const side = Math.min(this.boardWidth, this.boardHeight);
+      const speed = side * LAUNCH_SPEED_SHARE;
+      const gravity = side * GRAVITY_SHARE;
+      this.game = launch(this.board, this.aimDegrees, speed, gravity);
       this.attempts += 1;
       this.paused = false;
       this.lastTick = this.clock();
@@ -738,7 +743,7 @@ export class GameController {
       this.projectionMode = "live";
       this.changed("Pelota lanzada.");
       this.log("attempt_started", { attempt: this.attempts, angle_degrees: pyRound(this.aimDegrees, 1),
-        speed_px_s: pyRound(speed, 1) });
+        speed_px_s: pyRound(speed, 1), gravity_px_s2: pyRound(gravity, 1) });
     } else if (name === "reset") {
       if (this.cameraBoard === null || this.candidate === null) {
         throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);

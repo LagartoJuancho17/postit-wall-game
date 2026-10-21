@@ -15,6 +15,7 @@ import numpy as np
 
 from contracts import quadrilateral_center
 from services.calibration import ALIGNMENT_FRAMES
+from services.physics import GRAVITY_SHARE, LAUNCH_SPEED_SHARE, ballistic_aim_degrees
 from services.calibration.tests.render import homography_from_quad, project_to_camera, render_pattern
 
 from .server import GameController, RequestError
@@ -81,7 +82,7 @@ def recolored_wall() -> dict[str, object]:
         game.action({"action": "palette_set", "role": role, "hex": sampled_hex(frame, role)})
     after = _counts(game.preview_jpeg(frame))
     assert game.scan_jpeg(frame)["phase"] == "ready"
-    game.action({"action": "aim", "degrees": 0})
+    game.action({"action": "aim", "degrees": _aim_at_goal(game)})
     game.action({"action": "launch"})
     for _ in range(25):
         now[0] += 0.1
@@ -94,6 +95,16 @@ def recolored_wall() -> dict[str, object]:
     assert state["game"]["status"] == "won", state["game"]
     return {"preview_default_colors": before, "default_scan": default_scan,
             "preview_picked_colors": after, "attempt_result": state["game"]["status"]}
+
+
+def _aim_at_goal(game) -> float:
+    """The lower ballistic arc from the start to the goal, as the game launches it."""
+    start = quadrilateral_center(game.board.start)
+    goal = quadrilateral_center(game.board.goal)
+    side = min(game.board_width, game.board_height)
+    aim = ballistic_aim_degrees(goal.x - start.x, goal.y - start.y, side * LAUNCH_SPEED_SHARE, side * GRAVITY_SHARE)
+    assert aim is not None, "the goal is out of reach"
+    return aim
 
 
 def _boards_close(first: dict, second: dict, tolerance: float) -> bool:
@@ -139,9 +150,7 @@ def aligned_flow() -> dict[str, object]:
         expected = cv2.perspectiveTransform(camera.reshape(-1, 1, 2), truth).reshape(-1, 2)
         mapped = np.float32([[p["x"], p["y"]] for p in state["board"][name]["points"]])
         errors.extend(np.linalg.norm(mapped - expected, axis=1).tolist())
-    start = quadrilateral_center(game.board.start)
-    goal = quadrilateral_center(game.board.goal)
-    game.action({"action": "aim", "degrees": float(np.degrees(np.arctan2(goal.y - start.y, goal.x - start.x)))})
+    game.action({"action": "aim", "degrees": _aim_at_goal(game)})
     game.action({"action": "launch"})
     for _ in range(40):
         now[0] += 0.1
@@ -179,7 +188,7 @@ def run() -> dict[str, object]:
                                abs(game_start.y - camera_start.y))
         assert coordinate_error == 0
 
-        game.action({"action": "aim", "degrees": 0})
+        game.action({"action": "aim", "degrees": _aim_at_goal(game)})
         launched = game.action({"action": "launch"})
         frozen_board, frozen_position = game.board, game.game.position
         moved_frame = _frame(540, markers=False)
@@ -198,7 +207,7 @@ def run() -> dict[str, object]:
                 break
         assert current["game"]["status"] == "won", current["game"]
         elapsed_s = current["game"]["elapsed_s"]
-        assert 1.5 < elapsed_s < 2.5
+        assert 0.3 < elapsed_s < 1.0, elapsed_s   # under gravity the shot arrives in ~0.5 s
         reset = game.action({"action": "reset"})
         # The latest detection of the same wall: equal up to sub-pixel noise
         # (later frames also discount the projector's own rims, contract 2.5).

@@ -6,6 +6,7 @@ import unittest
 
 import cv2
 
+from services.physics import LAUNCH_SPEED_SHARE
 from services.web.backend.eval import FRAME_HUES, _color, _image
 from services.web.backend.server import GameController, RequestError
 
@@ -122,7 +123,7 @@ class LiveDetectionTests(unittest.TestCase):
         resized = self.open(1920, 1080)
         self.assertEqual(resized['board'], running['board'])
         self.assertEqual(resized['game'], running['game'])
-        self.assertAlmostEqual((velocity.x ** 2 + velocity.y ** 2) ** 0.5, 720 * 0.4)
+        self.assertAlmostEqual((velocity.x ** 2 + velocity.y ** 2) ** 0.5, 720 * LAUNCH_SPEED_SHARE)
         self.assertEqual((resized['game']['width'], resized['game']['height']), (960, 720))
 
     def test_detection_expires_after_1500ms_and_prevents_stale_launch(self) -> None:

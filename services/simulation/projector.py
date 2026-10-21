@@ -82,6 +82,8 @@ CANVAS_MITER_LIMIT = 10.0  # canvas default
 FALLBACK_COLORS = {"start": "#ffdf53", "goal": "#ffa659", "bumper": "#77ec8f", "marker": "#ff77d3"}
 BALL_RADIUS_PX = 10.0
 AIM_LENGTH_PX = 70.0
+AIM_PREVIEW_S = 0.3      # under gravity the aim shows this much of the real flight
+AIM_PREVIEW_STEPS = 12
 AIM_WIDTH_PX = 3.0
 
 SUBROWS = 8  # coverage samples per pixel row; exact along x
@@ -586,7 +588,7 @@ def _projected_notes(preview: Any, mapping: _Mapping | None, width: int, height:
 
 
 def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width: int, height: int):
-    """``placeBall``: center, radius and aim tip in projector px, or None."""
+    """``placeBall``: center, radius and aim path in projector px, or None."""
     try:
         position = np.array((float(game["position"]["x"]), float(game["position"]["y"])))
     except (KeyError, TypeError, ValueError):
@@ -598,13 +600,21 @@ def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width:
     except (TypeError, ValueError):
         angle = math.radians(-45.0)
     direction = np.array((math.cos(angle), math.sin(angle)))
+    # ``aimPath``: the first AIM_PREVIEW_S of the flight under gravity, else straight.
+    gravity, speed = game.get("gravity_px_s2"), game.get("launch_speed_px_s")
+    if isinstance(gravity, (int, float)) and gravity > 0 and _positive(speed):
+        path = [position + speed * direction * t + np.array((0.0, 0.5 * gravity * t * t))
+                for t in (AIM_PREVIEW_S * k / AIM_PREVIEW_STEPS for k in range(AIM_PREVIEW_STEPS + 1))]
+    else:
+        path = [position, position + AIM_LENGTH_PX * direction]
     projector_space = game.get("space") == "projector"
     if not projector_space and mapping is not None:
         center = mapping.to_projector(position)
         stretch = homography_local_scale(mapping.matrix, position) if center is not None else None
         if center is None or not _positive(stretch):
             return None
-        return center, BALL_RADIUS_PX * stretch, mapping.to_projector(position + AIM_LENGTH_PX * direction)
+        aim = [mapping.to_projector(point) for point in path]
+        return center, BALL_RADIUS_PX * stretch, aim if all(point is not None for point in aim) else []
     if projector_space:  # a game measured on another viewport is contain-fitted
         fit = _fit(game.get("width") or width, game.get("height") or height, width, height)
     else:
@@ -613,8 +623,8 @@ def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width:
     if fit is None:
         return None
     scale, offset_x, offset_y = fit
-    center = position * scale + (offset_x, offset_y)
-    return center, BALL_RADIUS_PX * scale, center + AIM_LENGTH_PX * scale * direction
+    return (position * scale + (offset_x, offset_y), BALL_RADIUS_PX * scale,
+            [point * scale + (offset_x, offset_y) for point in path])
 
 
 def _draw_game(canvas: Canvas, state: Mapping, mapping: _Mapping | None,
@@ -625,9 +635,10 @@ def _draw_game(canvas: Canvas, state: Mapping, mapping: _Mapping | None,
     camera = state.get("camera") if isinstance(state.get("camera"), Mapping) else {}
     ball = _place_ball(game, camera, mapping, canvas.width, canvas.height)
     if ball is not None:
-        center, radius, tip = ball
-        if game.get("status") == "ready" and tip is not None:
-            canvas.segment(center, tip, AIM_WIDTH_PX, ball_color)
+        center, radius, aim = ball
+        if game.get("status") == "ready" and len(aim) > 1:
+            for start, end in zip(aim, aim[1:]):
+                canvas.segment(start, end, AIM_WIDTH_PX, ball_color)
         canvas.circle(center, radius, ball_color)
     status = game.get("status")
     if status in RESULT_TEXT:

@@ -28,7 +28,8 @@ from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon
 from contracts.geometry import offset_convex_polygon
 from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_alignment,
                                   transform_board, transform_point)
-from services.physics import GameState, GameStatus, launch, ready_state, step
+from services.physics import (GRAVITY_SHARE, LAUNCH_SPEED_SHARE, GameState, GameStatus, launch, ready_state,
+                              step)
 from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
 from services.uvc import UvcBridge, UvcError
@@ -484,6 +485,9 @@ class GameController:
                 "bounces": game.bounce_count if game else 0,
                 "elapsed_s": round(game.elapsed_s, 3) if game else 0.0,
                 "aim_degrees": round(self.aim_degrees, 3),
+                # What a launch now would use (the projector draws its path).
+                "gravity_px_s2": round(min(self.board_width, self.board_height) * GRAVITY_SHARE, 3),
+                "launch_speed_px_s": round(min(self.board_width, self.board_height) * LAUNCH_SPEED_SHARE, 3),
                 "attempts": self.attempts,
                 "paused": self.paused,
             },
@@ -862,8 +866,9 @@ class GameController:
                 if self.game.status != GameStatus.READY:
                     raise RequestError("Reiniciá el intento antes de volver a lanzar.",
                                        HTTPStatus.CONFLICT)
-                speed = min(self.board_width, self.board_height) * 0.4
-                self.game = launch(self.board, self.aim_degrees, speed)
+                side = min(self.board_width, self.board_height)
+                speed, gravity = side * LAUNCH_SPEED_SHARE, side * GRAVITY_SHARE
+                self.game = launch(self.board, self.aim_degrees, speed, gravity)
                 self.attempts += 1
                 self.paused = False
                 self._last_tick = self._clock()
@@ -871,7 +876,8 @@ class GameController:
                 self.projection_mode = "live"
                 self._changed("Pelota lanzada.")
                 self._log("attempt_started", attempt=self.attempts,
-                          angle_degrees=round(self.aim_degrees, 1), speed_px_s=round(speed, 1))
+                          angle_degrees=round(self.aim_degrees, 1), speed_px_s=round(speed, 1),
+                          gravity_px_s2=round(gravity, 1))
             elif action == "reset":
                 if self.camera_board is None or self._candidate is None:
                     raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",

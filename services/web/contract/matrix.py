@@ -119,7 +119,7 @@ def _ready(w: _Wall) -> None:
 
 def _running(w: _Wall) -> None:
     _ready(w)
-    w.launch(0)
+    w.launch(-10)   # under gravity the lower arc to the goal of _frame(430)
 
 
 def _paused_closed(w: _Wall) -> None:
