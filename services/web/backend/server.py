@@ -60,6 +60,9 @@ RIM_WIDTH_PX = 3.0
 RIM_MARGIN_PX = 4.0   # blur and alignment slack around the stroke; it only joins pieces (contract 2.5)
 CHECK_KINDS = ("neutral", "overlay")
 OVERLAY_MIN_IOU = 0.85
+# fill_off is diagnostic only: the color stays on, so a removed paper keeps its light until
+# the detection drops it (contract 2.3).
+FILL_OFF_FADE = "Si sacás un papel, su luz puede tardar unos segundos en apagarse."
 PROBE_GRID = range(1, 10)          # candidate centers at tenths of the viewport
 PROBE_CAMERA_MARGIN = 8            # camera px a probe corner keeps from the frame edge
 STALE_DETAILS = {
@@ -642,10 +645,11 @@ class GameController:
     def _rim_footprint_unlocked(self, width: int, height: int) -> np.ndarray | None:
         """Where the projector's own rims fall in this camera frame (contract 2.5).
 
-        The rims follow the current live notes: each note goes to projector
-        px (through H when aligned, else the contain fit the unaligned window
-        uses), is moved RIM_OFFSET_PX outward, and comes back to camera px,
-        drawn as a stroke wide enough for the rim plus blur.
+        Only unaligned: aligned, the projector lights each paper from inside and
+        draws nothing on the wall. The rims follow the current live notes: each
+        note goes to projector px through the contain fit the unaligned window
+        uses, is moved RIM_OFFSET_PX outward, and comes back to camera px, drawn
+        as a stroke wide enough for the rim plus blur.
         """
         detection = self.live_detection
         if (detection is None or not self.projector_open or self.projection_mode != "live"
@@ -653,12 +657,12 @@ class GameController:
                 or self.projector_width <= 0 or self.projector_height <= 0):
             return None
         if self._align_status == "ready" and self._align_matrix is not None:
-            to_projector = np.asarray(self._align_matrix, dtype=np.float64)
-        else:
-            scale = min(self.projector_width / width, self.projector_height / height)
-            to_projector = np.array([[scale, 0.0, (self.projector_width - width * scale) / 2],
-                                     [0.0, scale, (self.projector_height - height * scale) / 2],
-                                     [0.0, 0.0, 1.0]])
+            # Aligned, the color stays inside each paper: no rim lands on the wall.
+            return None
+        scale = min(self.projector_width / width, self.projector_height / height)
+        to_projector = np.array([[scale, 0.0, (self.projector_width - width * scale) / 2],
+                                 [0.0, scale, (self.projector_height - height * scale) / 2],
+                                 [0.0, 0.0, 1.0]])
         to_camera = _normalized_inverse(to_projector)
         footprint = np.zeros((height, width), np.uint8)
         drawn = False
@@ -1082,13 +1086,13 @@ class GameController:
         probes_hit = [role for role in ROLES if role in hit_roles]
         if probes_hit:
             detail = (f"La cámara toma el color proyectado sobre la pared por un post-it de "
-                      f"{ROLE_LABELS[probes_hit[0]]}; se proyectan solo bordes.")
+                      f"{ROLE_LABELS[probes_hit[0]]}. " + FILL_OFF_FADE)
             self._overlay = self._overlay_state("fill_off", probes, detail)
         elif failing is not None:
             role, before, after = failing
             change = f"{before} → {after}" if before != after else "forma"
             what = f"{ROLE_LABELS[role]}: {change}" if before != after else f"{ROLE_LABELS[role]}: forma"
-            detail = f"El color proyectado cambiaba la detección ({what}); se proyectan solo bordes."
+            detail = f"El color proyectado cambiaba la detección ({what}). " + FILL_OFF_FADE
             self._overlay = self._overlay_state("fill_off", probes, detail)
         else:
             self._overlay = self._overlay_state("ok", probes)

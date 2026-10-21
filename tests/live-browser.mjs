@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { containTransform, offsetConvexPolygon } from "../services/web/ui/ui-core.mjs";
-import { FILL_INSET_PX, NEUTRAL, RIM_OFFSET_PX } from "../services/web/ui/live-view.mjs";
+import { BORDER_WIDTH_PX, FILL_INSET_PX, NEUTRAL, RIM_OFFSET_PX } from "../services/web/ui/live-view.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = process.env.POSTIT_BROWSER_OUTPUT || "/tmp/postit-live-browser";
@@ -88,19 +88,16 @@ function alignmentLayout(width, height) {
 }
 
 /**
- * Runs in the projector page: the aligned scene with its fill allowed, drawn
- * by Chrome on a detached canvas, then every lit pixel classified by its
- * distance to the nearest mapped paper (max over the paper's edge lines,
- * positive outward). Fill: `inset` px inside; rim: a 3 px stroke centered
- * `rimOffset` px out (live-view.mjs). Pixel centers within 0.71 px of a
- * boundary can be partly covered, so every band keeps that margin: inside
- * <= -inset + 0.75, the dark gap up to the rim's inner edge - 0.75, and
- * nothing beyond its outer edge + 0.75.
+ * Runs in the projector page: the aligned scene, drawn by Chrome on a
+ * detached canvas, then every lit pixel classified by its distance to the
+ * nearest mapped paper (max over the paper's edge lines, positive outward).
+ * Aligned, the role color stays inside the paper: a fill `inset` px in and a
+ * `border` px stroke of the same color just inside it (live-view.mjs), and
+ * nothing on the wall. Pixel centers within 0.71 px of a boundary can be
+ * partly covered, so the paper ends at -inset + 0.75 and nothing is lit beyond.
  */
-async function alignedRaster({ H, preview, palette, theme, width, height, rimOffset, inset }) {
+async function alignedRaster({ H, preview, palette, theme, width, height, inset, border }) {
   const insideEdge = -inset + 0.75;
-  const rimInner = rimOffset - 1.5 - 0.75;
-  const rimOuter = rimOffset + 1.5 + 0.75;
   const live = await import("/live-view.mjs");
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -109,8 +106,9 @@ async function alignedRaster({ H, preview, palette, theme, width, height, rimOff
   const background = theme === "light" ? [243, 242, 236] : [0, 0, 0];
   ctx.fillStyle = `rgb(${background.join(",")})`;
   ctx.fillRect(0, 0, width, height);
+  // fill_off is diagnostic only: the color is drawn all the same (contract 2.3).
   const state = { palette, alignment: { status: "ready", matrix: H, projector: { width, height },
-    camera: { width: preview.width, height: preview.height }, overlay: { status: "ok", fill: true } } };
+    camera: { width: preview.width, height: preview.height }, overlay: { status: "fill_off", fill: false } } };
   live.drawProjectorScene(ctx, { state, preview, palette, theme, width, height });
   const map = ({ x, y }) => {
     const w = H[2][0] * x + H[2][1] * y + H[2][2];
@@ -131,10 +129,11 @@ async function alignedRaster({ H, preview, palette, theme, width, height, rimOff
     return [data[k], data[k + 1], data[k + 2]];
   };
   const spread = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b);
+  const away = (color) => Math.hypot(...color.map((value, c) => value - background[c]));
   // Neutral ink, the light background and their blends spread at most 7; the
   // palest default fill (bumper #6cc678 at .35 on black) spreads 31.
   const HUE_SPREAD = 12;
-  const stats = { notes: papers.length, fills: 0, edges: 0, rimMidpoints: 0, huedInside: 0, huedOutside: 0, litInGap: 0, litOutside: 0, lit: 0 };
+  const stats = { notes: papers.length, fills: 0, edges: 0, borderMidpoints: 0, huedInside: 0, litOutside: 0, lit: 0 };
   for (let py = 0; py < height; py++) {
     for (let px = 0; px < width; px++) {
       const k = (py * width + px) * 4;
@@ -142,25 +141,24 @@ async function alignedRaster({ H, preview, palette, theme, width, height, rimOff
       if (color.every((value, c) => Math.abs(value - background[c]) <= 2)) continue;
       stats.lit += 1;
       const d = Math.min(...papers.map((poly) => edgeDistance(poly, px + 0.5, py + 0.5)));
-      const hued = spread(color) > HUE_SPREAD;
-      if (d <= insideEdge) stats.huedInside += hued ? 1 : 0;
-      else if (hued) stats.huedOutside += 1;
-      if (d > insideEdge && d < rimInner) stats.litInGap += 1;
-      if (d > rimOuter) stats.litOutside += 1;
+      if (d <= insideEdge) stats.huedInside += spread(color) > HUE_SPREAD ? 1 : 0;
+      else stats.litOutside += 1;
     }
   }
-  const rim = theme === "light" ? [0x2b, 0x2f, 0x2e] : [255, 255, 255];
   for (const poly of papers) {
     const center = poly.reduce((sum, p) => ({ x: sum.x + p.x / poly.length, y: sum.y + p.y / poly.length }), { x: 0, y: 0 });
-    if (spread(pixel(center.x, center.y)) > HUE_SPREAD) stats.fills += 1;
+    const fill = pixel(center.x, center.y);
+    if (spread(fill) > HUE_SPREAD) stats.fills += 1;
     const sign = Math.sign(signedArea(poly));
     poly.forEach((a, i) => {
       const b = poly[(i + 1) % poly.length];
       const length = Math.hypot(b.x - a.x, b.y - a.y);
       const out = { x: sign * (b.y - a.y) / length, y: -sign * (b.x - a.x) / length };
-      const at = pixel((a.x + b.x) / 2 + rimOffset * out.x, (a.y + b.y) / 2 + rimOffset * out.y);
+      const depth = inset + border / 2;
+      const at = pixel((a.x + b.x) / 2 - depth * out.x, (a.y + b.y) / 2 - depth * out.y);
       stats.edges += 1;
-      if (at.every((value, c) => Math.abs(value - rim[c]) <= 10)) stats.rimMidpoints += 1;
+      // The border lays its color over the fill: about 1.65x as far from the background.
+      if (spread(at) > HUE_SPREAD && away(at) > 1.3 * away(fill)) stats.borderMidpoints += 1;
     });
   }
   stats.png = canvas.toDataURL("image/png");
@@ -389,20 +387,18 @@ try {
   const palette = (await state()).palette;
   for (const theme of ["dark", "light"]) {
     const raster = await projector.evaluate(alignedRaster, {
-      H: SKEW, preview: detection, palette, theme, width: 1280, height: 800, rimOffset: RIM_OFFSET_PX, inset: FILL_INSET_PX,
+      H: SKEW, preview: detection, palette, theme, width: 1280, height: 800, inset: FILL_INSET_PX, border: BORDER_WIDTH_PX,
     });
-    assert.ok(raster.notes >= 4 && raster.fills === raster.notes, `${theme}: every real note filled once checked (${JSON.stringify(raster)})`);
-    assert.equal(raster.huedOutside, 0, `${theme}: no role hue outside the paper's ${FILL_INSET_PX} px inset`);
-    assert.equal(raster.litInGap, 0, `${theme}: nothing lit between the fill and the rim`);
-    assert.equal(raster.litOutside, 0, `${theme}: nothing lit beyond the rims`);
-    assert.ok(raster.rimMidpoints === raster.edges, `${theme}: rim color 6 px outside every edge midpoint`);
+    assert.ok(raster.notes >= 4 && raster.fills === raster.notes, `${theme}: every real note lit in its color (${JSON.stringify(raster)})`);
+    assert.equal(raster.litOutside, 0, `${theme}: nothing lit outside the paper's ${FILL_INSET_PX} px inset, no rim on the wall`);
+    assert.equal(raster.borderMidpoints, raster.edges, `${theme}: a same-color border inside every edge midpoint`);
     assert.ok(raster.huedInside > 100, `${theme}: the fill is visible`);
     writeFileSync(join(output, `aligned-raster-${theme}.png`), Buffer.from(raster.png.split(",")[1], "base64"));
     delete raster.png;
     raster.theme = theme;
     rasters.push(raster);
   }
-  checks.push("aligned rims and fills rasterized by Chrome: no hue outside the paper, a dark gap at every paper edge");
+  checks.push("aligned color rasterized by Chrome: fill and same-color border inside each paper, nothing on the wall, even with fill_off");
   const pattern = await projector.evaluate(patternRaster, { layout: alignmentLayout(1280, 720) });
   assert.equal(pattern.wrongCenters, 0, `pattern dot centers lit exactly as coded (${JSON.stringify(pattern)})`);
   assert.equal(pattern.litBetween, 0, "black between dots");

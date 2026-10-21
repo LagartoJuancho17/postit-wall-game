@@ -26,7 +26,7 @@ import cv2
 import numpy as np
 
 from .model import Camera, Paper, Projector, Wall, apply_homography, normalized_inverse
-from .projector import (RIM_WIDTH_PX, ROLES, offset_polygon, render_pattern, render_scene,
+from .projector import (RIM_WIDTH_PX, ROLES, fill_polygon, offset_polygon, render_pattern, render_scene,
                         rim_polygon, signed_area)
 
 PREVIEW_INTERVAL_S = 0.25
@@ -80,19 +80,21 @@ def clearance(points: np.ndarray, polygon: np.ndarray) -> float:
 
 def rim_error(alignment_matrix: np.ndarray, truth_to_projector: np.ndarray,
               detected: np.ndarray, truth: np.ndarray) -> tuple[float, float] | None:
-    """(corner error, clearance) of the rim drawn for one detection, projector px.
+    """(corner error, color clearance) for one detection, projector px.
 
-    Corner error: the drawn rim polygon vs the rim the true outline would get
-    (both ``rim_polygon``). Clearance: how far the true paper stays inside
-    the rim stroke's inner edge; negative means the rim lights the paper.
+    Corner error: the outline the projector draws from (offset outward like
+    a rim, ``rim_polygon``) vs the same for the true outline. Color
+    clearance: how far the drawn color region (``fill_polygon``) stays
+    inside the true paper; negative means role-colored light on the wall.
     """
-    drawn = rim_polygon(apply_homography(alignment_matrix, detected))
+    mapped = apply_homography(alignment_matrix, detected)
+    drawn = rim_polygon(mapped)
     paper = apply_homography(truth_to_projector, truth)
     wanted = rim_polygon(paper)
     if drawn is None or wanted is None:
         return None
-    inner = offset_polygon(drawn, -RIM_WIDTH_PX / 2)
-    return vertex_distance(drawn, wanted), (clearance(paper, inner) if inner is not None else -np.inf)
+    color = fill_polygon(mapped)
+    return vertex_distance(drawn, wanted), (clearance(color, paper) if color is not None else np.inf)
 
 
 def detections(preview: dict[str, Any]) -> list[tuple[str, np.ndarray]]:
@@ -112,7 +114,7 @@ def frame_record(index: int, preview: dict[str, Any], wall: Wall,
     A detection that touches a paper on the wall belongs to it; one that
     touches only a removed paper's old place is a ghost; anything else is a
     phantom. Per-paper lists (``areas``, ``area_ratios``, ``ious``,
-    ``corner_errors_px``, ``rim_clearances_px``) follow ``wall.papers`` and
+    ``corner_errors_px``, ``color_clearances_px``) follow ``wall.papers`` and
     hold None for a paper with no same-role detection. Rim metrics compare
     the rim the projector draws for the detection (through
     ``alignment_matrix``) with the true outline (through
@@ -174,7 +176,7 @@ def frame_record(index: int, preview: dict[str, Any], wall: Wall,
         "area_ratios": ratios,
         "ious": ious,
         "corner_errors_px": corners,
-        "rim_clearances_px": clearances,
+        "color_clearances_px": clearances,
         "min_iou": min(present_ious) if present_ious else None,
         "max_corner_error_px": max(present_corners) if present_corners else None,
         "detections": [(role, shape.round(2).tolist()) for role, shape in found],

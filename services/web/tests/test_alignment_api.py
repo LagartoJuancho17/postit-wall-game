@@ -301,14 +301,14 @@ class NeutralAndOverlayTests(unittest.TestCase):
         overlay = overlay["alignment"]["overlay"]
         self.assertEqual((overlay["status"], overlay["fill"]), ("fill_off", False))
         self.assertEqual(overlay["detail"], "La cámara toma el color proyectado sobre la pared por un post-it "
-                                            "de llegada; se proyectan solo bordes.")
+                                            "de llegada. Si sacás un papel, su luz puede tardar unos segundos en apagarse.")
 
     def test_a_changed_count_turns_the_fill_off(self):
         rig = Rig(self)
         rig.align()
         overlay = self._check(rig, wall_frame(notes=(("start", 90, 120),)))["alignment"]["overlay"]
-        self.assertEqual(overlay["detail"], "El color proyectado cambiaba la detección (llegada: 1 → 0); "
-                                            "se proyectan solo bordes.")
+        self.assertEqual(overlay["detail"], "El color proyectado cambiaba la detección (llegada: 1 → 0). "
+                                            "Si sacás un papel, su luz puede tardar unos segundos en apagarse.")
 
     def test_check_needs_both_frames_and_clears_them(self):
         rig = Rig(self)
@@ -356,6 +356,19 @@ class RimBridgeTests(unittest.TestCase):
         rig.act("projection_neutral")   # the projector draws no rims now
         xs = [p["x"] for p in rig.preview(full)["roles"]["bumper"]["notes"][0]["points"]]
         self.assertLess(max(xs), 166, "the strip is lost without the bridge")
+
+    def test_aligned_there_is_no_rim_to_discount(self):
+        """Aligned, the color stays inside each paper (contract 2.1), so the
+        bridge must not join anything across a rim that is not drawn."""
+        rig = Rig(self)
+        rig.open()
+        rig.preview()
+        width, height = CAMERA
+        self.assertIsNotNone(rig.game._rim_footprint_unlocked(width, height), "unaligned rims exist")
+        state, _ = rig.align()
+        self.assertEqual(state["alignment"]["status"], "ready")
+        rig.preview()
+        self.assertIsNone(rig.game._rim_footprint_unlocked(width, height))
 
     def test_two_close_papers_never_flip_through_the_live_loop(self):
         """Regression (review, 2026-10-21): bumpers 5-8 px apart counted

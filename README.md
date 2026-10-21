@@ -60,17 +60,19 @@ La detección y sus contornos siguen en directo durante la partida. La física
 usa el tablero con el que se lanzó la pelota: mover un papel cambia el
 contorno en vivo, pero su rebote se actualiza al iniciar el siguiente intento.
 Sin imágenes nuevas durante 1,5 segundos, desaparecen los contornos viejos.
-El proyector muestra solo el fondo elegido, un borde neutro alrededor de cada
-papel detectado y la pelota; el video de la cámara queda en el panel. Sin
-alinear, encaja la imagen de la cámara en la ventana (con bandas si hace
-falta) y avisa `Sin alinear · pulsá A en el panel`: los bordes no caen sobre
-los papeles. Alineado, cada borde rodea su papel a 6 píxeles del proyector y
-la pelota se mueve en coordenadas del proyector.
+El proyector muestra el fondo elegido, la luz de cada papel detectado y la
+pelota; el video de la cámara queda en el panel. Sin alinear, encaja la
+imagen de la cámara en la ventana (con bandas si hace falta), dibuja un
+borde neutro alrededor de cada papel y avisa `Sin alinear · pulsá A en el
+panel`: los bordes no caen sobre los papeles. Alineado, cada papel se
+ilumina por dentro con su color hasta 3 píxeles del proyector de su borde,
+con un borde más fuerte del mismo color, y la pelota se mueve en
+coordenadas del proyector.
 
 ## Alinear cámara y proyector
 
-La cámara y el proyector miran la pared desde lugares distintos. Para que un
-borde caiga justo alrededor de su papel, el panel mide cómo se corresponden
+La cámara y el proyector miran la pared desde lugares distintos. Para que el
+color caiga justo sobre su papel, el panel mide cómo se corresponden
 sus píxeles (una homografía; el detalle está en
 `docs/alignment-and-color.md`).
 
@@ -88,16 +90,21 @@ sus píxeles (una homografía; el detalle está en
   vio pocos puntos (que vea toda la proyección y el proyector esté
   encendido), puntos incoherentes (reflejos), una toma imprecisa (fijá los
   equipos) o muy poca parte de la proyección (encuadrá la pared entera).
-- **Color sobre el papel.** Después de alinear, el panel proyecta un cuadrado
-  de cada color sobre pared vacía. Si la cámara toma alguno por un post-it,
-  el proyector no pone color: sobre los papeles proyecta solo luz neutra
-  (blanca con el fondo oscuro). Si ninguno se confunde, cada papel se ilumina
-  con su color, siempre por dentro del papel. El panel dice cuál quedó.
+- **Encuadre.** La cámara tiene que ver toda la proyección. Si el panel dice
+  pocos puntos (por ejemplo 32 de 60) o poca cobertura, la alineación vale
+  solo para la parte que vio: encuadrá la pared entera y pulsá `A`.
+- **Chequeo de color.** Después de alinear, el panel proyecta un cuadrado de
+  cada color sobre pared vacía y mira si la cámara toma alguno por un
+  post-it. Es solo un aviso: el color se proyecta igual. Si alguno se
+  confunde, el panel avisa que al sacar un papel su luz puede tardar unos
+  segundos en apagarse.
 
-El proyector nunca pone colores sobre la pared vacía, así su propia luz no
-crea post-its falsos. Medido en el simulador de lazo cerrado
-(`services/simulation`), en sala normal, oscura e iluminada: el borde queda a
-1.6-3.8 px de donde debe y nunca toca el papel. Con el diseño anterior, en
+Alineado, el proyector pone color solo por dentro de cada papel, a 3 px de
+su borde, y nada sobre la pared vacía, así su propia luz no crea post-its
+falsos. Medido en el simulador de lazo cerrado (`services/simulation`), en
+sala normal, oscura e iluminada: el contorno queda a 1.3-3.9 px de donde
+debe, el color nunca llega a la pared y un papel quitado se apaga en 0-2
+cuadros. Con el diseño anterior, en
 la pared real la detección cambió de estado 730 veces en 26 minutos
 (`runs/web-events.jsonl`, 19/10), y en el simulador los contornos crecían
 hasta 12 veces el papel.
@@ -109,7 +116,7 @@ navegador, sin Python ni instalación.
 El backend es un port a JavaScript de los servicios de Python (visión,
 alineación, física y estado del juego) sobre OpenCV.js 4.12, la misma versión
 de OpenCV que usa Python. Las pruebas de paridad exigen que el port dé las
-mismas respuestas que Python en 2065 casos (`services/browser/README.md`).
+mismas respuestas que Python en 2116 casos (`services/browser/README.md`).
 
 - Abrí la página en Chrome, permití la cámara y seguí los mismos pasos que
   con el servidor local, alineación incluida.
@@ -171,8 +178,9 @@ proyector y queda guardado en el navegador.
 - **Oscuro**: fondo negro y pelota clara.
 - **Claro**: fondo blanco suave (`#f3f2ec`) y pelota oscura.
 
-En los dos fondos el proyector dibuja bordes neutros (blancos en el oscuro,
-grafito en el claro) y nunca pone color sobre la pared vacía.
+Sin alinear, en los dos fondos el proyector dibuja bordes neutros (blancos
+en el oscuro, grafito en el claro). Alineado, cada papel lleva su color por
+dentro. Nunca pone color sobre la pared vacía.
 
 Al usar el gotero o buscar el ajuste de cámara, la ventana muestra solo su
 fondo, sin bordes ni pelota. Así la lectura de colores y el ajuste de cámara
@@ -394,19 +402,20 @@ mezclados): 140/140 sin ids equivocados, error contra la verdad p95 ≤ 0,11 px.
 un proyector y una cámara simulados, y 18 escenarios (sin alinear, alineado
 exacto o con 2 px de error, con y sin relleno, sala oscura, iluminada,
 exposición automática y el sistema completo con su alineación y su chequeo
-de color). Exige 0 parpadeos, 0 post-its fantasma, el borde a ≤ 4 px de
-donde debe y nunca sobre el papel. La línea base con el proyector anterior
+de color). Exige 0 parpadeos, 0 post-its fantasma, el contorno a ≤ 4 px de
+donde debe y el color nunca sobre la pared. La línea base con el proyector anterior
 reproduce la falla medida en la pared real.
 
 `services/browser/parity` exporta las respuestas de Python y los tests de
-`services/browser` exigen que el port de JavaScript dé las mismas en 2065
+`services/browser` exigen que el port de JavaScript dé las mismas en 2116
 casos: detección, refinamiento subpíxel, alineación con sus cinco motivos de
 falla, sondas y guiones completos del controlador.
 
 `tests/closed-loop-browser.mjs` abre el panel y el proyector reales en Chrome
 con una cámara simulada que filma la pared iluminada por la ventana del
 proyector, con los dos backends: la alineación sale a 0,03-0,08 px de la
-verdad, los contornos a 0,4 px de los papeles y los bordes a 3 px por fuera.
+verdad, los contornos a 0,5 px de los papeles, cada papel con su color y
+ninguna luz del proyector sobre la pared alrededor.
 
 `services/web/evals/eyedropper.py` mide el gotero: hace 588 clicks sobre
 fotos de la pared en siete condiciones de luz y foco, y exige que todo click
