@@ -193,6 +193,10 @@ proyector y queda guardado en el navegador.
 La pelota no se ve hasta que la soltás (`Espacio`): aparece debajo del
 inicio en el momento en que empieza a caer.
 
+Alineado, cada post-it brilla en su color con el borde del papel en blanco
+(antes ese borde quedaba oscuro). Con la sala a oscuras ese blanco confunde
+a la cámara: dejá alguna luz encendida.
+
 Sin alinear, en los dos fondos el proyector dibuja bordes neutros (blancos
 en el oscuro, grafito en el claro). Alineado, cada papel lleva su color por
 dentro. Nunca pone color sobre la pared vacía.

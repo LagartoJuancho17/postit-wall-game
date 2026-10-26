@@ -25,6 +25,7 @@ import {
   BALL_GLOW_PX,
   BORDER_ALPHA,
   BORDER_WIDTH_PX,
+  EDGE_ALPHA,
   alignedMatrix,
   drawLiveDetection,
   drawProjectorScene,
@@ -143,8 +144,8 @@ test("contract constants and neutral colors", () => {
   assert.equal(FILL_ALPHA, 0.35);
   assert.equal(MIN_FILL_AREA_PX, 25);
   assert.deepEqual(NEUTRAL, {
-    dark: { rim: "#ffffff", ball: "#f6fbfc", ballHighlight: "#ffffff", ballShade: "#a3afb3" },
-    light: { rim: "#2b2f2e", ball: "#17211f", ballHighlight: "#5d6b68", ballShade: "#050807" },
+    dark: { rim: "#ffffff", ball: "#f6fbfc", ballHighlight: "#ffffff", ballShade: "#a3afb3", edge: "#ffffff" },
+    light: { rim: "#2b2f2e", ball: "#17211f", ballHighlight: "#5d6b68", ballShade: "#050807", edge: "#ffffff" },
   });
   assert.equal(UNALIGNED_HINT, "Sin alinear · pulsá A en el panel");
   for (const theme of ["dark", "light"]) {
@@ -289,9 +290,21 @@ test("aligned projector lights each paper in its role color 3 px inside, with a 
       drawProjectorScene(ctx, { state: aligned({ overlay }), preview, palette, theme, width: 1280, height: 800 });
       assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
       const fills = ctx.draws.filter((d) => d.kind === "fill");
-      const strokes = ctx.draws.filter((d) => d.kind === "stroke");
+      const edges = ctx.draws.filter((d) => d.kind === "stroke" && d.strokeStyle === NEUTRAL[theme].edge);
+      const strokes = ctx.draws.filter((d) => d.kind === "stroke" && d.strokeStyle !== NEUTRAL[theme].edge);
       assert.deepEqual(fills.map((d) => d.fillStyle), colors, `${theme} ${overlay.status}: each paper in its color`);
       assert.deepEqual(strokes.map((d) => d.strokeStyle), colors, "one border per paper, in its color; no neutral rim");
+      // 2026-10-26: the unlit edge strip is white, drawn before the fills, never past the paper.
+      assert.equal(edges.length, 4);
+      assert.ok(ctx.draws.indexOf(edges.at(-1)) < ctx.draws.indexOf(fills[0]), "edges under the fills");
+      for (const edge of edges) {
+        assert.deepEqual([edge.globalAlpha, edge.lineWidth], [EDGE_ALPHA, FILL_INSET_PX]);
+        assert.ok(noEffects(edge));
+        samePolygon(points(edge.path), offsetConvexPolygon(mapped, -FILL_INSET_PX / 2), 1e-9, "edge strip");
+        for (const vertex of offsetConvexPolygon(points(edge.path), FILL_INSET_PX / 2)) {
+          assert.ok(insideConvex(vertex, mapped, -1e-6), "the white never leaves the paper");
+        }
+      }
       for (const fill of fills) {
         assert.equal(fill.globalAlpha, FILL_ALPHA);
         assert.ok(noEffects(fill), "no colored shadow or blur");
@@ -301,7 +314,7 @@ test("aligned projector lights each paper in its role color 3 px inside, with a 
         assert.deepEqual([stroke.globalAlpha, stroke.lineWidth], [BORDER_ALPHA, BORDER_WIDTH_PX]);
         assert.ok(noEffects(stroke));
         samePolygon(points(stroke.path), offsetConvexPolygon(mapped, -(FILL_INSET_PX + BORDER_WIDTH_PX / 2)), 1e-9, "border");
-        // Its outer edge is the fill's edge: the paper's last 3 px get no light, the wall none.
+        // Its outer edge is the fill's edge: the paper's last 3 px are the white edge, the wall gets none.
         for (const vertex of offsetConvexPolygon(points(stroke.path), BORDER_WIDTH_PX / 2)) {
           assert.ok(insideConvex(vertex, mapped, FILL_INSET_PX - 1e-6));
         }
@@ -511,7 +524,7 @@ test("H scaled by any factor, even a negative one, draws the same notes and ball
     return ctx.draws.map((d) => ({ kind: d.kind, path: d.path, color: JSON.stringify([d.fillStyle, d.strokeStyle]) }));
   };
   const expected = draw(H);
-  assert.equal(expected.filter((d) => d.kind === "stroke").length, 4, "four borders, no aim line");
+  assert.equal(expected.filter((d) => d.kind === "stroke").length, 8, "four white edges and four borders, no aim line");
   for (const factor of [-1, 2.5, -0.01]) {
     const scaled = draw(H.map((row) => row.map((value) => value * factor)));
     assert.equal(scaled.length, expected.length, `factor ${factor}`);

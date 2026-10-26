@@ -91,6 +91,12 @@ AIM_WIDTH_PX = 3.0
 # The new rules' ball (live-view.mjs drawBall): glow, then a shaded body. The
 # canvas has no gradients; the body is three neutral layers that land the
 # same light where the gradient does (shade at the edge, highlight up-left).
+# Aligned: white over each paper's unlit edge strip, from FILL_INSET_PX
+# inside to the edge, under the role fill (live-view.mjs drawEdge).
+HALO_IN_PX = -3.0
+HALO_OUT_PX = 0.0
+HALO_ALPHA = 0.8
+HALO_COLOR = "#ffffff"
 BALL_GLOW_PX = 4.0
 BALL_GLOW_ALPHA = 0.22
 BALL_SHADE = {"dark": "#a3afb3", "light": "#050807"}
@@ -727,6 +733,14 @@ def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | No
     # Contract 2.1: a rim never lights another detected note (grown by
     # RIM_CLEAR_PX); a paper our rim would cross stays whole.
     keep_clear = [offset_polygon(shape, RIM_CLEAR_PX) if is_convex(shape) else None for _, shape in notes]
+    if mapping is not None:
+        # ``drawHalo``: white over each paper's unlit edge strip and just past
+        # it, under every fill, so the paper's edge reads white, not dark.
+        for _, shape in notes:
+            middle = offset_polygon(shape, (HALO_IN_PX + HALO_OUT_PX) / 2)
+            if fill_polygon(shape) is not None and middle is not None and is_convex(middle):
+                canvas.stroke(middle, HALO_OUT_PX - HALO_IN_PX, HALO_COLOR, miter_limit=RIM_MITER_LIMIT,
+                              alpha=HALO_ALPHA)
     for index, (role, shape) in enumerate(notes):
         if mapping is not None:
             # Aligned: the role color strictly inside the paper, nothing outside.

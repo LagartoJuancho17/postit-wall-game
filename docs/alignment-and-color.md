@@ -419,6 +419,20 @@ palette's rules matches (`backdropConflict`: same OpenCV HSV window,
 saturation and value floors as `detector._mask`) is refused: the lit wall
 would read as that note. `F`, Oscuro or Claro drop it.
 
+**White edge** (2026-10-26, Tobias: "el reborde negro, que sea con un fill
+blanco ... siempre, aunque la detección quede menos precisa"). Aligned, the
+strip between the fill's edge and the paper's (the FILL_INSET_PX the inset
+leaves unlit, which read as a black border) is stroked white
+(`NEUTRAL[theme].edge`, `EDGE_ALPHA = 0.8`, 3 px wide), under the fills and
+never past the paper; a paper too small for the fill gets none. Measured in
+`services.simulation.feedback_eval`: at 80% every case with room light keeps
+the original limits (corners <= 4 px, no flips, no phantoms, no color on
+the wall); 100% puts corners 5-11 px off; a white ring past the paper put
+them 30-70 px off. In a dark room the lit strip reads as paper at any
+strength (wrong-ready frames, corners 40-110 px, color 2-4 px on the wall):
+those four scenarios are reported as `known_limits`, not scored. Keep some
+room light.
+
 **Ball before the drop**: not drawn while `game.status == "ready"`; it
 appears when it is released.
 

@@ -108,6 +108,10 @@ function homography(from, to) {
   return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1]];
 }
 
+// Budgets of the white edge strip (live-view.mjs EDGE_ALPHA), measured 2026-10-26.
+const WHITE_EDGE_CORNER_CAMERA_PX = 8;
+const WHITE_EDGE_REACH_CAMERA_PX = 2;
+
 const apply = (H, [x, y]) => {
   const w = H[2][0] * x + H[2][1] * y + H[2][2];
   return [(H[0][0] * x + H[0][1] * y + H[0][2]) / w, (H[1][0] * x + H[1][1] * y + H[1][2]) / w];
@@ -282,6 +286,7 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
         const ys = paper.points.map(([, y]) => y);
         let reach = -Infinity;
         let wallPixels = 0;
+        let coloredWallPixels = 0;   // wall light with a hue: a role color, never allowed
         for (let j = Math.floor(Math.min(...ys) - 14); j <= Math.ceil(Math.max(...ys) + 14); j += 1) {
           for (let i = Math.floor(Math.min(...xs) - 14); i <= Math.ceil(Math.max(...xs) + 14); i += 1) {
             const k = j * width + i;
@@ -291,9 +296,12 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
             if (d > 0 && papers.some((other) => other !== paper && outside(other.points, i + 0.5, j + 0.5) < 0)) continue;
             reach = Math.max(reach, d);
             if (d > 0) wallPixels += 1;
+            const spread = Math.max(light[3 * k], light[3 * k + 1], light[3 * k + 2])
+              - Math.min(light[3 * k], light[3 * k + 1], light[3 * k + 2]);
+            if (d > 0 && spread > 0.08) coloredWallPixels += 1;
           }
         }
-        return { role: paper.role, reach, wallPixels };
+        return { role: paper.role, reach, wallPixels, coloredWallPixels };
       });
     },
   };
@@ -475,12 +483,20 @@ async function run({ kind, room, url }) {
       }
     }
     report.cornerErrorCameraPx = cornerWorst;
-    assert.ok(cornerWorst < 1.5, `live outline corners ${cornerWorst.toFixed(2)} camera px from the papers`);
+    // The white edge (2026-10-26, Tobias accepted less precise outlines):
+    // lighting the paper's edge strip costs outline precision (0.5 camera px
+    // without it, 5-7 with it, measured) and, through camera blur, a sliver of
+    // neutral light right at the edge. Never a role color on the wall.
+    assert.ok(cornerWorst < WHITE_EDGE_CORNER_CAMERA_PX,
+      `live outline corners ${cornerWorst.toFixed(2)} camera px from the papers`);
     const wall = samples.flatMap((sample) => sample.wall);
-    report.wall = { maxReachCameraPx: Math.max(...wall.map((w) => w.reach)), wallPixels: wall.reduce((sum, w) => sum + w.wallPixels, 0) };
-    assert.equal(report.wall.wallPixels, 0, `no projector light on the wall around any paper (${JSON.stringify(report.wall)})`);
+    report.wall = { maxReachCameraPx: Math.max(...wall.map((w) => w.reach)), wallPixels: wall.reduce((sum, w) => sum + w.wallPixels, 0),
+      coloredWallPixels: wall.reduce((sum, w) => sum + w.coloredWallPixels, 0) };
+    assert.equal(report.wall.coloredWallPixels, 0, `no role color on the wall around any paper (${JSON.stringify(report.wall)})`);
+    assert.ok(report.wall.maxReachCameraPx <= WHITE_EDGE_REACH_CAMERA_PX,
+      `projector light stays at the paper edges (${JSON.stringify(report.wall)})`);
     report.checks.push(`live loop: 0 flips, outline corners within ${cornerWorst.toFixed(2)} camera px, light reaches ` +
-      `${report.wall.maxReachCameraPx.toFixed(2)} camera px from the paper edges, none on the wall`);
+      `${report.wall.maxReachCameraPx.toFixed(2)} camera px from the paper edges, no role color on the wall`);
     // Aligned, every paper carries its role color, whatever the overlay check said (contract 2.3).
     const fills = await panel.evaluate(() => window.closedLoopCamera.fills());
     const spreads = fills.map(({ light }) => Math.max(...light) - Math.min(...light));

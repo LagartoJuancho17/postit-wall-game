@@ -48,6 +48,16 @@ export const RIM_WIDTH_PX = 3;
 /** The rim stroke's canvas miter limit; the offset path itself is a pure miter. */
 export const RIM_MITER_LIMIT = 2;
 export const FILL_ALPHA = 0.35;
+/**
+ * Aligned: the paper's last FILL_INSET_PX (left dark by the inset) are lit
+ * white at EDGE_ALPHA (Tobias, 2026-10-26: "el reborde negro, que sea con un
+ * fill blanco", accepting less precise outlines). Never past the paper's
+ * edge. Measured in the closed loop: 80% keeps every lit-room case within
+ * the original limits (corners <= 4 px, no flips, no color on the wall);
+ * 100% puts corners 5-11 px off. A dark room fails at any strength (a known
+ * limit of feedback_eval): keep some room light.
+ */
+export const EDGE_ALPHA = 0.8;
 /** A thinner inset fill is noise on the wall, not a note. */
 export const MIN_FILL_AREA_PX = 25;
 export const BALL_RADIUS_PX = 10;
@@ -65,8 +75,8 @@ export const HINT_FONT_PX = 16;
 export const HINT_MARGIN_PX = 16;
 /** The only colors the projector uses outside a paper, per theme. */
 export const NEUTRAL = {
-  dark: { rim: "#ffffff", ball: "#f6fbfc", ballHighlight: "#ffffff", ballShade: "#a3afb3" },
-  light: { rim: "#2b2f2e", ball: "#17211f", ballHighlight: "#5d6b68", ballShade: "#050807" },
+  dark: { rim: "#ffffff", ball: "#f6fbfc", ballHighlight: "#ffffff", ballShade: "#a3afb3", edge: "#ffffff" },
+  light: { rim: "#2b2f2e", ball: "#17211f", ballHighlight: "#5d6b68", ballShade: "#050807", edge: "#ffffff" },
 };
 export const PATTERN_BACKGROUND = "#000000";
 export const PATTERN_DOT = "#ffffff";
@@ -245,6 +255,21 @@ function drawRim(ctx, points, color, keepClear = []) {
 }
 
 /** Role color strictly inside the paper, so a ghost on bare wall shrinks every frame. */
+/** White over the paper's unlit edge strip: from the fill's edge to the paper's. */
+function drawEdge(ctx, points, color) {
+  // A paper too small for the fill gets no light at all, edge included.
+  const middle = fillPolygon(points) && offsetConvexPolygon(points, -FILL_INSET_PX / 2);
+  if (!middle) return;
+  tracePolygon(ctx, middle);
+  ctx.globalAlpha = EDGE_ALPHA;
+  ctx.lineWidth = FILL_INSET_PX;
+  ctx.lineJoin = "miter";
+  ctx.miterLimit = RIM_MITER_LIMIT;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 function drawFill(ctx, points, color) {
   const inset = fillPolygon(points);
   if (!inset) return;
@@ -356,6 +381,8 @@ export function drawProjectorScene(ctx, {
   plainEffects(ctx);
   const projected = [...projectedNotes(notes, mapping?.toProjector, width, height)];
   const clear = projected.map(({ points }) => offsetConvexPolygon(points, RIM_CLEAR_PX));
+  // Aligned: every paper's edge strip white first, then the role fills over them.
+  if (matrix) for (const { points } of projected) drawEdge(ctx, points, colors.edge);
   for (const [index, { role, points }] of projected.entries()) {
     if (matrix) {
       // Aligned: the role color strictly inside the paper, nothing outside.

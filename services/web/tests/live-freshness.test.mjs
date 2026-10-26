@@ -272,7 +272,7 @@ test("the projector draw path follows the projection mode and the panel's local 
     const plain = show({ ...live, projection: { mode: "live" } });
     assert.deepEqual(plain.filter((draw) => draw.kind === "fill").map((draw) => [draw.color, draw.alpha]), [["#30d0c0", 0.35]],
       "aligned, the paper carries its role color without waiting for the check (contract 2.1)");
-    assert.equal(plain.filter((draw) => draw.kind === "stroke").length, 1, "the inner border in the role color; no aim line");
+    assert.equal(plain.filter((draw) => draw.kind === "stroke").length, 2, "the white edge and the inner border in the role color; no aim line");
     assert.equal(plain.filter((draw) => draw.kind === "stroke" && draw.color === "#30d0c0").length, 1);
     assert.equal(view.body.dataset.mode, "live");
     assert.equal(view.stateLabel.textContent, "Post-it Wall · Detección en vivo");

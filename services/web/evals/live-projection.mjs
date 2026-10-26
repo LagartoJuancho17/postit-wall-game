@@ -40,6 +40,7 @@ import {
   HINT_MARGIN_PX,
   MIN_FILL_AREA_PX,
   NEUTRAL,
+  EDGE_ALPHA,
   PATTERN_BACKGROUND,
   PATTERN_DOT,
   RIM_OFFSET_PX,
@@ -215,9 +216,17 @@ for (const [name, { preview, palette }] of Object.entries(samples)) {
             drawProjectorScene(ctx, { state: { alignment: alignment(fill) }, preview, palette, theme, width, height });
             assert.equal(ctx.draws.filter((d) => d.kind === "text").length, 0, "no hint once aligned");
             const fills = ctx.draws.filter((d) => d.kind === "fill");
-            const strokes = ctx.draws.filter((d) => d.kind === "stroke");
+            const edges = ctx.draws.filter((d) => d.kind === "stroke" && d.strokeStyle === NEUTRAL[theme].edge);
+            const strokes = ctx.draws.filter((d) => d.kind === "stroke" && d.strokeStyle !== NEUTRAL[theme].edge);
             assert.equal(fills.length, notes.length, "every real note is big enough for its color");
             assert.equal(strokes.length, notes.length, "one inner border per note, no rim");
+            // The paper's unlit edge strip is white (2026-10-26), from the fill's edge to the paper's, never past it.
+            assert.equal(edges.length, notes.length, "one white edge per note");
+            notes.forEach((note, i) => {
+              const paper = note.shape.points.map((p) => project(matrix, p));
+              assert.ok(edges[i].globalAlpha === EDGE_ALPHA && edges[i].lineWidth === FILL_INSET_PX && plain(edges[i]), "white edge strip");
+              assertOffset(edges[i].points, paper, -FILL_INSET_PX / 2, "edge strip centered in the unlit band");
+            });
             notes.forEach((note, i) => {
               const paper = note.shape.points.map((p) => project(matrix, p));
               const hex = palette.roles[note.role].hex;
@@ -286,7 +295,7 @@ for (const [name, { state }] of Object.entries(phases)) {
           for (const draw of ctx.draws) {
             assert.notEqual(draw.kind, "image");
             const color = draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle;
-            const neutral = (value) => [ink.ball, ink.rim, ink.ballHighlight, ink.ballShade].includes(value);
+            const neutral = (value) => [ink.ball, ink.rim, ink.ballHighlight, ink.ballShade, ink.edge].includes(value);
             const shaded = typeof color === "object" && color.stops.length === 3 && color.stops.every(([, stop]) => neutral(stop));
             assert.ok((neutral(color) || shaded || paperLight(draw)) && plain(draw),
               `${draw.kind} ${color} is neutral, or a paper's own color, and plain`);
