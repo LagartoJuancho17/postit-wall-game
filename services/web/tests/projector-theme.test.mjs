@@ -77,9 +77,10 @@ test("F switches the background unless typing or modified", () => {
 
 test("the projector draws only theme colors and blacks out for scans", () => {
   assert.doesNotMatch(projector, /["']#[0-9a-fA-F]{3,8}["']/, "hard-coded color in projector.js");
-  assert.match(projector, /ctx\.fillStyle = projectorBackground\(theme, blackoutForced\);/);
+  assert.match(projector, /ctx\.fillStyle = projectorBackground\(theme, blackoutForced, backdrop\);/);
   assert.match(projector, /data\.type === "theme"\) \{\s*theme = projectorTheme\(data\.theme\);\s*draw\(\);/);
-  assert.match(projector, /window\.addEventListener\("storage", \(event\) => \{\s*if \(event\.key !== THEME_KEY\) return;/);
+  assert.match(projector, /window\.addEventListener\("storage", \(event\) => \{\s*if \(event\.key === BACKDROP_KEY\) \{/);
+  assert.match(projector, /if \(event\.key !== THEME_KEY\) return;/);
   // F keeps working in the live projector after calibration was removed.
   assert.match(projector, /if \(isThemeShortcut\(event\)\) \{[\s\S]*?setTheme\(theme === "dark" \? "light" : "dark"\);/);
   assert.doesNotMatch(projector, /calibrat|drawBoard|drawTarget/);
@@ -97,4 +98,43 @@ test("the panel switch saves the choice and tells the projector window", () => {
   // J keeps priority; F comes right after it.
   assert.match(operator, /openProjector\(\);\s*return;\s*\}\s*if \(isThemeShortcut\(event\)\) \{/);
   assert.equal(THEME_KEY, "postit-wall:projector-theme");
+});
+
+test("the operator's own background: stored, sent to the projector, refused when it reads as a post-it", async () => {
+  const core = await import("../ui/ui-core.mjs");
+  const palette = { roles: {
+    start: { hue_low: 21, hue_high: 35, min_saturation: 89, min_value: 82 },
+    goal: { hue_low: 164, hue_high: 10, min_saturation: 66, min_value: 102 },   // wraps through red
+    bumper: { hue_low: 37, hue_high: 51, min_saturation: 70, min_value: 88 },
+    marker: { hue_low: 125, hue_high: 162, min_saturation: 75, min_value: 55 },
+  } };
+  // services/vision/palette.py hsv_from_hex, value for value.
+  assert.deepEqual(core.hsvFromHex("#1a2a4a"), [110, 165, 74]);
+  assert.deepEqual(core.hsvFromHex("#ff4fa0"), [166, 176, 255]);
+  assert.deepEqual(core.hsvFromHex("#000000"), [0, 0, 0]);
+  assert.equal(core.backdropConflict("#ffd400", palette), "start");
+  assert.equal(core.backdropConflict("#88cc33", palette), "bumper");
+  assert.equal(core.backdropConflict("#ff2010", palette), "goal", "a wrapped hue window");
+  for (const safe of ["#000000", "#1a2a4a", "#202020", "#ffffff", "#7a7a80", "nope", null]) {
+    assert.equal(core.backdropConflict(safe, palette), null, String(safe));
+  }
+  assert.equal(core.themeForBackdrop("#1a2a4a"), "dark");
+  assert.equal(core.themeForBackdrop("#e8e4d8"), "light");
+  assert.equal(core.projectorBackground("dark", false, "#1A2A4A"), "#1a2a4a");
+  assert.equal(core.projectorBackground("dark", true, "#1a2a4a"), "#000000", "scans stay pure black");
+  assert.equal(core.projectorBackground("light", false, "#12345"), core.projectorColors("light").background);
+  const store = new Map([[core.BACKDROP_KEY, "#ABCDEF"]]);
+  assert.equal(core.readBackdrop({ getItem: (key) => store.get(key) ?? null }), "#abcdef");
+  assert.equal(core.readBackdrop({ getItem: () => "red" }), null);
+  assert.equal(core.readBackdrop({ getItem: () => { throw new Error("blocked"); } }), null);
+  // The panel control, its refusal and the channel message.
+  assert.match(page, /id="backdrop-color" type="color"/);
+  assert.match(page, /id="backdrop-reset"/);
+  assert.match(operator, /const role = backdropConflict\(hex, state\?\.palette\);/);
+  assert.match(operator, /Ese fondo la cámara lo confunde con/);
+  assert.match(operator, /channel\.postMessage\(\{ type: "backdrop", hex: customBackdrop \}\);/);
+  assert.match(projector, /data\.type === "backdrop"\) \{/);
+  // F (either window) goes back to a theme background.
+  assert.match(projector, /if \(!localScene && !blackoutForced && backdrop !== null\) dropBackdrop\(\);/);
+  assert.match(operator, /customBackdrop !== null\) setBackdrop\(null\);/);
 });

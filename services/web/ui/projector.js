@@ -1,8 +1,10 @@
 import {
+  BACKDROP_KEY,
   isThemeShortcut,
   projectionSize,
   projectorBackground,
   projectorTheme,
+  readBackdrop,
   THEME_KEY,
   withTimeout,
 } from "./ui-core.mjs";
@@ -30,6 +32,7 @@ let tickBusy = false;
 let resizeTimer = null;
 let viewport = projectionSize(window);
 let theme = storedTheme();
+let backdrop = readBackdrop(window.localStorage);   // the operator's own background, or null
 
 function storedTheme() {
   try {
@@ -48,6 +51,16 @@ function setTheme(next) {
   }
   channel.postMessage({ type: "theme", theme });
   draw();
+}
+
+function dropBackdrop() {
+  backdrop = null;
+  try {
+    localStorage.removeItem(BACKDROP_KEY);
+  } catch {
+    // The panel still hears it on the channel.
+  }
+  channel.postMessage({ type: "backdrop", hex: null });
 }
 
 function showError(error) {
@@ -127,7 +140,7 @@ async function ackAfterDraw(type, id) {
 
 function drawBackground() {
   // A scan or camera search needs pure black whatever the theme.
-  ctx.fillStyle = projectorBackground(theme, blackoutForced);
+  ctx.fillStyle = projectorBackground(theme, blackoutForced, backdrop);
   ctx.fillRect(0, 0, viewport.width, viewport.height);
 }
 
@@ -175,6 +188,8 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     // Not while the camera is capturing what this window shows (a run, a
     // search or a pick): the light must not change between two captures.
+    // F goes back to a theme background: the operator's own color is dropped.
+    if (!localScene && !blackoutForced && backdrop !== null) dropBackdrop();
     if (!localScene && !blackoutForced) setTheme(theme === "dark" ? "light" : "dark");
   }
 });
@@ -217,6 +232,9 @@ channel.onmessage = async (event) => {
   } else if (data.type === "theme") {
     theme = projectorTheme(data.theme);
     draw();
+  } else if (data.type === "backdrop") {
+    backdrop = typeof data.hex === "string" && /^#[0-9a-f]{6}$/i.test(data.hex) ? data.hex.toLowerCase() : null;
+    draw();
   }
 };
 
@@ -227,6 +245,11 @@ document.addEventListener("visibilitychange", () => {
 });
 
 window.addEventListener("storage", (event) => {
+  if (event.key === BACKDROP_KEY) {
+    backdrop = readBackdrop(window.localStorage);
+    draw();
+    return;
+  }
   if (event.key !== THEME_KEY) return;
   theme = projectorTheme(event.newValue);
   draw();

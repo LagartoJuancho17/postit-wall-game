@@ -757,9 +757,73 @@ export function projectorColors(theme) {
   return PROJECTOR_THEMES[projectorTheme(theme)];
 }
 
-/** The projector's fill: the theme's background, or black while scanning. */
-export function projectorBackground(theme, forcedBlack) {
-  return forcedBlack ? SCAN_BLACK : projectorColors(theme).background;
+/**
+ * The projector's fill: black while scanning, else the operator's own
+ * background color when set (a valid #rrggbb), else the theme's.
+ */
+export function projectorBackground(theme, forcedBlack, custom = null) {
+  if (forcedBlack) return SCAN_BLACK;
+  return HEX_COLOR.test(custom ?? "") ? custom.toLowerCase() : projectorColors(theme).background;
+}
+
+/** Where the operator's own projector background (#rrggbb) is remembered. */
+export const BACKDROP_KEY = "postit-wall:projector-backdrop";
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** The stored custom background, or null (none, invalid, or storage blocked). */
+export function readBackdrop(storage) {
+  try {
+    const value = storage?.getItem(BACKDROP_KEY);
+    return HEX_COLOR.test(value ?? "") ? value.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A #rrggbb color in OpenCV's 8-bit HSV (hue 0..179, saturation and value
+ * 0..255), as services/vision/palette.py hsv_from_hex.
+ */
+export function hsvFromHex(hex) {
+  const [red, green, blue] = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+  if (delta > 0) {
+    if (max === red) hue = ((green - blue) / delta) % 6;
+    else if (max === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue /= 6;
+    if (hue < 0) hue += 1;
+  }
+  return [Math.round(hue * 180) % 180, Math.round(max === 0 ? 0 : (delta / max) * 255), Math.round(max * 255)];
+}
+
+/**
+ * The role whose color rule (services/vision/detector.py _mask) would read a
+ * wall lit in `hex` as that post-it, or null. A background like that makes
+ * the whole wall a note, so the panel refuses it.
+ */
+export function backdropConflict(hex, palette) {
+  if (!HEX_COLOR.test(hex ?? "")) return null;
+  const [hue, saturation, value] = hsvFromHex(hex);
+  for (const role of PALETTE_ROLES) {
+    const rule = palette?.roles?.[role];
+    if (!rule || ![rule.hue_low, rule.hue_high, rule.min_saturation, rule.min_value].every(Number.isFinite)) continue;
+    if (saturation < rule.min_saturation || value < rule.min_value) continue;
+    const inside = rule.hue_low <= rule.hue_high
+      ? hue >= rule.hue_low && hue <= rule.hue_high
+      : hue >= rule.hue_low || hue <= rule.hue_high;
+    if (inside) return role;
+  }
+  return null;
+}
+
+/** The theme whose neutral ball, rims and texts read on a background: light ones on dark. */
+export function themeForBackdrop(hex) {
+  if (!HEX_COLOR.test(hex ?? "")) return null;
+  return contrastRatio(hex, "#000000") >= contrastRatio(hex, "#ffffff") ? "light" : "dark";
 }
 
 /** F switches the projector background, like J opens the projector. */

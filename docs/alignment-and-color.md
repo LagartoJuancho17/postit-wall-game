@@ -407,6 +407,21 @@ draws nothing on the wall around it. Unaligned it draws only neutral rims.
 New projection mode `neutral`: the projector draws only the theme
 background (dark `#000000`, light `#f3f2ec`), no notes, no ball.
 
+**Operator background** (2026-10-26, Tobias: "que yo pueda ir editando el
+FONDO manualmente"). The panel's color picker sets any `#rrggbb` as the
+projector background (localStorage `postit-wall:projector-backdrop`,
+BroadcastChannel `{type: "backdrop", hex | null}`); it replaces the theme
+background everywhere the theme one was used, neutral mode included, but
+never the pure black of a scan or a pattern. The theme follows its
+brightness (`themeForBackdrop`: the higher WCAG contrast of black or
+white) so the ball, rims and texts stay readable. A color one of the
+palette's rules matches (`backdropConflict`: same OpenCV HSV window,
+saturation and value floors as `detector._mask`) is refused: the lit wall
+would read as that note. `F`, Oscuro or Claro drop it.
+
+**Ball before the drop**: not drawn while `game.status == "ready"`; it
+appears when it is released.
+
 - Action `projection_neutral` (same 409 rule as `projection_black`), sets
   `projection.mode = "neutral"`. `projection_restore` returns to `live`.
 - BroadcastChannel `{type: "neutral", id}` -> projector draws neutral, waits

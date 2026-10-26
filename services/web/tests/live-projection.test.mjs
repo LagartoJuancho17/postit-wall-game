@@ -420,7 +420,7 @@ test("camera-space ball maps through H when aligned, radius scaled by H's local 
   const position = { x: 405, y: 190 };
   const ctx = canvas();
   drawProjectorScene(ctx, { state: { ...aligned(), game: { space: "camera", width: 640, height: 480, position,
-    status: "ready" } }, width: 1280, height: 800 });
+    status: "running" } }, width: 1280, height: 800 });
   const [x, y, radius] = ball(ctx)[0].path[0].slice(1, 4);
   const center = applyHomography(H, position);
   near(x, center.x, 1e-6);
@@ -433,7 +433,7 @@ test("camera-space ball maps through H when aligned, radius scaled by H's local 
 test("the ball is a shaded neutral sphere with a soft glow, and result texts are neutral, in both themes", () => {
   for (const theme of ["dark", "light"]) {
     const ready = canvas({ dirty: true });
-    drawProjectorScene(ready, { state: { game: { position: { x: 100, y: 50 }, status: "ready", width: 640, height: 480 } },
+    drawProjectorScene(ready, { state: { game: { position: { x: 100, y: 50 }, status: "running", width: 640, height: 480 } },
       theme, width: 1280, height: 720 });
     assert.equal(ready.draws.filter((d) => d.kind === "stroke").length, 0, "no aim line");
     const [halo] = glow(ready);
@@ -601,13 +601,14 @@ test("unaligned, a rim is clipped out of every other note grown by RIM_CLEAR_PX,
   assert.equal(liveView.RIM_CLEAR_PX, 3);
 });
 
-test("the dropped ball shows no direction at any status, and the aim API is gone", () => {
+test("the ball is hidden until released, never shows a direction, and the aim API is gone", () => {
   for (const status of ["ready", "running", "won", "lost"]) {
     const ctx = canvas();
     drawProjectorScene(ctx, { state: { game: { status, space: "projector", width: 1280, height: 800, position: { x: 200, y: 600 },
       gravity_px_s2: 1280 } }, width: 1280, height: 800 });
     assert.equal(ctx.draws.filter((d) => d.kind === "stroke").length, 0, status);
-    assert.equal(ball(ctx).length, 1, status);
+    assert.equal(ball(ctx).length, status === "ready" ? 0 : 1, status);
+    assert.equal(glow(ctx).length, status === "ready" ? 0 : 1, status);
   }
   for (const name of ["aimPath", "AIM_LENGTH_PX", "AIM_PREVIEW_S", "AIM_WIDTH_PX"]) assert.equal(name in liveView, false, name);
 });

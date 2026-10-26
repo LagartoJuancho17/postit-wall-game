@@ -270,6 +270,10 @@ for (const [name, { state }] of Object.entries(phases)) {
           // color (contract 2.1), checked geometrically above.
           const arcs = ctx.draws.filter((d) => d.kind === "fill" && Number.isFinite(d.points?.[0]?.radius));
           const balls = arcs.filter((d) => typeof d.fillStyle === "object");
+          if (expected.state.game.status === "ready") {
+            assert.equal(arcs.length, 0, "the ball is hidden until it is released");
+            return;
+          }
           assert.equal(balls.length, 1, "one ball, no frozen board polygons");
           assert.equal(arcs.length, 2, "the ball and its glow");
           const roleHexes = new Set(Object.values(state.palette?.roles ?? {}).map((role) => role.hex));

@@ -1,6 +1,8 @@
 import {
   attemptPhase,
   attemptView,
+  BACKDROP_KEY,
+  backdropConflict,
   bestTrial,
   CAMERA_GROUPS,
   CAMERA_KEY,
@@ -32,6 +34,7 @@ import {
   pickVerdict,
   preferredCamera,
   projectorTheme,
+  readBackdrop,
   ROLE_LABELS,
   roleLights,
   SAMPLE_SIZE,
@@ -40,6 +43,7 @@ import {
   setupGuide,
   statusText,
   THEME_KEY,
+  themeForBackdrop,
   usbIdsFromLabel,
   weakColor,
   withTimeout,
@@ -109,6 +113,35 @@ function storedProjectorTheme() {
   } catch {
     return "dark";
   }
+}
+
+let customBackdrop = readBackdrop(window.localStorage);
+
+/**
+ * The operator's own projector background (Tobias, 2026-10-26: "que yo pueda
+ * ir editando el FONDO"), or null for the theme's. A color the palette would
+ * read as a post-it is refused: the whole lit wall would become that note.
+ * The theme follows its brightness so the ball and texts still read on it.
+ */
+function setBackdrop(hex) {
+  if (hex !== null) {
+    const role = backdropConflict(hex, state?.palette);
+    if (role) {
+      notice(`Ese fondo la cámara lo confunde con ${ROLE_LABELS[role] ?? role}: elegí otro color.`, "error");
+      render();
+      return;
+    }
+  }
+  customBackdrop = hex === null ? null : hex.toLowerCase();
+  try {
+    if (customBackdrop === null) localStorage.removeItem(BACKDROP_KEY);
+    else localStorage.setItem(BACKDROP_KEY, customBackdrop);
+  } catch {
+    // Not remembered across reloads; the open window still switches.
+  }
+  channel.postMessage({ type: "backdrop", hex: customBackdrop });
+  if (customBackdrop !== null) setProjectorTheme(themeForBackdrop(customBackdrop));
+  else render();
 }
 
 // The projector window reads the same key and listens on the channel.
@@ -940,6 +973,8 @@ function render() {
   const lightLocked = aligning || Boolean(tuning) || pickBusy;
   $("theme-dark").disabled = lightLocked;
   $("theme-light").disabled = lightLocked;
+  $("backdrop-color").disabled = lightLocked;
+  $("backdrop-reset").disabled = lightLocked;
   if (aligning) cameraSelect.disabled = true;
   $("open-projector").innerHTML = projectionReady
     ? "Enfocar proyección <kbd>J</kbd>"
@@ -953,8 +988,11 @@ function render() {
     : alignment.detail;
   $("align-status").dataset.tone = alignment?.status === "ready" ? (alignment.overlay?.fill ? "ok" : "warn")
     : alignment?.status === "failed" ? "error" : alignment?.status === "stale" ? "warn" : "";
-  $("theme-dark").setAttribute("aria-pressed", String(projectorBackdrop === "dark"));
-  $("theme-light").setAttribute("aria-pressed", String(projectorBackdrop === "light"));
+  $("theme-dark").setAttribute("aria-pressed", String(customBackdrop === null && projectorBackdrop === "dark"));
+  $("theme-light").setAttribute("aria-pressed", String(customBackdrop === null && projectorBackdrop === "light"));
+  $("backdrop-color").closest(".backdrop-pick").dataset.active = String(customBackdrop !== null);
+  if (customBackdrop !== null && document.activeElement !== $("backdrop-color")) $("backdrop-color").value = customBackdrop;
+  $("backdrop-reset").hidden = customBackdrop === null;
   $("setup-hint").textContent = guide.message;
   $("setup-hint").dataset.tone = guide.step === "play" ? "" : "next";
   const stageIndex = SETUP_STAGES.indexOf(guide.stage);
@@ -991,6 +1029,7 @@ channel.onmessage = (event) => {
     popupReady = true;
     projectorFullscreen = Boolean(data.fullscreen);
     channel.postMessage({ type: "theme", theme: projectorBackdrop });
+    channel.postMessage({ type: "backdrop", hex: customBackdrop });
     render();
   } else if (data.type === "visibility") {
     projectorHidden = Boolean(data.hidden);
@@ -999,6 +1038,9 @@ channel.onmessage = (event) => {
     render();
   } else if (data.type === "theme") {
     projectorBackdrop = projectorTheme(data.theme); // switched from the projector window
+    render();
+  } else if (data.type === "backdrop") {
+    customBackdrop = typeof data.hex === "string" && /^#[0-9a-f]{6}$/i.test(data.hex) ? data.hex.toLowerCase() : null;
     render();
   } else if (data.type === "closed") {
     popupReady = false;
@@ -1029,8 +1071,10 @@ for (const role of PALETTE_ROLES) {
   $(`pick-${role}`).addEventListener("click", () => togglePick(role));
 }
 $("camera-tune").addEventListener("click", () => tuneCamera());
-$("theme-dark").addEventListener("click", () => setProjectorTheme("dark"));
-$("theme-light").addEventListener("click", () => setProjectorTheme("light"));
+$("theme-dark").addEventListener("click", () => { setBackdrop(null); setProjectorTheme("dark"); });
+$("theme-light").addEventListener("click", () => { setBackdrop(null); setProjectorTheme("light"); });
+$("backdrop-color").addEventListener("input", (event) => setBackdrop(event.target.value));
+$("backdrop-reset").addEventListener("click", () => setBackdrop(null));
 $("palette-reset").addEventListener("click", () => {
   paletteError = null;
   preview = null;
@@ -1054,6 +1098,8 @@ document.addEventListener("keydown", (event) => {
   }
   if (isThemeShortcut(event)) {
     event.preventDefault();
+    // F goes back to a theme background: the operator's own color is dropped.
+    if (!(aligning || tuning || pickBusy) && customBackdrop !== null) setBackdrop(null);
     if (!(aligning || tuning || pickBusy)) setProjectorTheme(projectorBackdrop === "dark" ? "light" : "dark");
     return;
   }

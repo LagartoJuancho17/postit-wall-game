@@ -193,7 +193,7 @@ function projectorView() {
   });
   vm.runInContext(`
     let state = null, stateReceivedAt = 0, blackoutForced = false, tickBusy = false, localScene = null, lastRegister = 0;
-    let viewport = { width: 1280, height: 720 }, theme = "dark";
+    let viewport = { width: 1280, height: 720 }, theme = "dark", backdrop = null;
     ${segment(projector, "function applyState(", "async function syncProjectionSize()")}
     ${segment(projector, "async function tick()", "\nresizeCanvas();")}
     globalThis.controls = {
@@ -201,6 +201,7 @@ function projectorView() {
       setLocal: (scene) => { localScene = scene; },
       setBlackout: (value) => { blackoutForced = value; },
       setTheme: (value) => { theme = value; },
+      setBackdrop: (value) => { backdrop = value; },
     };
     ${projector.slice(projector.lastIndexOf("\nresizeCanvas();"))}
   `, context);

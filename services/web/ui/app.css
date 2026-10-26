@@ -60,6 +60,13 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .theme-dot[data-theme="dark"] { background: #000; }
 .theme-dot[data-theme="light"] { background: #f3f2ec; }
 .theme-switch button[aria-pressed="true"] .theme-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, .55); }
+.backdrop-pick { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 4px 9px 4px 6px; border-radius: 7px; color: #36584f; font-size: 12px; font-weight: 700; cursor: pointer; }
+.backdrop-pick[data-active="true"] { background: #213a36; color: #fff; }
+.backdrop-pick input { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.backdrop-pick input::-webkit-color-swatch-wrapper { padding: 0; }
+.backdrop-pick input::-webkit-color-swatch { border: 1px solid rgba(20, 30, 24, .3); border-radius: 50%; }
+.backdrop-pick input:disabled { cursor: not-allowed; opacity: .43; }
+#backdrop-reset { min-height: 34px; padding: 6px 9px; }
 .connection-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #c49d54; }
 .connection-pill[data-tone="ready"]::before { background: #278b5a; }
 .connection-pill[data-tone="error"]::before { background: #d95c50; }

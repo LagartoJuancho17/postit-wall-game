@@ -670,7 +670,9 @@ def _draw_game(canvas: Canvas, state: Mapping, mapping: _Mapping | None,
     if not isinstance(game, Mapping):
         return
     camera = state.get("camera") if isinstance(state.get("camera"), Mapping) else {}
-    ball = _place_ball(game, camera, mapping, canvas.width, canvas.height)
+    # New rules: the ball appears when it is released, not while ready.
+    hidden = theme is not None and game.get("status") == "ready"
+    ball = None if hidden else _place_ball(game, camera, mapping, canvas.width, canvas.height)
     if ball is not None:
         center, radius = ball
         if theme is None:

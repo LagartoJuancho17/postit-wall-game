@@ -312,7 +312,9 @@ export function drawBall(ctx, center, radius, colors) {
 function drawGame(ctx, state, mapping, width, height, colors) {
   const game = state?.game;
   if (!game) return;
-  const ball = validPoint(game.position) ? placeBall(game, state.camera, mapping, width, height) : null;
+  // The ball appears when it is released (Tobias, 2026-10-26): not while ready.
+  const ball = game.status !== "ready" && validPoint(game.position)
+    ? placeBall(game, state.camera, mapping, width, height) : null;
   if (ball) drawBall(ctx, ball.center, ball.radius, colors);
   if (game.status === "won" || game.status === "lost") {
     ctx.font = `700 42px ${TEXT_FONT}`;

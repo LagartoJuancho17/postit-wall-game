@@ -173,7 +173,7 @@ cámara**, que vuelve a la cámara recordada.
   cuyo nombre trae su ID USB. Con el celular activo, el panel nunca toca la
   C920 aunque esté enchufada.
 
-## Fondo del proyector: oscuro o claro
+## Fondo del proyector: oscuro, claro o propio
 
 Arriba a la derecha, junto a **Abrir proyección**, está **Fondo: Oscuro /
 Claro**. También se cambia con la tecla `F`, desde el panel o desde la
@@ -182,6 +182,16 @@ proyector y queda guardado en el navegador.
 
 - **Oscuro**: fondo negro y pelota clara.
 - **Claro**: fondo blanco suave (`#f3f2ec`) y pelota oscura.
+- **Propio**: tocá el círculo de color y elegí cualquier color; la ventana del
+  proyector lo muestra al instante y queda guardado. La pelota y los textos
+  pasan solos a claros u oscuros según qué tan claro sea tu fondo. La **✕**
+  (o `F`, u Oscuro/Claro) vuelve al fondo del tema. Si el color elegido cae
+  dentro del color de algún post-it (por ejemplo un amarillo como el del
+  inicio), el panel lo rechaza: la cámara vería toda la pared como ese
+  post-it.
+
+La pelota no se ve hasta que la soltás (`Espacio`): aparece debajo del
+inicio en el momento en que empieza a caer.
 
 Sin alinear, en los dos fondos el proyector dibuja bordes neutros (blancos
 en el oscuro, grafito en el claro). Alineado, cada papel lleva su color por
