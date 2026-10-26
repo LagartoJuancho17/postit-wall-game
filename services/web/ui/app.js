@@ -33,6 +33,7 @@ import {
   patchOrigin,
   pickVerdict,
   preferredCamera,
+  projectorBackground,
   projectorTheme,
   readBackdrop,
   ROLE_LABELS,
@@ -128,6 +129,7 @@ function setBackdrop(hex) {
     const role = backdropConflict(hex, state?.palette);
     if (role) {
       notice(`Ese fondo la cámara lo confunde con ${ROLE_LABELS[role] ?? role}: elegí otro color.`, "error");
+      $("backdrop-color").value = projectorBackground(projectorBackdrop, false, customBackdrop); // back to what is shown
       render();
       return;
     }

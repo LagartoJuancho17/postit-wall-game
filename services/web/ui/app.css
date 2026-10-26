@@ -67,6 +67,7 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .backdrop-pick input::-webkit-color-swatch { border: 1px solid rgba(20, 30, 24, .3); border-radius: 50%; }
 .backdrop-pick input:disabled { cursor: not-allowed; opacity: .43; }
 #backdrop-reset { min-height: 34px; padding: 6px 9px; }
+#backdrop-reset[hidden] { display: none; }
 .connection-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #c49d54; }
 .connection-pill[data-tone="ready"]::before { background: #278b5a; }
 .connection-pill[data-tone="error"]::before { background: #d95c50; }
