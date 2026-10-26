@@ -263,6 +263,11 @@ Actions (`POST /api/action`):
   `matrix: null`, `detail` and message = reason, `projection.mode = "live"`,
   log `alignment_failed {code, reason, ...metrics}` (metrics include
   `holdout_max_px` and `outliers`, which tell a lens from a moved camera).
+  `web.py` also keeps the run's 14 frames as lossless PNGs plus
+  `result.json` (layout, result, camera label) in
+  `runs/align-failures/<UTC stamp>/`, newest 5 kept; the log's `frames_dir`
+  names the folder (null when nothing was saved, e.g. the browser backend),
+  so a failure on the real wall can be replayed exactly.
   Frames are freed.
 - `align_cancel`: if collecting, status back to `none`, frames freed,
   `projection.mode = "live"`.

@@ -207,6 +207,9 @@ def _align_key(header: str | None) -> tuple[int, bool]:
     return int(header[0]), header[2] == "1"
 
 
+FAILURE_FRAMES_KEPT = 5   # newest failed alignment runs kept on disk
+
+
 def _round3(value: Any) -> Any:
     return round(value, 3) if isinstance(value, float) and math.isfinite(value) else value
 
@@ -346,8 +349,11 @@ class GameController:
 
     def __init__(self, *, log_path: Path | None = None,
                  clock: Any = time.monotonic, palette_path: Path | None = None,
-                 camera_presets_path: Path | None = None, uvc: Any = None):
+                 camera_presets_path: Path | None = None, uvc: Any = None,
+                 failure_frames_dir: Path | None = None):
         self._lock = RLock()
+        # Where a failed alignment's 14 frames go for diagnosis (None: nowhere).
+        self.failure_frames_dir = failure_frames_dir
         # USB camera control, outside the game lock: it never touches game state.
         self.uvc = uvc if uvc is not None else UvcBridge()
         self._clock = clock
@@ -990,12 +996,41 @@ class GameController:
         if self._align_status == "collecting":
             raise RequestError("Esperá a que termine la alineación.", HTTPStatus.CONFLICT)
 
+    def _save_failure_frames(self, frames: dict, layout: dict | None, result: dict[str, Any]) -> str | None:
+        """Keep a failed run's frames, layout and result on disk for diagnosis.
+
+        One folder per failure under `failure_frames_dir`, PNG (lossless, so
+        the decode can be replayed exactly), newest FAILURE_FRAMES_KEPT kept.
+        Never raises: a full disk must not break the game.
+        """
+        if self.failure_frames_dir is None or not frames:
+            return None
+        try:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            folder = self.failure_frames_dir / stamp
+            folder.mkdir(parents=True, exist_ok=True)
+            for (bit, inverse), gray in frames.items():
+                cv2.imwrite(str(folder / f"frame_{bit}_{int(inverse)}.png"), gray)
+            summary = {key: value for key, value in result.items() if key not in ("gains",)}
+            (folder / "result.json").write_text(json.dumps(
+                {"layout": layout, "result": summary, "camera": self.frame_camera}, ensure_ascii=False,
+                default=str), encoding="utf-8")
+            for old in sorted(path for path in self.failure_frames_dir.iterdir() if path.is_dir())[:-FAILURE_FRAMES_KEPT]:
+                for item in old.iterdir():
+                    item.unlink()
+                old.rmdir()
+            return str(folder)
+        except OSError:
+            return None
+
     def _solve_alignment_unlocked(self) -> None:
         """Decode the 14 pattern frames (contract 1.3) and adopt or reject H."""
         result = decode_alignment(self._align_frames, self._align_layout)
+        frames, layout = self._align_frames, self._align_layout
         self._align_frames = {}
         self.projection_mode = "live"
         if not result["ok"]:
+            saved = self._save_failure_frames(frames, layout, result)
             reason = result["reason"]
             self._drop_alignment_unlocked("failed", reason)
             self._align_code = result["code"]
@@ -1004,6 +1039,7 @@ class GameController:
                       decoded=result.get("decoded"), total=result.get("total"),
                       inliers=result.get("inliers"), holdout_p95_px=_round3(result.get("holdout_p95_px")),
                       holdout_max_px=_round3(result.get("holdout_max_px")), outliers=result.get("outliers"),
+                      frames_dir=saved,
                       coverage=_round3(result.get("coverage")), rejected=result.get("rejected"))
             return
         camera = self._align_camera
@@ -1253,6 +1289,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
     runs = Path(__file__).resolve().parents[3] / "runs"
     controller = controller or GameController(
         log_path=runs / "web-events.jsonl", palette_path=runs / "palette.json",
+        failure_frames_dir=runs / "align-failures",
         camera_presets_path=runs / "camera-presets.json",
     )
     static_dir = static_dir or Path(__file__).resolve().parents[1] / "ui"

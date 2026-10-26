@@ -591,3 +591,45 @@ class RunRobustnessTests(unittest.TestCase):
         finally:
             server.find_notes = original
         self.assertEqual(str(caught.exception), "La cámara cambió durante la lectura. Volvé a escanear.")
+
+
+class FailureFramesTests(unittest.TestCase):
+    def test_a_failed_run_keeps_its_frames_for_diagnosis_and_only_the_newest_five(self):
+        import tempfile as _tempfile
+        folder = Path(_tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, ignore_errors=True))
+        rig = Rig(self)
+        rig.game.failure_frames_dir = folder
+        rig.open()
+        rig.preview()
+        for run in range(7):
+            layout = rig.act("align_start")["alignment"]["layout"]
+            rig.feed(layout, black=True)
+            state = rig.act("align_solve")
+            self.assertEqual(state["alignment"]["status"], "failed")
+        kept = sorted(path for path in folder.iterdir() if path.is_dir())
+        self.assertEqual(len(kept), server.FAILURE_FRAMES_KEPT)
+        newest = kept[-1]
+        self.assertEqual(len(list(newest.glob("frame_*.png"))), 14)
+        saved = json.loads((newest / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["camera"], LABEL)
+        self.assertEqual(saved["result"]["code"], "few_points")
+        self.assertEqual(len(saved["layout"]["dots"]), len(layout["dots"]))
+        failed = [event for event in rig.events() if event["event"] == "alignment_failed"]
+        self.assertEqual(failed[-1]["frames_dir"], str(newest))
+        # The PNGs are lossless: decoding them again gives the same result.
+        from services.calibration import decode_alignment
+        frames = {(bit, bool(inverse)): cv2.imread(str(newest / f"frame_{bit}_{inverse}.png"), cv2.IMREAD_GRAYSCALE)
+                  for bit in range(7) for inverse in (0, 1)}
+        self.assertEqual(decode_alignment(frames, saved["layout"])["code"], "few_points")
+
+    def test_without_a_folder_nothing_is_written(self):
+        rig = Rig(self)
+        self.assertIsNone(rig.game.failure_frames_dir)
+        rig.open()
+        rig.preview()
+        layout = rig.act("align_start")["alignment"]["layout"]
+        rig.feed(layout, black=True)
+        rig.act("align_solve")
+        failed = [event for event in rig.events() if event["event"] == "alignment_failed"]
+        self.assertIsNone(failed[-1]["frames_dir"])
