@@ -273,6 +273,17 @@ Actions (`POST /api/action`):
   `projection.mode = "live"`.
 - `align_clear`: status `none`, matrix and lens null.
 
+**Chrome's full-screen bar** (2026-10-26). For a few seconds after the
+projector window enters full screen, Chrome draws "press Esc to exit full
+screen" over the top of the page. Over the pattern it hid the top row of
+dots and, fading, corrupted the second: every run on the real wall failed
+as `inaccurate` (3.8-4.6 px) and the projector drew unaligned. The saved
+frames of those runs, with that band removed, align with the lens model
+(k = 0.020, p95 0.5-1.0 px). The projector reports `fullscreenAgeMs` in its
+acks and the run's warm-up lasts until `FULLSCREEN_HINT_MS = 5000` after
+it went full screen (`align-run.mjs warmupWait`). Chrome shows the bar
+again when the mouse reaches the top of that screen: keep it away.
+
 Frames: `POST /api/align_frame`, `Content-Type: image/jpeg`, headers
 `X-Postit-Client: 1`, `X-Postit-Align: <bit>:<0|1>` (bit 0..6, inverse
 flag), optional `X-Postit-Camera`. 409 `No hay una alineación en curso.` if

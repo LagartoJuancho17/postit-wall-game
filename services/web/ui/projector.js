@@ -114,9 +114,14 @@ function applyState(next) {
   draw();
 }
 
+// When this window last entered full screen: Chrome's exit hint covers the
+// top of the page for a few seconds after that (align-run.mjs waits it out).
+let fullscreenSince = document.fullscreenElement ? performance.now() : null;
+
 function projectorMetrics() {
   return { width: viewport.width, height: viewport.height, dpr: window.devicePixelRatio || 1,
-    fullscreen: Boolean(document.fullscreenElement) };
+    fullscreen: Boolean(document.fullscreenElement),
+    fullscreenAgeMs: fullscreenSince === null ? null : performance.now() - fullscreenSince };
 }
 
 async function registerProjector() {
@@ -207,6 +212,7 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(syncProjectionSize, 100);
 });
 document.addEventListener("fullscreenchange", () => {
+  fullscreenSince = document.fullscreenElement ? performance.now() : null;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(syncProjectionSize, 100);
 });

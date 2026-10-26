@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { alignTiming, autoAlignKey, RESIZED, runAlignment, shouldAutoAlign } from "../ui/align-run.mjs";
+import { alignTiming, FULLSCREEN_HINT_MS, warmupWait, autoAlignKey, RESIZED, runAlignment, shouldAutoAlign } from "../ui/align-run.mjs";
 
 const FRAMES = Array.from({ length: 7 }, (_, bit) => [{ bit, inverse: false }, { bit, inverse: true }]).flat();
 const LAYOUT = { frames: FRAMES, dots: [] };
@@ -161,4 +161,25 @@ test("a projector that redraws at another size voids the run, cancelled and resu
   await assert.rejects(runAlignment(deps), new RegExp(RESIZED.slice(0, 30)));
   assert.deepEqual(log.slice(-2), ["resume", "action:align_cancel"]);
   assert.ok(!log.includes("action:align_solve"));
+});
+
+test("a run waits out Chrome's full-screen bar before the first pattern (2026-10-26)", async () => {
+  // Regression: the bar covered the top row of dots and every real run failed as inaccurate.
+  const timing = alignTiming(false);
+  assert.equal(FULLSCREEN_HINT_MS, 5000);
+  assert.equal(warmupWait({ fullscreen: true, fullscreenAgeMs: 300 }, timing), 4700);
+  assert.equal(warmupWait({ fullscreen: true, fullscreenAgeMs: 4800 }, timing), timing.warmup, "bar gone: the normal warm-up");
+  assert.equal(warmupWait({ fullscreen: true, fullscreenAgeMs: 60000 }, timing), timing.warmup);
+  assert.equal(warmupWait({ fullscreen: false, fullscreenAgeMs: 10 }, timing), timing.warmup, "not full screen: no bar");
+  assert.equal(warmupWait({ at: 0 }, timing), timing.warmup, "an older projector without the age");
+  assert.equal(warmupWait(null, timing), timing.warmup);
+  // Through a whole run: a projector that just went full screen.
+  const { deps, log } = rig();
+  const shown = deps.show;
+  deps.show = async (message) => ({ ...(await shown(message)), fullscreen: true, fullscreenAgeMs: 1200 });
+  const progress = [];
+  deps.progress = (text) => progress.push(text);
+  await runAlignment(deps, { cameraFixed: false });
+  assert.deepEqual(log.slice(0, 3), ["action:align_start", "show:align_pattern:warmup", "sleep:3800"]);
+  assert.equal(progress[0], "Esperando que Chrome oculte su aviso de pantalla completa…");
 });

@@ -15,6 +15,22 @@ export function alignTiming(cameraFixed) {
 
 export const RESIZED = "Cambió el tamaño de la proyección durante la alineación. Volvé a alinear.";
 
+/**
+ * Chrome lays its "press Esc to exit full screen" bar over the top of a page
+ * for a few seconds after it enters full screen. Over the pattern it hid the
+ * top row of dots and, fading, flipped bits elsewhere (2026-10-26: every run
+ * on the real wall failed as inaccurate). The run waits until this long after
+ * the projector went full screen before the first pattern.
+ */
+export const FULLSCREEN_HINT_MS = 5000;
+
+/** How long to wait after the warm-up frame: its settle time, or longer while Chrome's bar may show. */
+export function warmupWait(ack, timing) {
+  const age = ack?.fullscreen ? ack.fullscreenAgeMs : null;
+  const hint = Number.isFinite(age) ? Math.max(0, FULLSCREEN_HINT_MS - age) : 0;
+  return Math.max(timing.warmup, hint);
+}
+
 /** The projector drew the pattern at the layout's size, or the run is void. */
 function sameSize(ack, layout) {
   if (ack && Number.isFinite(ack.width) && Number.isFinite(ack.height)
@@ -42,8 +58,10 @@ async function collect(deps, timing) {
   const started = await deps.action("align_start");
   const layout = started.alignment.layout;
   try {
-    sameSize(await deps.show({ type: "align_pattern", layout, frame: "warmup" }), layout);
-    await deps.sleep(timing.warmup);
+    const warm = sameSize(await deps.show({ type: "align_pattern", layout, frame: "warmup" }), layout);
+    const wait = warmupWait(warm, timing);
+    if (wait > timing.warmup) deps.progress?.("Esperando que Chrome oculte su aviso de pantalla completa…");
+    await deps.sleep(wait);
     for (const [index, frame] of layout.frames.entries()) {
       const ack = sameSize(await deps.show({ type: "align_pattern", layout, frame }), layout);
       await deps.settle(ack, timing.settle);
