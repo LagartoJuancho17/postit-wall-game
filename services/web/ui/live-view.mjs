@@ -15,15 +15,18 @@
  * projectorScene picks which of these the projector window shows.
  */
 import {
+  alignmentLens,
   applyHomography,
   containTransform,
   convexHull,
   homographyLocalScale,
   isHomography,
+  lensLocalScale,
   offsetConvexPolygon,
   PALETTE_ROLES,
   polygonArea,
   projectorTheme,
+  undistortPoint,
 } from "./ui-core.mjs";
 
 export const LIVE_MAX_AGE_MS = 1500;
@@ -143,13 +146,17 @@ function previewFitsAlignment(alignment, preview) {
  * horizon has a finite image that no projector pixel can light. The camera
  * center rather than a fixed w > 0 keeps this right for any scale of H.
  */
-function cameraToProjector(matrix, camera) {
+function cameraToProjector(matrix, camera, lens = null) {
   const [, , [g, h, i]] = matrix;
   const reference = positive(camera?.width) && positive(camera?.height)
     ? g * camera.width / 2 + h * camera.height / 2 + i : i;
   const side = Math.sign(reference) || 1;
-  return (point) => (validPoint(point) && side * (g * point.x + h * point.y + i) > 1e-9
-    ? applyHomography(matrix, point) : null);
+  return (point) => {
+    if (!validPoint(point)) return null;
+    // The lens (contract 1.3.1) straightens the point first; it keeps the frame center.
+    const straight = undistortPoint(point, lens);
+    return side * (g * straight.x + h * straight.y + i) > 1e-9 ? applyHomography(matrix, straight) : null;
+  };
 }
 
 /** Each valid note of a preview in projector px, with its role. */
@@ -288,7 +295,8 @@ function placeBall(game, camera, mapping, width, height) {
   const path = aimPath(game);
   if (game.space !== "projector" && mapping) {
     const center = mapping.toProjector(position);
-    const stretch = center && homographyLocalScale(mapping.matrix, position);
+    const stretch = center && homographyLocalScale(mapping.matrix, undistortPoint(position, mapping.lens)) *
+      lensLocalScale(position, mapping.lens);
     if (!center || !positive(stretch)) return null;
     const aim = path.map((point) => mapping.toProjector(point));
     return { center, radius: BALL_RADIUS_PX * stretch, aim: aim.every(Boolean) ? aim : [] };
@@ -354,7 +362,8 @@ export function drawProjectorScene(ctx, {
   const notes = fresh ? preview : null;
   let matrix = alignedMatrix(state, width, height);
   if (matrix && !previewFitsAlignment(state.alignment, notes)) matrix = null;
-  const mapping = matrix && { matrix, toProjector: cameraToProjector(matrix, state.alignment.camera) };
+  const lens = matrix && alignmentLens(state.alignment);
+  const mapping = matrix && { matrix, lens, toProjector: cameraToProjector(matrix, state.alignment.camera, lens) };
   ctx.save();
   plainEffects(ctx);
   const projected = [...projectedNotes(notes, mapping?.toProjector, width, height)];

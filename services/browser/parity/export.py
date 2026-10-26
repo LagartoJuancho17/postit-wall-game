@@ -29,8 +29,9 @@ import numpy as np
 from contracts import Board, Point, Polygon, quadrilateral_center
 from contracts.geometry import offset_convex_polygon
 from services.calibration import (ALIGNMENT_FRAMES, alignment_code, alignment_layout, decode_alignment,
-                                  estimate_homography, pattern_dots, transform_board, transform_point)
-from services.calibration.tests.render import capture_frames, homography_from_quad, project_to_camera, render_pattern
+                                  estimate_homography, lens_for, pattern_dots, transform_board, transform_point)
+from services.calibration.tests.render import (capture_frames, film_through_lens, homography_from_quad,
+                                               project_to_camera, render_pattern)
 from services.physics import GameStatus, launch, ready_state, step
 from services.vision import build_palette, detect_board, find_notes, frame_quality, hsv_from_hex, rule_from_hex
 from services.vision.detector import refine_quad
@@ -414,11 +415,16 @@ def alignment_cases(frames: Frames) -> dict[str, Any]:
         "dark": (G, {"gain": 0.02, "noise": 1.5, "seed": 7}),
         "zoomed": (wide, {"seed": 8}),
         "low_coverage": (narrow, {"seed": 1}),
+        "lens_corrected": (G, {"seed": 1}),
         "lens_inaccurate": (G, {"seed": 1}),
         "lens_inconsistent": (G, {"seed": 1}),
+        "wide_lens": (G, {"seed": 2}),
         "missing": (G, {"seed": 9}),
     }
-    lens = {"lens_inaccurate": 0.01, "lens_inconsistent": 0.02}
+    # Anisotropic barrels (per-axis normalization): the one-parameter lens
+    # model (step 10b) fixes 0.01, not 0.015 or 0.02. `wide_lens` is a real,
+    # isotropic wide lens, which it fixes exactly.
+    lens = {"lens_corrected": 0.01, "lens_inaccurate": 0.015, "lens_inconsistent": 0.02}
     decodes = []
     for name, (matrix, options) in conditions.items():
         captured = capture_frames(layout, matrix, (640, 480), **options)
@@ -426,6 +432,8 @@ def alignment_cases(frames: Frames) -> dict[str, Any]:
             del captured[(6, True)]
         if name in lens:
             captured = {key: _barrel(image, lens[name]) for key, image in captured.items()}
+        if name == "wide_lens":
+            captured = {key: film_through_lens(image, 0.06) for key, image in captured.items()}
         keys = {}
         for (bit, inverse), image in captured.items():
             key = f"{bit}:{int(inverse)}"
@@ -450,8 +458,14 @@ def probe_cases(frames: Frames) -> list[dict[str, Any]]:
                     for x, y in ALIGN_QUAD]
             matrix = _normalized_inverse(homography_from_quad(projector, quad)).tolist()
             cases.append({"frame": name, "detection": detection, "matrix": matrix, "projector": list(projector),
-                          "camera": list(camera),
+                          "camera": list(camera), "lens": None,
                           "probes": place_probes(detection, matrix, projector, camera)})
+            # The same with a wide lens (contract 1.3.1): keep-out boxes and
+            # probe corners go through the straightening and its inverse.
+            lens = lens_for(camera[0], camera[1], 0.06)
+            cases.append({"frame": name, "detection": detection, "matrix": matrix, "projector": list(projector),
+                          "camera": list(camera), "lens": lens,
+                          "probes": place_probes(detection, matrix, projector, camera, lens)})
     return cases
 
 
@@ -464,6 +478,10 @@ def _alignment_jpegs(frames: Frames) -> dict[str, str]:
         name = f"cam_align_{bit}_{int(inverse)}"
         frames.add_jpeg(name, project_to_camera(render_pattern(layout, bit, inverse), G, (960, 720)))
         names[f"{bit}:{int(inverse)}"] = name
+    # The same run filmed through a wide lens (contract 1.3.1), for "align_lens".
+    for bit, inverse in ALIGNMENT_FRAMES:
+        frames.add_jpeg(f"cam_align_lens_{bit}_{int(inverse)}", film_through_lens(
+            project_to_camera(render_pattern(layout, bit, inverse), G, (960, 720)), 0.06))
     frames.add_jpeg("cam_dark", project_to_camera(np.zeros((ALIGN_PROJECTOR[1], ALIGN_PROJECTOR[0]), np.uint8),
                                                   G, (960, 720)))
     frames.add_jpeg("wall_small", cv2.resize(_image(430), (640, 480), interpolation=cv2.INTER_AREA))
@@ -567,6 +585,8 @@ def alignment_scripts(align_names: dict[str, str]) -> dict[str, list[dict[str, A
         return {"op": "action", "payload": {"action": name, **data}}
     label = "Cámara de iPhone de Tobias"
     feed = [{"op": "align_frame", "frame": name, "align": key, "camera": label} for key, name in align_names.items()]
+    feed_lens = [{"op": "align_frame", "frame": name.replace("cam_align_", "cam_align_lens_"), "align": key,
+                  "camera": label} for key, name in align_names.items()]
     dark = [{"op": "align_frame", "frame": "cam_dark", "align": key, "camera": label} for key in align_names]
     start = [{"op": "preview", "frame": "wall_430", "camera": label},
              act("projection_open", width=ALIGN_PROJECTOR[0], height=ALIGN_PROJECTOR[1])]
@@ -579,6 +599,11 @@ def alignment_scripts(align_names: dict[str, str]) -> dict[str, list[dict[str, A
                      act("aim", degrees=0), act("launch"), *[{"op": "tick", "advance": 0.1} for _ in range(12)],
                      {"op": "state"}, act("pause"), act("align_start"), act("align_cancel"), act("resume"),
                      act("projection_open", width=1920, height=1080), {"op": "state"}],
+        "align_lens": [*start, act("align_start"), *feed_lens, act("align_solve"),
+                       {"op": "preview", "frame": "wall_430", "camera": label}, *check("wall_430"),
+                       {"op": "preview", "frame": "wall_430", "camera": label},
+                       act("aim", degrees=-10), act("launch"), *[{"op": "tick", "advance": 0.1} for _ in range(6)],
+                       {"op": "state"}],
         "align_fill_off": [*start, act("align_start"), *feed, act("align_solve"), *check("probe_hit"),
                            {"op": "state"}, act("projection_open", width=1920, height=1080), {"op": "state"},
                            act("align_clear"), {"op": "state"}],

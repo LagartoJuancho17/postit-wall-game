@@ -19,7 +19,10 @@ per-frame exposure drift, post-its, glare) and decodes them with
   farther than half the closest dot spacing). A right id with a biased
   centroid (a dot half under saturated glare) is not a wrong id: RANSAC
   and the holdout check deal with those;
-- it shows at least the rejection counts the case names.
+- it shows at least the rejection counts the case names;
+- a case filmed through a wide lens (`lens_k`, contract 1.3.1) fits that lens
+  within 0.003, its truth check runs through the true lens, and a case
+  without one decodes with `lens` None.
 
 Prints JSON and exits non-zero when the score (passed runs / runs) is below
 the threshold.
@@ -38,6 +41,7 @@ from services.calibration.coded import alignment_layout, decode_alignment
 from services.calibration.tests.render import (
     POSTIT_COLORS,
     capture_frames,
+    film_through_lens,
     homography_from_quad,
     make_wall,
     truth_errors,
@@ -49,6 +53,8 @@ TRUTH_MAX_PX = 3.0
 CAMERA = (1280, 720)
 FULL_HD = (1920, 1080)
 KEYSTONE = [[140, 90], [1150, 60], [1210, 660], [90, 690]]
+FULL_VIEW = [[40, 30], [1235, 45], [1245, 695], [30, 685]]   # projection fills the frame
+LENS_K_TOLERANCE = 0.003
 BASE_SEED = 20261019
 
 # What an iPhone in auto exposure delivers, roughly: gamma-encoded, slightly
@@ -110,6 +116,18 @@ CASES = [
      "options": {"drift": 0.10, "stale": (3, True)},
      "expect": ("few_points", "inaccurate", "inconsistent", "ok"),
      "expect_rejected": {"ambiguous": 5}},
+    # Wide phone lenses (contract 1.3.1): the camera sees the whole projection
+    # up to its frame edges, where a homography alone misses by several px.
+    # Step 10b must fit the lens: `lens_k` is the true stretch, and the
+    # truth check runs through the true lens.
+    {"name": "wide_lens_full_view", "projector": FULL_HD, "quad": FULL_VIEW,
+     "options": {"drift": 0.10}, "lens_k": 0.05},
+    {"name": "wide_lens_strong", "projector": FULL_HD, "quad": FULL_VIEW,
+     "options": {"drift": 0.10}, "lens_k": 0.10},
+    {"name": "pincushion_lens", "projector": FULL_HD, "quad": FULL_VIEW,
+     "options": {"drift": 0.10}, "lens_k": -0.05},
+    {"name": "wide_lens_postits_drift", "projector": FULL_HD, "quad": FULL_VIEW,
+     "options": {"drift": 0.25, "postits": True, "reflections": [(700, 330, 22.0, 2.5)]}, "lens_k": 0.04},
     {"name": "corner_view", "projector": FULL_HD,
      "quad": [[368, 26], [2192, 40], [2180, 1052], [380, 1040]],
      "options": {"drift": 0.10}, "expect": ("low_coverage",)},
@@ -148,6 +166,9 @@ def run_case(case: dict, seed: int) -> dict:
     if options.pop("postits", False):
         options["wall"] = make_wall(CAMERA, postits=_postits())
     frames = capture_frames(layout, G, CAMERA, seed=seed, **options)
+    true_k = case.get("lens_k", 0.0)
+    if true_k:
+        frames = {key: film_through_lens(image, true_k) for key, image in frames.items()}
     started = time.perf_counter()
     result = decode_alignment(frames, layout)
     decode_ms = (time.perf_counter() - started) * 1000.0
@@ -172,10 +193,12 @@ def run_case(case: dict, seed: int) -> dict:
         "rejected": result["rejected"],
         "wrong_ids": wrong_ids(frames, layout, G),
         "decode_ms": round(decode_ms, 1),
+        "lens_k": _round(result["lens"]["k"], 5) if result.get("lens") else None,
+        "true_lens_k": true_k or None,
     }
     accurate = True
     if result["ok"]:
-        errors = truth_errors(result["matrix"], G, CAMERA, projector)
+        errors = truth_errors(result["matrix"], G, CAMERA, projector, lens=result.get("lens"), true_k=true_k)
         report["truth_points"] = int(len(errors))
         if len(errors):
             p95, worst = float(np.percentile(errors, 95)), float(errors.max())
@@ -184,8 +207,14 @@ def run_case(case: dict, seed: int) -> dict:
             accurate = p95 <= TRUTH_P95_PX and worst <= TRUTH_MAX_PX
         else:
             accurate = False
+    # A lens case must fit its lens; a lens-free case must not invent one.
+    fitted_k = result["lens"]["k"] if result.get("lens") else 0.0
+    lens_right = (not result["ok"] or (abs(fitted_k - true_k) <= LENS_K_TOLERANCE if true_k
+                                         else result.get("lens") is None))
+    report["lens_right"] = lens_right
     rejected = result["rejected"] or {}
     report["pass"] = bool(
+        lens_right and
         outcome in accepted
         and accurate
         and report["wrong_ids"] == 0

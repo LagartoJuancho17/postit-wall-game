@@ -602,3 +602,30 @@ test("under gravity the aim shows the first 0.3 s of the real flight, bending do
   const straight = liveView.aimPath({ position: { x: 0, y: 0 }, aim_degrees: 0 });
   assert.deepEqual(straight, [{ x: 0, y: 0 }, { x: liveView.AIM_LENGTH_PX, y: 0 }]);
 });
+
+test("an alignment with a lens straightens every camera point before H (contract 1.3.1)", () => {
+  // Corner-heavy lens on the 640 x 480 camera; the note sits off center, where it bends.
+  const lens = { k: 0.08, cx: 320, cy: 240, r: 400 };
+  const straight = (p) => {
+    const dx = p.x - 320;
+    const dy = p.y - 240;
+    const s = 1 + 0.08 * ((dx * dx + dy * dy) / (400 * 400));
+    return { x: 320 + dx * s, y: 240 + dy * s };
+  };
+  const withLens = rectangle.points.map((p) => applyHomography(H, straight(p)));
+  const without = rectangle.points.map((p) => applyHomography(H, p));
+  const shift = Math.max(...withLens.map((p, i) => Math.hypot(p.x - without[i].x, p.y - without[i].y)));
+  assert.ok(shift > 5, `the lens must move this note visibly (moved ${shift} px)`);
+  const ctx = canvas();
+  drawProjectorScene(ctx, { state: aligned({ lens }), preview, palette, theme: "dark", width: 1280, height: 800 });
+  const fills = ctx.draws.filter((d) => d.kind === "fill");
+  assert.equal(fills.length, 4);
+  for (const fill of fills) samePolygon(points(fill.path), offsetConvexPolygon(withLens, -FILL_INSET_PX), 1e-9, "fill through lens");
+  // A malformed lens is ignored: the projector falls back to H alone, never to garbage.
+  for (const bad of [{ k: 0.5, cx: 320, cy: 240, r: 400 }, { k: 0.1, cx: 320, cy: 240, r: 0 }, { k: "x" }, 7]) {
+    const plain = canvas();
+    drawProjectorScene(plain, { state: aligned({ lens: bad }), preview, palette, theme: "dark", width: 1280, height: 800 });
+    samePolygon(points(plain.draws.find((d) => d.kind === "fill").path), offsetConvexPolygon(without, -FILL_INSET_PX), 1e-9,
+      `bad lens ${JSON.stringify(bad)}`);
+  }
+});

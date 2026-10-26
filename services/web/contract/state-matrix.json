@@ -19,6 +19,7 @@
      "code": null,
      "detail": "Proyector alineado: error 0.1 px con 60 puntos.",
      "layout": null,
+     "lens": null,
      "matrix": [
       [
        1.4447767875997037,
@@ -743,6 +744,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -1353,6 +1355,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -1720,6 +1723,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -1976,6 +1980,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -2586,6 +2591,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -3196,6 +3202,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -3296,6 +3303,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -3906,6 +3914,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -4516,6 +4525,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -5126,6 +5136,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {
@@ -5226,6 +5237,7 @@
      "code": null,
      "detail": "Sin alinear.",
      "layout": null,
+     "lens": null,
      "matrix": null,
      "needed": 14,
      "overlay": {

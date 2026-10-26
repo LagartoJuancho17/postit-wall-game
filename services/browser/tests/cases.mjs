@@ -151,7 +151,7 @@ export function alignmentVerdicts(cv, golden) {
 
 export function probeVerdicts(golden) {
   return golden.probes.map((c, i) => verdict(`probes ${i} ${c.frame} ${c.projector.join("x")}`,
-    placeProbes(c.detection, c.matrix, c.projector, c.camera), c.probes, 1e-9));
+    placeProbes(c.detection, c.matrix, c.projector, c.camera, c.lens ?? null), c.probes, 1e-9));
 }
 
 /** The eyedropper of services/browser/parity/export.py `_sample`. */

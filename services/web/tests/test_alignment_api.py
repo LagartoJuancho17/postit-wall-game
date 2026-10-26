@@ -15,7 +15,9 @@ import cv2
 import numpy as np
 
 from services.calibration import ALIGNMENT_FRAMES, ALIGNMENT_REASONS
-from services.calibration.tests.render import homography_from_quad, project_to_camera, render_pattern
+from services.calibration import lens_for, undistort
+from services.calibration.tests.render import film_through_lens, homography_from_quad, project_to_camera, render_pattern
+from contracts import Point
 from services.vision.tests.scene import bgr
 from services.web.backend import server
 from services.web.backend.server import GameController, RequestError, place_probes, probe_side
@@ -63,20 +65,22 @@ class Rig:
     def preview(self, frame=None, label=LABEL):
         return self.game.preview_jpeg(_jpeg(wall_frame() if frame is None else frame), label)
 
-    def feed(self, layout, *, black=False, quad=QUAD):
+    def feed(self, layout, *, black=False, quad=QUAD, lens_k=0.0):
         G = homography_from_quad(PROJECTOR, quad)
         for bit, inverse in ALIGNMENT_FRAMES:
             pattern = np.zeros_like(render_pattern(layout, bit, inverse)) if black \
                 else render_pattern(layout, bit, inverse)
             frame = project_to_camera(pattern, G, CAMERA)
+            if lens_k:
+                frame = film_through_lens(frame, lens_k)
             self.game.align_frame_jpeg(_jpeg(frame), f"{bit}:{int(inverse)}", LABEL)
         return G
 
-    def align(self):
+    def align(self, lens_k=0.0):
         self.open()
         self.preview()
         layout = self.act("align_start")["alignment"]["layout"]
-        G = self.feed(layout)
+        G = self.feed(layout, lens_k=lens_k)
         return self.act("align_solve"), G
 
 
@@ -91,6 +95,7 @@ class AlignmentLifecycleTests(unittest.TestCase):
         self.assertEqual(alignment["projector"], {"width": 320, "height": 240})
         self.assertEqual(alignment["needed"], 14)
         self.assertEqual(alignment["received"], 0)
+        self.assertIsNone(alignment["lens"])   # a straight camera never gets a lens model
         self.assertEqual(set(alignment["quality"]), {"decoded", "total", "fit", "inliers", "holdout",
                                                      "holdout_p95_px", "holdout_max_px", "outliers", "coverage"})
         # H maps camera px to projector px: compare with inv(G) inside the projection.
@@ -113,6 +118,52 @@ class AlignmentLifecycleTests(unittest.TestCase):
         mapped = cv2.perspectiveTransform(np.float32([[p["x"], p["y"]] for p in camera_start]).reshape(-1, 1, 2), H)
         self.assertLess(float(np.abs(mapped.reshape(-1, 2) - np.float32([[p["x"], p["y"]] for p in start])).max()), 0.01)
         self.assertIn("alignment_ready", [event["event"] for event in rig.events()])
+
+    def test_a_wide_lens_is_fitted_and_used_for_the_board_and_cleared_with_the_alignment(self):
+        # Contract 1.3.1: the whole projection seen through a wide lens. A plain
+        # homography misses the edges; step 10b fits the lens and every
+        # camera -> projector mapping goes through it.
+        rig = Rig(self)
+        state, G = rig.align(lens_k=0.06)
+        alignment = state["alignment"]
+        self.assertEqual(alignment["status"], "ready", state["message"])
+        lens = alignment["lens"]
+        self.assertEqual(list(lens), ["k", "cx", "cy", "r"])
+        self.assertAlmostEqual(lens["k"], 0.06, delta=0.005)
+        self.assertEqual((lens["cx"], lens["cy"], lens["r"]), (160.0, 120.0, 200.0))
+        self.assertTrue(state["message"].endswith("(lente de la cámara corregido)."), state["message"])
+        H = np.array(alignment["matrix"])
+        truth_lens = lens_for(*CAMERA, 0.06)
+        worst = 0.0
+        for x in range(30, 300, 30):
+            for y in range(24, 230, 26):
+                straight = undistort(Point(x, y), lens)
+                ideal = undistort(Point(x, y), truth_lens)
+                estimate = cv2.perspectiveTransform(np.float64([[[straight.x, straight.y]]]), H)[0, 0]
+                expected = cv2.perspectiveTransform(np.float64([[[ideal.x, ideal.y]]]), np.linalg.inv(G))[0, 0]
+                worst = max(worst, float(np.hypot(*(estimate - expected))))
+        self.assertLess(worst, 1.0)
+        state = rig.preview() and rig.game.snapshot()
+        self.assertEqual(state["game"]["space"], "projector")
+        for camera_point, point in zip(state["camera_board"]["start"]["points"], state["board"]["start"]["points"]):
+            straight = undistort(Point(camera_point["x"], camera_point["y"]), lens)
+            mapped = cv2.perspectiveTransform(np.float64([[[straight.x, straight.y]]]), H)[0, 0]
+            self.assertLess(float(np.hypot(mapped[0] - point["x"], mapped[1] - point["y"])), 0.01)   # 3-decimal JSON
+        ready = [event for event in rig.events() if event["event"] == "alignment_ready"][-1]
+        self.assertAlmostEqual(ready["lens_k"], round(lens["k"], 6))
+        self.assertIsNone(rig.act("align_clear")["alignment"]["lens"])
+
+    def test_without_the_lens_model_the_same_wide_lens_run_fails(self):
+        # The regression the lens model fixes: the same frames, step 10b off.
+        rig = Rig(self)
+        from services.calibration import coded
+        original = coded.fit_lens
+        coded.fit_lens = lambda cost: 0.0
+        self.addCleanup(setattr, coded, "fit_lens", original)
+        state, _ = rig.align(lens_k=0.06)
+        self.assertEqual(state["alignment"]["status"], "failed")
+        self.assertIn(state["alignment"]["code"], ("inaccurate", "inconsistent"))
+        self.assertIsNone(state["alignment"]["lens"])
 
     def test_collecting_state_shows_the_layout_and_counts_frames(self):
         rig = Rig(self)

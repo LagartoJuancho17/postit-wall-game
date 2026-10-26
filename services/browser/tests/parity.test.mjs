@@ -67,6 +67,9 @@ test("alignment codes, layouts, patterns and decodes match Python, every failure
   for (const code of [null, "few_points", "inconsistent", "inaccurate", "low_coverage", "frames"]) {
     assert.ok(codes.has(code), `no golden decode ends in ${code}`);
   }
+  // Step 10b (contract 1.3.1) must run in the goldens: some decode needs a lens.
+  assert.ok(golden.alignment.decodes.some((c) => c.result.lens !== null), "no golden decode fits a lens");
+  assert.ok(golden.probes.some((c) => c.lens !== null), "no golden probe case has a lens");
   allAgree(alignmentVerdicts(cv, golden));
 });
 

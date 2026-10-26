@@ -26,8 +26,8 @@ import numpy as np
 
 from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon
 from contracts.geometry import offset_convex_polygon
-from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_alignment,
-                                  transform_board, transform_point)
+from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_alignment, distort,
+                                  transform_board, transform_point, undistort)
 from services.physics import (GRAVITY_SHARE, LAUNCH_SPEED_SHARE, GameState, GameStatus, launch, ready_state,
                               step)
 from services.vision import (DEFAULT_PALETTE, build_palette,
@@ -211,6 +211,10 @@ def _round3(value: Any) -> Any:
     return round(value, 3) if isinstance(value, float) and math.isfinite(value) else value
 
 
+def _round6(value: Any) -> Any:
+    return round(value, 6) if isinstance(value, float) and math.isfinite(value) else value
+
+
 def _normalized_inverse(matrix) -> np.ndarray:
     """inv(matrix) / inv[2][2] by cofactors, one IEEE operation at a time, as
     the JS port does (numpy's LAPACK inverse differs in the last bits)."""
@@ -236,11 +240,18 @@ def _mean(values: list[float]) -> float:
     return total / len(values)
 
 
-def _map(point: Point, matrix) -> Point | None:
+def _map(point: Point, matrix, lens=None) -> Point | None:
+    """Camera px -> projector px: straighten through `lens`, then H."""
     try:
-        return transform_point(point, matrix)
+        return transform_point(undistort(point, lens), matrix)
     except ValueError:
         return None
+
+
+def _unmap(point: Point, inverse, lens=None) -> Point | None:
+    """Projector px -> camera px: inverse H, then bend back through `lens`."""
+    mapped = _map(point, inverse)
+    return distort(mapped, lens) if mapped is not None else None
 
 
 def _boxes_intersect(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
@@ -257,7 +268,7 @@ def probe_side(width: int, height: int) -> int:
 
 
 def place_probes(live_detection: dict[str, Any] | None, matrix, projector: tuple[int, int],
-                 camera: tuple[int, int]) -> list[dict[str, Any]]:
+                 camera: tuple[int, int], lens=None) -> list[dict[str, Any]]:
     """One bare-wall test square per role, deterministic (contract 2.3).
 
     Keep-out boxes come from the snapshot's rounded live notes, so the
@@ -270,7 +281,7 @@ def place_probes(live_detection: dict[str, Any] | None, matrix, projector: tuple
     for role in ROLES:
         notes = (live_detection or {}).get("roles", {}).get(role, {}).get("notes", [])
         for note in notes:
-            mapped = [_map(Point(point["x"], point["y"]), matrix) for point in note["points"]]
+            mapped = [_map(Point(point["x"], point["y"]), matrix, lens) for point in note["points"]]
             if not mapped or any(point is None for point in mapped):
                 continue
             xs, ys = [point.x for point in mapped], [point.y for point in mapped]
@@ -288,7 +299,7 @@ def place_probes(live_detection: dict[str, Any] | None, matrix, projector: tuple
                     continue
                 if any(_boxes_intersect(square, _grown(box, side)) for _, box in chosen):
                     continue
-                corners = [_map(Point(x, y), inverse) for x, y in
+                corners = [_unmap(Point(x, y), inverse, lens) for x, y in
                            ((square[0], square[1]), (square[2], square[1]),
                             (square[2], square[3]), (square[0], square[3]))]
                 if any(corner is None or not (low <= corner.x <= camera_width - 1 - low and
@@ -377,6 +388,7 @@ class GameController:
         self._align_layout: dict[str, Any] | None = None
         self._align_frames: dict[tuple[int, bool], np.ndarray] = {}
         self._align_matrix: list[list[float]] | None = None
+        self._align_lens: dict[str, float] | None = None   # contract 1.3.1; None: no lens model
         self._align_camera: dict[str, Any] | None = None
         self._align_projector: dict[str, int] | None = None
         self._align_quality: dict[str, Any] | None = None
@@ -522,6 +534,7 @@ class GameController:
             "status": self._align_status,
             "layout": copy.deepcopy(self._align_layout) if self._align_status == "collecting" else None,
             "matrix": [list(row) for row in self._align_matrix] if self._align_matrix is not None else None,
+            "lens": dict(self._align_lens) if self._align_lens is not None else None,
             "camera": dict(self._align_camera) if self._align_camera else None,
             "projector": dict(self._align_projector) if self._align_projector else None,
             "received": len(self._align_frames),
@@ -540,6 +553,7 @@ class GameController:
         self._align_layout = None
         self._align_frames = {}
         self._align_matrix = None
+        self._align_lens = None
         self._align_camera = None
         self._align_projector = None
         self._align_quality = None
@@ -567,7 +581,7 @@ class GameController:
     def _game_board_unlocked(self, camera_board: Board, width: int, height: int) -> tuple[Board, str, int, int]:
         """The playable board in the game's space (contract 1.5); raises ValueError."""
         if self._align_status == "ready" and self._align_matrix is not None:
-            mapped = transform_board(camera_board, self._align_matrix)
+            mapped = transform_board(camera_board, self._align_matrix, self._align_lens)
             board = Board(playfield=_rectangle(self.projector_width, self.projector_height),
                           start=mapped.start, goal=mapped.goal,
                           bumpers=mapped.bumpers, markers=mapped.markers)
@@ -989,12 +1003,15 @@ class GameController:
             self._log("alignment_failed", code=result["code"], reason=reason,
                       decoded=result.get("decoded"), total=result.get("total"),
                       inliers=result.get("inliers"), holdout_p95_px=_round3(result.get("holdout_p95_px")),
+                      holdout_max_px=_round3(result.get("holdout_max_px")), outliers=result.get("outliers"),
                       coverage=_round3(result.get("coverage")), rejected=result.get("rejected"))
             return
         camera = self._align_camera
         self._align_status = "ready"
         self._align_layout = None
         self._align_matrix = [[float(value) for value in row] for row in result["matrix"]]
+        self._align_lens = ({key: float(value) for key, value in result["lens"].items()}
+                            if result.get("lens") is not None else None)
         self._align_camera = camera
         self._align_projector = {"width": self.projector_width, "height": self.projector_height}
         self._align_quality = {key: _round3(result[key]) for key in (
@@ -1002,17 +1019,19 @@ class GameController:
             "holdout_max_px", "outliers", "coverage")}
         probes = place_probes(self.live_detection, self._align_matrix,
                               (self.projector_width, self.projector_height),
-                              (camera["width"], camera["height"]))
+                              (camera["width"], camera["height"]), self._align_lens)
         self._overlay = self._overlay_state("unchecked", probes)
         self._check_frames = {}
         self._hold_detection_unlocked()   # the overlay check comes next
         detail = (f"Proyector alineado: error {result['holdout_p95_px']:.1f} px "
-                  f"con {result['decoded']} puntos.")
+                  f"con {result['decoded']} puntos"
+                  + (" (lente de la cámara corregido)." if self._align_lens is not None else "."))
         self._align_detail = detail
         self._recompute_candidate_unlocked()
         self._changed(detail)
         self._log("alignment_ready", **self._align_quality, probes=len(probes),
-                  width=self.projector_width, height=self.projector_height)
+                  width=self.projector_width, height=self.projector_height,
+                  lens_k=_round6(self._align_lens["k"]) if self._align_lens is not None else None)
 
     def align_frame_jpeg(self, data: bytes, align: str | None, camera: str | None = None) -> dict[str, Any]:
         """Store one pattern frame of a run in progress (gray, at most 14)."""
@@ -1073,7 +1092,7 @@ class GameController:
             for polygon in overlay[role]:
                 cx = _mean([point.x for point in polygon.points])
                 cy = _mean([point.y for point in polygon.points])
-                mapped = _map(Point(cx, cy), self._align_matrix)
+                mapped = _map(Point(cx, cy), self._align_matrix, self._align_lens)
                 hits = [probe_role for probe_role, box in boxes if mapped is not None and
                         box[0] <= mapped.x <= box[2] and box[1] <= mapped.y <= box[3]]
                 if hits:

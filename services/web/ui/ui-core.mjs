@@ -415,6 +415,43 @@ export function convexHull(points) {
 }
 
 /**
+ * The alignment's lens (contract 1.3.1) when it is usable, else null: finite
+ * k, cx, cy and r > 0. A null lens is the identity.
+ */
+export function alignmentLens(alignment) {
+  const lens = alignment?.lens;
+  if (!lens || typeof lens !== "object") return null;
+  const values = [lens.k, lens.cx, lens.cy, lens.r];
+  return values.every(finite) && lens.r > 0 && Math.abs(lens.k) <= 0.25 ? lens : null;
+}
+
+/**
+ * Camera px -> straightened camera px, as services/calibration/lens.py
+ * `undistort`: u = c + (p - c) * (1 + k |p - c|^2 / r^2).
+ */
+export function undistortPoint(point, lens) {
+  if (!lens) return point;
+  const dx = point.x - lens.cx;
+  const dy = point.y - lens.cy;
+  const scale = 1.0 + lens.k * ((dx * dx + dy * dy) / (lens.r * lens.r));
+  return { x: lens.cx + dx * scale, y: lens.cy + dy * scale };
+}
+
+/**
+ * How much the lens straightening stretches lengths around a point: the
+ * square root of its Jacobian's determinant, s * (s + 2 k rho^2) for a
+ * radial map with s = 1 + k rho^2 and rho = |p - c| / r. 1 without a lens.
+ */
+export function lensLocalScale(point, lens) {
+  if (!lens) return 1;
+  const dx = point.x - lens.cx;
+  const dy = point.y - lens.cy;
+  const rho2 = (dx * dx + dy * dy) / (lens.r * lens.r);
+  const scale = 1.0 + lens.k * rho2;
+  return Math.sqrt(Math.abs(scale * (scale + 2 * lens.k * rho2)));
+}
+
+/**
  * How much a homography stretches lengths around a point: the square root
  * of |det| of its Jacobian there (area scale -> length scale). Null where
  * the point maps to infinity.

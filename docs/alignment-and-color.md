@@ -28,6 +28,7 @@ detection always runs with the projector lit (light theme floods the wall).
 | Outcome | Where it is measured | Pass |
 |---|---|---|
 | Alignment accuracy | `alignment_ready` log: holdout p95/max px; sim eval vs ground truth | holdout p95 <= 1.5 px, max <= 3 px; sim truth error p95 <= 1.5 px |
+| Wide lens aligns (1.3.1) | `alignment_ready.lens_k` / `alignment_failed` counts in `runs/web-events.jsonl`; `evals.coded` wide-lens cases vs ground truth | full-frame view through k in [-0.05, 0.10] aligns, fitted k within 0.003, truth max <= 3 px (measured 0.19 px; without step 10b all 4 cases end `inconsistent`) |
 | Outline lands on paper | sim eval + Chrome e2e: the outline's rim polygon vs the rim of the true paper, projector px | max corner error <= 4 px (camera-limited: 2.0 px dark theme, 3.0 px light theme with no projection at all), plus any injected alignment error; color clearance >= 0 (the role color never reaches the wall) with a real alignment |
 | No feedback | sim eval: static wall, 60 closed-loop frames, both themes | 0 ready/invalid flips, 0 phantom notes, note area growth <= 5% |
 | Ghosts die | sim eval: paper removed while projecting | gone within 3 frames |
@@ -130,6 +131,9 @@ Arithmetic in float64. Steps, numbered so the JS port can mirror them:
     estimate_homography(fit_cam, fit_proj)` (RANSAC 3 px, existing function).
     Fit inliers = fit points with reprojection error <= 3.0 px. Require
     `inliers >= max(10, ceil(0.8 * fit))` (else `inconsistent`).
+    **10b.** If steps 10-11 fail with `inconsistent` or `inaccurate`, fit the
+    lens of section 1.3.1 and run steps 10-11 again on straightened camera
+    points; keep that result if it passes, else report the first failure.
 11. Holdout errors = `reprojection_errors(holdout_cam, holdout_proj, H)`.
     Outliers = errors > 5.0 px. Require `holdout >= 4`,
     `outliers <= max(1, floor(0.1 * holdout))`, and p95 of non-outlier
@@ -144,13 +148,17 @@ Output (JSON-able, same keys in both backends):
  "decoded": 58, "total": 60, "fit": 46, "inliers": 46, "holdout": 12,
  "holdout_p95_px": 0.71, "holdout_max_px": 0.94, "outliers": 0,
  "coverage": 0.81, "threshold": 23.4, "gains": [1.01, ...],
- "rejected": {"ambiguous": 0, "parity": 0, "unknown_id": 0, "duplicate": 0, "area": 0}}
+ "rejected": {"ambiguous": 0, "parity": 0, "unknown_id": 0, "duplicate": 0, "area": 0},
+ "lens": null}
 ```
 
 The result also carries `"code"`: `null` on success, else the failure code
 of the table below. Callers branch on `code`, never on the Spanish text.
 
-On failure `ok: false`, `matrix: null`, `reason` one of the Spanish
+`lens` is `null` unless step 10b fitted one: then `{"k", "cx", "cy", "r"}`
+(section 1.3.1) and `matrix` maps straightened camera px.
+
+On failure `ok: false`, `matrix: null`, `lens: null`, `reason` one of the Spanish
 messages below, all metrics that were computed so far still filled.
 
 Edge rules (decided while implementing; the JS twin mirrors them exactly):
@@ -182,6 +190,35 @@ Edge rules (decided while implementing; the JS twin mirrors them exactly):
 Messages are numbered so tests can assert them; `{p95:.1f}` uses Python
 formatting (JS: `pyRound(p95, 1)` formatted with one decimal).
 
+### 1.3.1 Lens model (step 10b; `services/calibration/lens.py`, JS `services/browser/lens.mjs`)
+
+Why (2026-10-21): with an iPhone framing the whole 1920 x 1080 projection,
+all 60 dots decode but the edge dots miss a homography by 3-14 px, so the
+alignment failed as `inaccurate` every time and the projector drew with no
+mapping at all. A wide lens bends straight lines; no homography follows it.
+
+Model, one parameter, centered, in camera px:
+
+    u = c + (p - c) * (1 + k * |p - c|^2 / r^2)
+
+`c = (W_c / 2, H_c / 2)`, `r = sqrt(c_x^2 + c_y^2)` (half the diagonal), so
+`k` is the relative stretch at the corners; `|k| <= 0.25`. `undistort(p)` is
+that formula; `distort(u)` its inverse by 12 Newton steps on the radius
+`rho (1 + k rho^2) = rho_u` (derivative `1 + 3 k rho^2` > 0.25 inside the
+frame). A `null` lens is the identity.
+
+Fit: `cost(k)` = sum over fit points, in id order, of `min(e, 5)^2` where
+`e` are the reprojection errors of `estimate_homography(undistort(fit_cam),
+fit_proj)` (infinite if it raises). `k` = argmin over the grid
+`(i - 25) / 25 * 0.25`, i = 0..50 (strictly lower wins, so ties keep the
+smaller `k`), refined by 40 golden-section steps inside one grid cell on
+each side, clamped to the limit. `k == 0` means no lens. Both backends run
+the same operations, so `k` and `matrix` agree bit for bit (parity).
+
+Every camera -> projector mapping of an aligned run is `H(undistort(p))`;
+every projector -> camera one is `distort(H^-1(q))`: the board (1.5), the
+overlay probes and their hit test (2.3), and the projector drawing.
+
 ### 1.4 Backend API (Python `GameController` and JS port, identical)
 
 State key `alignment` (always present):
@@ -190,6 +227,7 @@ State key `alignment` (always present):
 {"status": "none" | "collecting" | "ready" | "failed" | "stale",
  "layout": null | Layout,
  "matrix": null | [[...],[...],[...]],
+ "lens": null | {"k": 0.05, "cx": 640.0, "cy": 360.0, "r": 734.3},
  "camera": null | {"label": "Cámara de iPhone de Tobias", "width": 1280, "height": 720},
  "projector": null | {"width": 1920, "height": 1080},
  "received": 0, "needed": 14,
@@ -218,13 +256,17 @@ Actions (`POST /api/action`):
   Success: status `ready`, `matrix`, `camera` (current label and frame
   size), `projector` (W_p, H_p), `quality`, `overlay` reset to
   `{"status": "unchecked", "fill": false}`, `projection.mode = "live"`,
-  message `Proyector alineado: error {p95:.1f} px con {decoded} puntos.`,
-  log `alignment_ready` with quality. Failure: status `failed`,
+  `lens` (null without step 10b),
+  message `Proyector alineado: error {p95:.1f} px con {decoded} puntos.`
+  (with a lens: `... puntos (lente de la cámara corregido).`),
+  log `alignment_ready` with quality and `lens_k` (6 decimals, or null). Failure: status `failed`,
   `matrix: null`, `detail` and message = reason, `projection.mode = "live"`,
-  log `alignment_failed {code, reason, ...metrics}`. Frames are freed.
+  log `alignment_failed {code, reason, ...metrics}` (metrics include
+  `holdout_max_px` and `outliers`, which tell a lens from a moved camera).
+  Frames are freed.
 - `align_cancel`: if collecting, status back to `none`, frames freed,
   `projection.mode = "live"`.
-- `align_clear`: status `none`, matrix null.
+- `align_clear`: status `none`, matrix and lens null.
 
 Frames: `POST /api/align_frame`, `Content-Type: image/jpeg`, headers
 `X-Postit-Client: 1`, `X-Postit-Align: <bit>:<0|1>` (bit 0..6, inverse
@@ -664,10 +706,17 @@ A deterministic camera/projector/wall model for evals and tests:
   decode (320x240 synthetic), offsets, renderer rules, state transitions.
 - Full lane (`scripts/verify.sh`): Python unit tests; `services.calibration.
   evals.coded` (realistic decode: perspective, partial view, blur, JPEG,
-  per-frame gain drift, post-its in view); `services.simulation.eval`
+  per-frame gain drift, post-its in view, wide and pincushion lenses);
+  `services.simulation.eval`
   (closed loop, both themes, outcomes table above); browser parity golden
-  (coded decode, controller scripts with alignment, overlay check) replayed
-  in JS; existing evals.
+  (coded decode including lens fits, controller scripts with alignment and
+  with a wide lens, overlay check and probes through a lens) replayed in JS;
+  existing evals.
+- Lens gates: `services/calibration/tests/test_lens.py`,
+  `services/browser/tests/lens.test.mjs`, the lens cases of
+  `services/web/tests/test_alignment_api.py` (including the regression: the
+  same wide-lens run fails with step 10b off) and of
+  `services/web/tests/live-projection.test.mjs`.
 - Chrome closed loop (`tests/closed-loop-browser.mjs`, Playwright from
   `POSTIT_PLAYWRIGHT_MODULE`): fake camera composited from a wall image plus
   the projector canvas warped by a known `G`; runs against the static build

@@ -66,6 +66,10 @@ by `(bit, inverse)` and runs the contract's 12 steps:
 9. ids with `id % 5 == 0` are held out, the rest fit;
 10. at least 16 dots (`few_points`); RANSAC homography on the fit set; at
     least `max(10, ceil(0.8 * fit))` fit points within 3 px (`inconsistent`);
+    10b. when 10 or 11 fails as `inconsistent` / `inaccurate`, fit the
+    one-parameter radial lens of `lens.py` (contract 1.3.1) and retry 10-11
+    on straightened points; a wide phone lens framing the whole projection
+    needs it (2026-10-21: 60/60 dots, edges off by 3-14 px, every run failed);
 11. at least 4 holdout points, at most `max(1, floor(0.1 * holdout))` beyond
     5 px, and the rest with p95 <= 1.5 px and max <= 3 px (`inaccurate`);
 12. the convex hull of the decoded dots covers >= 30% of the projector
@@ -77,7 +81,7 @@ the contract table; a gate test checks them against the document.
 
 Output: the contract's keys (`ok`, `reason`, `matrix`, `decoded`, `total`,
 `fit`, `inliers`, `holdout`, `holdout_p95_px`, `holdout_max_px`, `outliers`,
-`coverage`, `threshold`, `gains`, `rejected`) plus `code`: `None` on success,
+`coverage`, `threshold`, `gains`, `rejected`, `lens`) plus `code`: `None` on success,
 else the failure code (`few_points`, `inconsistent`, `inaccurate`,
 `low_coverage`, `frames`). The server logs it in `alignment_failed {code, ...}`
 and the panel retries on `inaccurate` / `inconsistent` from it, without

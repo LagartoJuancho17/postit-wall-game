@@ -291,3 +291,26 @@ class LoopTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LensMirrorTests(unittest.TestCase):
+    """projector.py mirrors live-view.mjs's lens handling (contract 1.3.1)."""
+
+    def test_camera_to_projector_straightens_like_the_backend(self):
+        from contracts import Point
+        from services.calibration import lens_for, transform_point, undistort
+        from services.simulation.projector import alignment_lens, camera_to_projector, lens_local_scale
+
+        H = np.array([[1.43, 0.04, 40.0], [-0.018, 1.27, 22.0], [-4.8e-05, 5.3e-05, 1.0]])
+        lens = lens_for(640, 480, 0.08)
+        mapped = camera_to_projector(H, (640, 480), lens)
+        for x, y in ((0.0, 0.0), (320.0, 240.0), (600.0, 30.0), (12.5, 470.0)):
+            expected = transform_point(undistort(Point(x, y), lens), H)
+            got = mapped((x, y))
+            self.assertAlmostEqual(got[0], expected.x, places=9)
+            self.assertAlmostEqual(got[1], expected.y, places=9)
+        self.assertEqual(alignment_lens({"lens": lens}), lens)
+        for bad in ({"lens": None}, {"lens": {**lens, "k": 0.5}}, {"lens": {**lens, "r": 0}}, {"lens": 7}, None):
+            self.assertIsNone(alignment_lens(bad))
+        self.assertEqual(lens_local_scale((3, 4), None), 1.0)
+        self.assertGreater(lens_local_scale((0, 0), lens), 1.0)   # a wide lens stretches the corners

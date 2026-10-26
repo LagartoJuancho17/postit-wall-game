@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from contracts.model import Board, Matrix3, Point, Polygon
+from services.calibration.lens import distort, lens_for, undistort, valid_lens
 
 
 def _point_array(points: Sequence[Point], name: str) -> np.ndarray:
@@ -85,11 +86,12 @@ def transform_point(point: Point, matrix: Matrix3) -> Point:
     return Point(float(x), float(y))
 
 
-def transform_board(board: Board, matrix: Matrix3) -> Board:
-    """Map every board polygon from camera pixels to projector pixels."""
+def transform_board(board: Board, matrix: Matrix3, lens=None) -> Board:
+    """Map every board polygon from camera pixels to projector pixels,
+    straightening each point through the alignment's `lens` first."""
 
     def mapped(polygon: Polygon) -> Polygon:
-        return Polygon(tuple(transform_point(point, matrix) for point in polygon.points))
+        return Polygon(tuple(transform_point(undistort(point, lens), matrix) for point in polygon.points))
 
     return Board(
         playfield=mapped(board.playfield),
@@ -196,8 +198,12 @@ __all__ = [
     "alignment_layout",
     "decode_alignment",
     "detect_projected_dot",
+    "distort",
     "estimate_homography",
+    "lens_for",
     "pattern_dots",
+    "undistort",
+    "valid_lens",
     "reprojection_errors",
     "transform_board",
     "transform_point",

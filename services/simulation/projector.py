@@ -278,9 +278,44 @@ def fill_polygon(points) -> np.ndarray | None:
     return inset if inset is not None and polygon_area(inset) >= FILL_MIN_AREA_PX2 else None
 
 
-def camera_to_projector(matrix: np.ndarray, camera_size=None):
-    """``cameraToProjector``: map points through H, only on the side of H's
-    horizon line (w = 0) that the camera frame's center (or origin) is on."""
+def alignment_lens(alignment: Any) -> dict | None:
+    """``alignmentLens``: the alignment's lens (contract 1.3.1) when usable."""
+    lens = alignment.get("lens") if isinstance(alignment, Mapping) else None
+    if not isinstance(lens, Mapping):
+        return None
+    values = [lens.get(key) for key in ("k", "cx", "cy", "r")]
+    if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+               for value in values):
+        return None
+    return dict(lens) if values[3] > 0 and abs(values[0]) <= 0.25 else None
+
+
+def undistort_point(point, lens) -> tuple[float, float]:
+    """``undistortPoint``: u = c + (p - c) * (1 + k |p - c|^2 / r^2)."""
+    x, y = float(point[0]), float(point[1])
+    if lens is None:
+        return x, y
+    dx = x - lens["cx"]
+    dy = y - lens["cy"]
+    scale = 1.0 + lens["k"] * ((dx * dx + dy * dy) / (lens["r"] * lens["r"]))
+    return lens["cx"] + dx * scale, lens["cy"] + dy * scale
+
+
+def lens_local_scale(point, lens) -> float:
+    """``lensLocalScale``: sqrt|det J| of the straightening at ``point``."""
+    if lens is None:
+        return 1.0
+    dx = float(point[0]) - lens["cx"]
+    dy = float(point[1]) - lens["cy"]
+    rho2 = (dx * dx + dy * dy) / (lens["r"] * lens["r"])
+    scale = 1.0 + lens["k"] * rho2
+    return math.sqrt(abs(scale * (scale + 2 * lens["k"] * rho2)))
+
+
+def camera_to_projector(matrix: np.ndarray, camera_size=None, lens=None):
+    """``cameraToProjector``: straighten through ``lens``, then map through H,
+    only on the side of H's horizon line (w = 0) that the camera frame's
+    center (or origin) is on."""
     matrix = np.asarray(matrix, dtype=np.float64)
     g, h, i = matrix[2]
     if camera_size is not None and all(_positive(v) for v in camera_size):
@@ -290,9 +325,11 @@ def camera_to_projector(matrix: np.ndarray, camera_size=None):
     side = math.copysign(1.0, reference) if reference != 0 else 1.0
 
     def mapped(point) -> np.ndarray | None:
-        x, y = float(point[0]), float(point[1])
+        if not (math.isfinite(float(point[0])) and math.isfinite(float(point[1]))):
+            return None
+        x, y = undistort_point(point, lens)
         w = g * x + h * y + i
-        if not (math.isfinite(x) and math.isfinite(y)) or not side * w > _EPS:
+        if not side * w > _EPS:
             return None
         result = np.array(((matrix[0, 0] * x + matrix[0, 1] * y + matrix[0, 2]) / w,
                            (matrix[1, 0] * x + matrix[1, 1] * y + matrix[1, 2]) / w))
@@ -574,6 +611,7 @@ def aligned_matrix(state: Any, width: int, height: int) -> np.ndarray | None:
 class _Mapping(NamedTuple):
     matrix: np.ndarray
     to_projector: Callable[[Any], np.ndarray | None]
+    lens: dict | None = None
 
 
 def _projected_notes(preview: Any, mapping: _Mapping | None, width: int, height: int):
@@ -615,7 +653,8 @@ def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width:
     projector_space = game.get("space") == "projector"
     if not projector_space and mapping is not None:
         center = mapping.to_projector(position)
-        stretch = homography_local_scale(mapping.matrix, position) if center is not None else None
+        stretch = (homography_local_scale(mapping.matrix, np.array(undistort_point(position, mapping.lens)))
+                   * lens_local_scale(position, mapping.lens) if center is not None else None)
         if center is None or not _positive(stretch):
             return None
         aim = [mapping.to_projector(point) for point in path]
@@ -712,7 +751,7 @@ def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | No
 
 
 def render_scene(state: Mapping, theme: str, size: tuple[int, int], rules: str, *,
-                 matrix: np.ndarray | None = None, fill: bool | None = None,
+                 matrix: np.ndarray | None = None, lens: Mapping | None = None, fill: bool | None = None,
                  force_fill: bool = False, fresh: bool = True) -> np.ndarray:
     """uint8 RGB (height, width, 3) projector frame for one controller snapshot.
 
@@ -721,7 +760,8 @@ def render_scene(state: Mapping, theme: str, size: tuple[int, int], rules: str, 
 
     New rules: ``matrix`` (camera -> projector) overrides the state; without
     it the matrix comes from ``state["alignment"]`` like the projector window
-    reads it. ``fill`` overrides ``alignment.overlay.fill``; ``force_fill`` is
+    reads it, and so does the lens (contract 1.3.1); ``lens`` goes with an
+    explicit ``matrix``. ``fill`` overrides ``alignment.overlay.fill``; ``force_fill`` is
     the overlay check's ``forceFill``. A fill is never drawn unaligned.
     ``fresh=False`` is a stale preview: no notes. The old rules ignore all of
     these; ``"neutral"`` draws the theme background only.
@@ -742,12 +782,13 @@ def render_scene(state: Mapping, theme: str, size: tuple[int, int], rules: str, 
                       if isinstance(preview, Mapping) else None)
         else:
             matrix = aligned_matrix(state, width, height)
+            lens = alignment_lens(alignment) if matrix is not None else None
             camera = alignment.get("camera")
             camera = (camera.get("width"), camera.get("height")) if isinstance(camera, Mapping) else None
         if fill is None:
             overlay = alignment.get("overlay")
             fill = isinstance(overlay, Mapping) and overlay.get("fill") is True
-        mapping = _Mapping(matrix, camera_to_projector(matrix, camera)) if matrix is not None else None
+        mapping = _Mapping(matrix, camera_to_projector(matrix, camera, lens), lens) if matrix is not None else None
         _draw_new(canvas, state, theme, mapping, mapping is not None and (fill or force_fill), fresh,
                   probes=force_fill)
     elif rules != "neutral":

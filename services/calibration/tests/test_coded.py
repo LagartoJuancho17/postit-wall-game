@@ -44,11 +44,11 @@ BETWEEN_DOTS = (80, 72)  # camera px between dots 11, 12, 20 and 21 under KEYSTO
 
 # Contract 1.3 output keys, plus `code`: the failure code of the reason
 # table, which `alignment_failed {code, ...}` logs and the panel retry rule
-# (inaccurate / inconsistent) needs.
+# (inaccurate / inconsistent) needs, and `lens` (contract 1.3.1).
 RESULT_KEYS = {
     "ok", "reason", "matrix", "decoded", "total", "fit", "inliers", "holdout",
     "holdout_p95_px", "holdout_max_px", "outliers", "coverage", "threshold",
-    "gains", "rejected", "code",
+    "gains", "rejected", "code", "lens",
 }
 REJECTED_KEYS = {"ambiguous", "parity", "unknown_id", "duplicate", "area"}
 NO_REJECTIONS = dict.fromkeys(REJECTED_KEYS, 0)

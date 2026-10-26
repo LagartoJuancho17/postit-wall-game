@@ -211,20 +211,51 @@ def truth_errors(
     projector_size: Sequence[int],
     *,
     step: int = 8,
+    lens=None,
+    true_k: float = 0.0,
 ) -> np.ndarray:
-    """|H(c) - inv(G)(c)| in projector px on a camera grid inside the projection.
+    """|H(u(c)) - inv(G)(t(c))| in projector px on a camera grid inside the projection.
 
-    The grid covers the whole camera frame every `step` px; points whose true
-    projector position falls outside the projector image are left out.
+    `u` is the decoded `lens` straightening (identity for None) and `t` the
+    true lens the frames were filmed through (`film_through_lens(true_k)`,
+    identity for 0). The grid covers the whole camera frame every `step` px;
+    points whose true projector position falls outside the projector image
+    are left out.
     """
+    from services.calibration.lens import lens_for
 
     width, height = camera_size
     projector_width, projector_height = projector_size
     xs, ys = np.meshgrid(np.arange(0, width, step, dtype=np.float64),
                          np.arange(0, height, step, dtype=np.float64))
-    points = np.stack([xs.ravel(), ys.ravel()], axis=1).reshape(-1, 1, 2)
-    truth = cv2.perspectiveTransform(points, np.linalg.inv(G)).reshape(-1, 2)
-    estimate = cv2.perspectiveTransform(points, np.asarray(matrix, dtype=np.float64)).reshape(-1, 2)
+    points = np.stack([xs.ravel(), ys.ravel()], axis=1)
+
+    def straighten(grid, model):
+        if model is None:
+            return grid
+        dx, dy = grid[:, 0] - model["cx"], grid[:, 1] - model["cy"]
+        scale = 1 + model["k"] * (dx * dx + dy * dy) / (model["r"] * model["r"])
+        return np.stack([model["cx"] + dx * scale, model["cy"] + dy * scale], axis=1)
+
+    true_lens = lens_for(width, height, true_k) if true_k else None
+    truth = cv2.perspectiveTransform(straighten(points, true_lens).reshape(-1, 1, 2), np.linalg.inv(G)).reshape(-1, 2)
+    estimate = cv2.perspectiveTransform(straighten(points, lens).reshape(-1, 1, 2),
+                                        np.asarray(matrix, dtype=np.float64)).reshape(-1, 2)
     inside = ((truth[:, 0] >= 0) & (truth[:, 0] <= projector_width - 1)
               & (truth[:, 1] >= 0) & (truth[:, 1] <= projector_height - 1))
     return np.hypot(*(estimate[inside] - truth[inside]).T)
+
+
+def film_through_lens(image: np.ndarray, k: float) -> np.ndarray:
+    """`image` filmed through a radial lens whose straightening is the
+    contract 1.3.1 model with stretch `k`: camera pixel p shows the ideal
+    image at undistort(p), so decode_alignment should recover `k`."""
+    from services.calibration.lens import lens_for
+
+    height, width = image.shape[:2]
+    lens = lens_for(width, height, k)
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float64)
+    dx, dy = xs - lens["cx"], ys - lens["cy"]
+    scale = 1 + k * (dx * dx + dy * dy) / (lens["r"] * lens["r"])
+    return cv2.remap(image, (lens["cx"] + dx * scale).astype(np.float32),
+                     (lens["cy"] + dy * scale).astype(np.float32), cv2.INTER_LINEAR)

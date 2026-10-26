@@ -34,6 +34,7 @@ import numpy as np
 
 from contracts.model import Point
 from services.calibration import estimate_homography, reprojection_errors
+from services.calibration.lens import fit_lens, lens_for, undistort_all
 
 ALIGNMENT_VERSION = 1
 ALIGNMENT_BITS = 7
@@ -409,19 +410,76 @@ def _empty_result(total: int) -> dict:
         "threshold": None,
         "gains": None,
         "rejected": None,
+        "lens": None,
     }
 
 
 def _fail(result: dict, code: str, **values) -> dict:
     result["ok"] = False
     result["matrix"] = None
+    result["lens"] = None
     result["code"] = code
     result["reason"] = ALIGNMENT_REASONS[code].format(**values)
     return result
 
 
-def _solve(found: list[dict], layout: Mapping, result: dict) -> dict:
-    """Steps 9-12 on identified dots (sorted by id); fills `result`."""
+def _measure(camera_fit: list[Point], projector_fit: list[Point], camera_holdout: list[Point],
+             projector_holdout: list[Point], result: dict):
+    """Steps 10-11 after the point count: the homography and its checks.
+
+    Returns `(matrix, None, {})` or `(None, code, values)` for `_fail`, and
+    fills the step's numbers into `result`.
+    """
+
+    try:
+        matrix = estimate_homography(camera_fit, projector_fit)
+    except ValueError:
+        # No homography at all: no fit point can agree with one.
+        result["inliers"] = 0
+        return None, "inconsistent", {}
+    fit_errors = _errors(camera_fit, projector_fit, matrix)
+    inliers = sum(1 for error in fit_errors if error <= INLIER_PX)
+    result["inliers"] = inliers
+    # 0.8 * fit is float math on purpose (JS: Math.ceil(0.8 * fit)); it is
+    # exact for every fit size up to 63.
+    if inliers < max(10, math.ceil(0.8 * len(camera_fit))):
+        return None, "inconsistent", {}
+
+    # Step 11.
+    holdout_errors = _errors(camera_holdout, projector_holdout, matrix)
+    good = np.sort(np.array([e for e in holdout_errors if e <= OUTLIER_PX], dtype=np.float64))
+    outliers = len(holdout_errors) - len(good)
+    p95 = _sorted_percentile(good, 95) if len(good) else None
+    worst = float(good[-1]) if len(good) else None
+    result["outliers"] = outliers
+    result["holdout_p95_px"] = p95
+    result["holdout_max_px"] = worst
+    if (
+        len(camera_holdout) < MIN_HOLDOUT
+        or outliers > max(1, math.floor(0.1 * len(camera_holdout)))
+        or p95 is None
+        or p95 > MAX_P95_PX
+        or worst > MAX_ERROR_PX
+    ):
+        # The message needs a number even when no holdout error is usable
+        # (not specified by the contract): then the p95 of the finite holdout
+        # errors, all of them outliers, or 0.0 when there is none at all.
+        shown = p95
+        if shown is None:
+            finite = np.sort(np.array(
+                [e for e in holdout_errors if math.isfinite(e)], dtype=np.float64))
+            shown = _sorted_percentile(finite, 95) if len(finite) else 0.0
+        return None, "inaccurate", {"p95": shown}
+    return matrix, None, {}
+
+
+def _solve(found: list[dict], layout: Mapping, result: dict,
+           size: tuple[int, int] | None = None) -> dict:
+    """Steps 9-12 on identified dots (sorted by id); fills `result`.
+
+    `size` is the camera frame (width, height) the lens model needs; without
+    it step 10b is skipped.
+    """
 
     targets = {int(dot["id"]): (float(dot["x"]), float(dot["y"])) for dot in layout["dots"]}
     # Step 9.
@@ -440,45 +498,35 @@ def _solve(found: list[dict], layout: Mapping, result: dict) -> dict:
     # Step 10.
     if len(found) < MIN_DECODED:
         return _fail(result, "few_points", decoded=len(found), total=result["total"])
-    try:
-        matrix = estimate_homography(camera(fit), projector(fit))
-    except ValueError:
-        # No homography at all: no fit point can agree with one.
-        result["inliers"] = 0
-        return _fail(result, "inconsistent")
-    fit_errors = _errors(camera(fit), projector(fit), matrix)
-    inliers = sum(1 for error in fit_errors if error <= INLIER_PX)
-    result["inliers"] = inliers
-    # 0.8 * fit is float math on purpose (JS: Math.ceil(0.8 * fit)); it is
-    # exact for every fit size up to 63.
-    if inliers < max(10, math.ceil(0.8 * len(fit))):
-        return _fail(result, "inconsistent")
+    plain = dict(result)
+    matrix, code, values = _measure(camera(fit), projector(fit), camera(holdout), projector(holdout), plain)
+    lens = None
+    # Step 10b: a wide camera lens bends the edges; straighten and try again.
+    if code in ("inconsistent", "inaccurate") and size is not None:
+        def cost(k: float) -> float:
+            straight = undistort_all(camera(fit), lens_for(size[0], size[1], k))
+            try:
+                trial = estimate_homography(straight, projector(fit))
+            except ValueError:
+                return math.inf
+            total = 0.0
+            for error in _errors(straight, projector(fit), trial):
+                clipped = min(error, OUTLIER_PX)
+                total += clipped * clipped
+            return total
 
-    # Step 11.
-    holdout_errors = _errors(camera(holdout), projector(holdout), matrix)
-    good = np.sort(np.array([e for e in holdout_errors if e <= OUTLIER_PX], dtype=np.float64))
-    outliers = len(holdout_errors) - len(good)
-    p95 = _sorted_percentile(good, 95) if len(good) else None
-    worst = float(good[-1]) if len(good) else None
-    result["outliers"] = outliers
-    result["holdout_p95_px"] = p95
-    result["holdout_max_px"] = worst
-    if (
-        len(holdout) < MIN_HOLDOUT
-        or outliers > max(1, math.floor(0.1 * len(holdout)))
-        or p95 is None
-        or p95 > MAX_P95_PX
-        or worst > MAX_ERROR_PX
-    ):
-        # The message needs a number even when no holdout error is usable
-        # (not specified by the contract): then the p95 of the finite holdout
-        # errors, all of them outliers, or 0.0 when there is none at all.
-        shown = p95
-        if shown is None:
-            finite = np.sort(np.array(
-                [e for e in holdout_errors if math.isfinite(e)], dtype=np.float64))
-            shown = _sorted_percentile(finite, 95) if len(finite) else 0.0
-        return _fail(result, "inaccurate", p95=shown)
+        k = fit_lens(cost)
+        if k != 0.0:
+            candidate = lens_for(size[0], size[1], k)
+            trial = dict(result)
+            straight_matrix, straight_code, straight_values = _measure(
+                undistort_all(camera(fit), candidate), projector(fit),
+                undistort_all(camera(holdout), candidate), projector(holdout), trial)
+            if straight_code is None:
+                matrix, code, values, plain, lens = straight_matrix, None, {}, trial, candidate
+    result.update(plain)
+    if code is not None:
+        return _fail(result, code, **values)
 
     # Step 12: share of the projector frame the decoded dots span.
     points = np.array([targets[dot["id"]] for dot in found], dtype=np.float32)
@@ -490,6 +538,7 @@ def _solve(found: list[dict], layout: Mapping, result: dict) -> dict:
 
     result["ok"] = True
     result["matrix"] = [list(row) for row in matrix]
+    result["lens"] = lens
     return result
 
 
@@ -514,7 +563,8 @@ def decode_alignment(frames: Mapping, layout: Mapping) -> dict:
     components = _components(strength, differences, threshold)
     found, rejected = _identify(components, total)
     result["rejected"] = rejected
-    return _solve(found, layout, result)
+    height, width = next(iter(images.values())).shape
+    return _solve(found, layout, result, (width, height))
 
 
 __all__ = [

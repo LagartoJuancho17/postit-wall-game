@@ -7,6 +7,8 @@
  * 4.12 release as the Python side), so the matrix is the one Python gets.
  */
 
+import { undistort } from "./lens.mjs";
+
 const EPS64 = 2.220446049250313e-16;
 
 /** Intersection of diagonals, including perspective-shaped rectangles. */
@@ -139,9 +141,12 @@ export function transformPoint(point, matrix) {
   return { x, y };
 }
 
-/** Map every board polygon from camera pixels to projector pixels. */
-export function transformBoard(board, matrix) {
-  const mapped = (polygon) => polygon.map((p) => transformPoint(p, matrix));
+/**
+ * Map every board polygon from camera pixels to projector pixels,
+ * straightening each point through the alignment's `lens` first.
+ */
+export function transformBoard(board, matrix, lens = null) {
+  const mapped = (polygon) => polygon.map((p) => transformPoint(undistort(p, lens), matrix));
   return {
     playfield: mapped(board.playfield),
     start: mapped(board.start),

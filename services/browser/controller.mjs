@@ -13,6 +13,7 @@
 
 import { ALIGNMENT_FRAMES, alignmentLayout, decodeAlignment, frameKey } from "./alignment.mjs";
 import { offsetConvexPolygon, transformBoard, transformPoint } from "./calibration.mjs";
+import { distort, undistort } from "./lens.mjs";
 import { isPlainObject, pyJsonLength, pyLength, pyMod, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
 import { GameStatus, GRAVITY_SHARE, launch, LAUNCH_SPEED_SHARE, readyState, step } from "./physics.mjs";
@@ -119,6 +120,7 @@ export function alignKey(header) {
 }
 
 const round3 = (value) => (typeof value === "number" && Number.isFinite(value) ? pyRound(value, 3) : value);
+const round6 = (value) => (typeof value === "number" && Number.isFinite(value) ? pyRound(value, 6) : value);
 
 /** Left-to-right mean, as server.py `_mean`. */
 function mean(values) {
@@ -144,12 +146,19 @@ export function normalizedInverse(m) {
   return inverse.map((row) => row.map((value) => value / scale));
 }
 
-function mapPoint(point, matrix) {
+/** Camera px -> projector px: straighten through `lens`, then H. */
+function mapPoint(point, matrix, lens = null) {
   try {
-    return transformPoint(point, matrix);
+    return transformPoint(undistort(point, lens), matrix);
   } catch {
     return null;
   }
+}
+
+/** Projector px -> camera px: inverse H, then bend back through `lens`. */
+function unmapPoint(point, inverse, lens = null) {
+  const mapped = mapPoint(point, inverse);
+  return mapped !== null ? distort(mapped, lens) : null;
 }
 
 const boxesIntersect = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
@@ -161,12 +170,12 @@ export function probeSide(width, height) {
 }
 
 /** One bare-wall test square per role, deterministic (contract 2.3). */
-export function placeProbes(liveDetection, matrix, [width, height], [cameraWidth, cameraHeight]) {
+export function placeProbes(liveDetection, matrix, [width, height], [cameraWidth, cameraHeight], lens = null) {
   const side = probeSide(width, height);
   const keepOut = [];
   for (const role of ROLES) {
     for (const note of liveDetection?.roles?.[role]?.notes ?? []) {
-      const mapped = note.points.map((point) => mapPoint({ x: point.x, y: point.y }, matrix));
+      const mapped = note.points.map((point) => mapPoint({ x: point.x, y: point.y }, matrix, lens));
       if (!mapped.length || mapped.some((point) => point === null)) continue;
       const xs = mapped.map((point) => point.x);
       const ys = mapped.map((point) => point.y);
@@ -186,7 +195,7 @@ export function placeProbes(liveDetection, matrix, [width, height], [cameraWidth
         if (keepOut.some((box) => boxesIntersect(square, box))) continue;
         if (chosen.some(([, box]) => boxesIntersect(square, grown(box, side)))) continue;
         const corners = [[square[0], square[1]], [square[2], square[1]], [square[2], square[3]], [square[0], square[3]]]
-          .map(([x, y]) => mapPoint({ x, y }, inverse));
+          .map(([x, y]) => unmapPoint({ x, y }, inverse, lens));
         if (corners.some((corner) => corner === null || !(low <= corner.x && corner.x <= cameraWidth - 1 - low &&
             low <= corner.y && corner.y <= cameraHeight - 1 - low))) continue;
         found = square;
@@ -348,6 +357,7 @@ export class GameController {
     this.alignLayout = null;
     this.alignFrames = new Map();
     this.alignMatrix = null;
+    this.alignLens = null;
     this.alignCamera = null;
     this.alignProjector = null;
     this.alignQuality = null;
@@ -531,6 +541,7 @@ export class GameController {
       status: this.alignStatus,
       layout: this.alignStatus === "collecting" ? JSON.parse(JSON.stringify(this.alignLayout)) : null,
       matrix: this.alignMatrix !== null ? this.alignMatrix.map((row) => [...row]) : null,
+      lens: this.alignLens !== null ? { ...this.alignLens } : null,
       camera: this.alignCamera ? { ...this.alignCamera } : null,
       projector: this.alignProjector ? { ...this.alignProjector } : null,
       received: this.alignFrames.size,
@@ -548,6 +559,7 @@ export class GameController {
     this.alignLayout = null;
     this.alignFrames = new Map();
     this.alignMatrix = null;
+    this.alignLens = null;
     this.alignCamera = null;
     this.alignProjector = null;
     this.alignQuality = null;
@@ -575,7 +587,7 @@ export class GameController {
   /** The playable board in the game's space (contract 1.5); throws. */
   gameBoard(cameraBoard, width, height) {
     if (this.alignStatus === "ready" && this.alignMatrix !== null) {
-      const mapped = transformBoard(cameraBoard, this.alignMatrix);
+      const mapped = transformBoard(cameraBoard, this.alignMatrix, this.alignLens);
       const board = { playfield: rectangle(this.projectorWidth, this.projectorHeight), start: mapped.start,
         goal: mapped.goal, bumpers: mapped.bumpers, markers: mapped.markers };
       readyState(board);
@@ -1063,7 +1075,8 @@ export class GameController {
       this.alignCode = result.code;
       this.changed(reason);
       this.log("alignment_failed", { code: result.code, reason, decoded: result.decoded, total: result.total,
-        inliers: result.inliers, holdout_p95_px: round3(result.holdout_p95_px), coverage: round3(result.coverage),
+        inliers: result.inliers, holdout_p95_px: round3(result.holdout_p95_px),
+        holdout_max_px: round3(result.holdout_max_px), outliers: result.outliers, coverage: round3(result.coverage),
         rejected: result.rejected });
       return;
     }
@@ -1071,22 +1084,25 @@ export class GameController {
     this.alignStatus = "ready";
     this.alignLayout = null;
     this.alignMatrix = result.matrix.map((row) => row.map(Number));
+    this.alignLens = result.lens ? { k: Number(result.lens.k), cx: Number(result.lens.cx),
+      cy: Number(result.lens.cy), r: Number(result.lens.r) } : null;
     this.alignCamera = camera;
     this.alignProjector = { width: this.projectorWidth, height: this.projectorHeight };
     this.alignQuality = Object.fromEntries(["decoded", "total", "fit", "inliers", "holdout", "holdout_p95_px",
       "holdout_max_px", "outliers", "coverage"].map((key) => [key, round3(result[key])]));
     const probes = placeProbes(this.liveDetection, this.alignMatrix, [this.projectorWidth, this.projectorHeight],
-      [camera.width, camera.height]);
+      [camera.width, camera.height], this.alignLens);
     this.overlay = overlayState("unchecked", probes);
     this.checkFrames = new Map();
     this.holdDetection();   // the overlay check comes next
     const detail = `Proyector alineado: error ${pyRound(result.holdout_p95_px, 1).toFixed(1)} px ` +
-      `con ${result.decoded} puntos.`;
+      `con ${result.decoded} puntos` + (this.alignLens !== null ? " (lente de la cámara corregido)." : ".");
     this.alignDetail = detail;
     this.recomputeCandidate();
     this.changed(detail);
     this.log("alignment_ready", { ...this.alignQuality, probes: probes.length,
-      width: this.projectorWidth, height: this.projectorHeight });
+      width: this.projectorWidth, height: this.projectorHeight,
+      lens_k: this.alignLens !== null ? round6(this.alignLens.k) : null });
   }
 
   /** Store one pattern frame of a run in progress (gray, at most 14). */
@@ -1170,7 +1186,7 @@ export class GameController {
       for (const polygon of overlay[role]) {
         const cx = mean(polygon.map((point) => point.x));
         const cy = mean(polygon.map((point) => point.y));
-        const mapped = mapPoint({ x: cx, y: cy }, this.alignMatrix);
+        const mapped = mapPoint({ x: cx, y: cy }, this.alignMatrix, this.alignLens);
         const hits = boxes.filter(([, box]) => mapped !== null && box[0] <= mapped.x && mapped.x <= box[2] &&
           box[1] <= mapped.y && mapped.y <= box[3]).map(([probeRole]) => probeRole);
         if (hits.length) hits.forEach((hit) => hitRoles.add(hit));

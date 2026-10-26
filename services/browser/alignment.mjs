@@ -17,6 +17,7 @@
  */
 
 import { estimateHomography, transformPoint } from "./calibration.mjs";
+import { fitLens, lensFor, undistortAll } from "./lens.mjs";
 import { pyRound } from "./numbers.mjs";
 
 export const ALIGNMENT_VERSION = 1;
@@ -319,19 +320,61 @@ function errors(camera, projector, matrix) {
 function emptyResult(total) {
   return { ok: false, reason: null, code: null, matrix: null, decoded: null, total, fit: null,
     inliers: null, holdout: null, holdout_p95_px: null, holdout_max_px: null, outliers: null,
-    coverage: null, threshold: null, gains: null, rejected: null };
+    coverage: null, threshold: null, gains: null, rejected: null, lens: null };
 }
 
 function fail(result, code, values = {}) {
   result.ok = false;
   result.matrix = null;
+  result.lens = null;
   result.code = code;
   result.reason = ALIGNMENT_REASONS[code](values);
   return result;
 }
 
-/** Steps 9-12 on identified dots (sorted by id); fills `result`. */
-function solve(cv, found, layout, result) {
+/**
+ * Steps 10-11 after the point count: the homography and its checks. Returns
+ * { matrix, code: null, values } or { matrix: null, code, values } for
+ * `fail`, and fills the step's numbers into `result`.
+ */
+function measure(cv, cameraFit, projectorFit, cameraHoldout, projectorHoldout, result) {
+  let matrix;
+  try {
+    matrix = estimateHomography(cv, cameraFit, projectorFit);
+  } catch {
+    result.inliers = 0;
+    return { matrix: null, code: "inconsistent", values: {} };
+  }
+  const fitErrors = errors(cameraFit, projectorFit, matrix);
+  const inliers = fitErrors.filter((error) => error <= INLIER_PX).length;
+  result.inliers = inliers;
+  if (inliers < Math.max(10, Math.ceil(0.8 * cameraFit.length))) return { matrix: null, code: "inconsistent", values: {} };
+  // Step 11.
+  const holdoutErrors = errors(cameraHoldout, projectorHoldout, matrix);
+  const good = Float64Array.from(holdoutErrors.filter((error) => error <= OUTLIER_PX)).sort();
+  const outliers = holdoutErrors.length - good.length;
+  const p95 = good.length ? sortedPercentile(good, 95) : null;
+  const worst = good.length ? good[good.length - 1] : null;
+  result.outliers = outliers;
+  result.holdout_p95_px = p95;
+  result.holdout_max_px = worst;
+  if (cameraHoldout.length < MIN_HOLDOUT || outliers > Math.max(1, Math.floor(0.1 * cameraHoldout.length)) ||
+      p95 === null || p95 > MAX_P95_PX || worst > MAX_ERROR_PX) {
+    let shown = p95;
+    if (shown === null) {
+      const finite = Float64Array.from(holdoutErrors.filter(Number.isFinite)).sort();
+      shown = finite.length ? sortedPercentile(finite, 95) : 0.0;
+    }
+    return { matrix: null, code: "inaccurate", values: { p95: shown } };
+  }
+  return { matrix, code: null, values: {} };
+}
+
+/**
+ * Steps 9-12 on identified dots (sorted by id); fills `result`. `size` is
+ * the camera frame [width, height] the lens model needs; null skips step 10b.
+ */
+function solve(cv, found, layout, result, size = null) {
   const targets = new Map(layout.dots.map((dot) => [dot.id, { x: dot.x, y: dot.y }]));
   // Step 9.
   const fit = found.filter((dot) => dot.id % 5 !== 0);
@@ -343,35 +386,41 @@ function solve(cv, found, layout, result) {
   const projector = (dots) => dots.map((dot) => targets.get(dot.id));
   // Step 10.
   if (found.length < MIN_DECODED) return fail(result, "few_points", { decoded: found.length, total: result.total });
-  let matrix;
-  try {
-    matrix = estimateHomography(cv, camera(fit), projector(fit));
-  } catch {
-    result.inliers = 0;
-    return fail(result, "inconsistent");
-  }
-  const fitErrors = errors(camera(fit), projector(fit), matrix);
-  const inliers = fitErrors.filter((error) => error <= INLIER_PX).length;
-  result.inliers = inliers;
-  if (inliers < Math.max(10, Math.ceil(0.8 * fit.length))) return fail(result, "inconsistent");
-  // Step 11.
-  const holdoutErrors = errors(camera(holdout), projector(holdout), matrix);
-  const good = Float64Array.from(holdoutErrors.filter((error) => error <= OUTLIER_PX)).sort();
-  const outliers = holdoutErrors.length - good.length;
-  const p95 = good.length ? sortedPercentile(good, 95) : null;
-  const worst = good.length ? good[good.length - 1] : null;
-  result.outliers = outliers;
-  result.holdout_p95_px = p95;
-  result.holdout_max_px = worst;
-  if (holdout.length < MIN_HOLDOUT || outliers > Math.max(1, Math.floor(0.1 * holdout.length)) ||
-      p95 === null || p95 > MAX_P95_PX || worst > MAX_ERROR_PX) {
-    let shown = p95;
-    if (shown === null) {
-      const finite = Float64Array.from(holdoutErrors.filter(Number.isFinite)).sort();
-      shown = finite.length ? sortedPercentile(finite, 95) : 0.0;
+  let plain = { ...result };
+  let { matrix, code, values } = measure(cv, camera(fit), projector(fit), camera(holdout), projector(holdout), plain);
+  let lens = null;
+  // Step 10b: a wide camera lens bends the edges; straighten and try again.
+  if ((code === "inconsistent" || code === "inaccurate") && size !== null) {
+    const cost = (k) => {
+      const straight = undistortAll(camera(fit), lensFor(size[0], size[1], k));
+      let trial;
+      try {
+        trial = estimateHomography(cv, straight, projector(fit));
+      } catch {
+        return Infinity;
+      }
+      let total = 0.0;
+      for (const error of errors(straight, projector(fit), trial)) {
+        const clipped = Math.min(error, OUTLIER_PX);
+        total += clipped * clipped;
+      }
+      return total;
+    };
+    const k = fitLens(cost);
+    if (k !== 0.0) {
+      const candidate = lensFor(size[0], size[1], k);
+      const trial = { ...result };
+      const straight = measure(cv, undistortAll(camera(fit), candidate), projector(fit),
+        undistortAll(camera(holdout), candidate), projector(holdout), trial);
+      if (straight.code === null) {
+        ({ matrix, code, values } = straight);
+        plain = trial;
+        lens = candidate;
+      }
     }
-    return fail(result, "inaccurate", { p95: shown });
   }
+  Object.assign(result, plain);
+  if (code !== null) return fail(result, code, values);
   // Step 12: share of the projector frame the decoded dots span.
   const points = cv.matFromArray(found.length, 1, cv.CV_32FC2, found.flatMap((dot) => {
     const target = targets.get(dot.id);
@@ -390,6 +439,7 @@ function solve(cv, found, layout, result) {
   if (coverage < MIN_COVERAGE) return fail(result, "low_coverage");
   result.ok = true;
   result.matrix = matrix.map((row) => [...row]);
+  result.lens = lens;
   return result;
 }
 
@@ -410,5 +460,5 @@ export function decodeAlignment(cv, frames, layout) {
   const found = components(cv, images, gains, strength, width, height, level);
   const { kept, rejected } = identify(found, total);
   result.rejected = rejected;
-  return solve(cv, kept, layout, result);
+  return solve(cv, kept, layout, result, [width, height]);
 }

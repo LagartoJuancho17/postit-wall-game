@@ -34,9 +34,10 @@ code and writes `parity/golden/` (gitignored); the tests replay every case:
 - the rim bridge: a cut paper joined, a ring beside a paper changing
   nothing, bare wall;
 - polygon offsets; alignment codes, layouts and pattern frames;
-- 10 full decodes covering success and every failure code (`few_points`,
-  `inconsistent`, `inaccurate` and `low_coverage` from lens distortion and
-  framing, `frames`); homographies within 2e-11;
+- 12 full decodes covering success, two lens fits (step 10b) and every
+  failure code (`few_points`, `inconsistent`, `inaccurate` and
+  `low_coverage` from lens distortion the model cannot fix and framing,
+  `frames`); homographies within 2e-11;
 - probe placement for the overlay check;
 - 15 controller scripts (406 steps), including a whole alignment with the
   overlay check, every refusal and every invalidation reason.
