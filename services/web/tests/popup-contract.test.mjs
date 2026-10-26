@@ -130,9 +130,9 @@ test("the projector opens as a named popup window", () => {
 
 test("an alignment run owns the camera and the projector until it ends (review, 2026-10-21)", () => {
   const keys = operator.slice(operator.indexOf('document.addEventListener("keydown"'));
-  assert.match(keys, /if \(aligning\) return; \/\/ S, A, R, Space and the arrows wait for the run to end/);
+  assert.match(keys, /if \(aligning\) return; \/\/ S, A, R and Space wait for the run to end/);
   assert.match(keys, /if \(!\(aligning \|\| tuning \|\| pickBusy\)\) setProjectorTheme/);
-  for (const id of ["launch-button", "reset-button", "aim-left", "aim-right", "angle-range"]) {
+  for (const id of ["launch-button", "reset-button"]) {
     assert.match(operator, new RegExp(`\\$\\("${id}"\\)\\.disabled = aligning \\|\\| `), id);
   }
   assert.match(operator, /\$\("theme-dark"\)\.disabled = lightLocked;/);

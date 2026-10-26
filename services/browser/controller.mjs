@@ -14,9 +14,9 @@
 import { ALIGNMENT_FRAMES, alignmentLayout, decodeAlignment, frameKey } from "./alignment.mjs";
 import { offsetConvexPolygon, transformBoard, transformPoint } from "./calibration.mjs";
 import { distort, undistort } from "./lens.mjs";
-import { isPlainObject, pyJsonLength, pyLength, pyMod, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
+import { isPlainObject, pyJsonLength, pyLength, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
-import { GameStatus, GRAVITY_SHARE, launch, LAUNCH_SPEED_SHARE, readyState, step } from "./physics.mjs";
+import { drop, dropReadyState, GameStatus, GRAVITY_SHARE, step } from "./physics.mjs";
 import { boardFromNotes, findNotes, inspectFrame } from "./vision.mjs";
 
 const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
@@ -55,6 +55,8 @@ const PHYSICS_MESSAGES = Object.freeze({
     "El inicio está demasiado cerca del borde del área de juego.",
   "start overlaps goal": "El inicio toca la llegada. Separalos.",
   "start overlaps a bumper": "El inicio toca un rebote. Separalos.",
+  "the ball must fit inside the playfield under the start note":
+    "La pelota no entra debajo del inicio. Subilo un poco.",
 });
 const PHYSICS_FALLBACK = "Un post-it detectado no tiene una forma válida.";
 const CAMERA_MODES = ["whiteBalanceMode", "exposureMode", "focusMode"];
@@ -335,7 +337,6 @@ export class GameController {
     this.projectorWidth = 0;
     this.projectorHeight = 0;
     this.projectionMode = "live";
-    this.aimDegrees = -45.0;
     this.attempts = 0;
     this.paused = false;
     this.lastTick = null;
@@ -469,10 +470,8 @@ export class GameController {
         position: game ? pointJson(game.position) : null,
         bounces: game ? game.bounce_count : 0,
         elapsed_s: game ? pyRound(game.elapsed_s, 3) : 0.0,
-        aim_degrees: pyRound(this.aimDegrees, 3),
-        // What a launch now would use (the projector draws its path).
+        // What a drop now would use: the ball falls from rest under the start note.
         gravity_px_s2: pyRound(Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE, 3),
-        launch_speed_px_s: pyRound(Math.min(this.boardWidth, this.boardHeight) * LAUNCH_SPEED_SHARE, 3),
         attempts: this.attempts,
         paused: this.paused,
       },
@@ -590,10 +589,10 @@ export class GameController {
       const mapped = transformBoard(cameraBoard, this.alignMatrix, this.alignLens);
       const board = { playfield: rectangle(this.projectorWidth, this.projectorHeight), start: mapped.start,
         goal: mapped.goal, bumpers: mapped.bumpers, markers: mapped.markers };
-      readyState(board);
+      dropReadyState(board);
       return [board, "projector", this.projectorWidth, this.projectorHeight];
     }
-    readyState(cameraBoard);
+    dropReadyState(cameraBoard);
     return [cameraBoard, "camera", width, height];
   }
 
@@ -620,7 +619,7 @@ export class GameController {
     }
     const [board, space, width, height] = this.candidate;
     this.board = board;
-    this.game = readyState(board);
+    this.game = dropReadyState(board);
     this.boardSpace = space;
     this.boardWidth = width;
     this.boardHeight = height;
@@ -731,14 +730,6 @@ export class GameController {
     } else if (name === "check_solve") {
       this.solveOverlayCheck();
       this.holdUntil = null;
-    } else if (name === "aim" || name === "aim_left" || name === "aim_right") {
-      if (this.game === null || this.game.status !== GameStatus.READY) {
-        throw new RequestError("La dirección solo se cambia antes del lanzamiento.", HTTP.CONFLICT);
-      }
-      const aim = name === "aim" ? finiteNumber(payload.degrees ?? null, "degrees")
-        : this.aimDegrees + (name === "aim_left" ? -5 : 5);
-      this.aimDegrees = pyMod(aim + 180, 360) - 180;
-      this.revision += 1;
     } else if (name === "launch") {
       this.refuseWhileCollecting();
       if (!this.projectorOpen || this.cameraBoard === null || this.board === null || this.game === null) {
@@ -747,18 +738,15 @@ export class GameController {
       if (this.game.status !== GameStatus.READY) {
         throw new RequestError("Reiniciá el intento antes de volver a lanzar.", HTTP.CONFLICT);
       }
-      const side = Math.min(this.boardWidth, this.boardHeight);
-      const speed = side * LAUNCH_SPEED_SHARE;
-      const gravity = side * GRAVITY_SHARE;
-      this.game = launch(this.board, this.aimDegrees, speed, gravity);
+      const gravity = Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE;
+      this.game = drop(this.board, gravity);
       this.attempts += 1;
       this.paused = false;
       this.lastTick = this.clock();
       this.accumulator = 0.0;
       this.projectionMode = "live";
-      this.changed("Pelota lanzada.");
-      this.log("attempt_started", { attempt: this.attempts, angle_degrees: pyRound(this.aimDegrees, 1),
-        speed_px_s: pyRound(speed, 1), gravity_px_s2: pyRound(gravity, 1) });
+      this.changed("Pelota soltada.");
+      this.log("attempt_started", { attempt: this.attempts, gravity_px_s2: pyRound(gravity, 1) });
     } else if (name === "reset") {
       if (this.cameraBoard === null || this.candidate === null) {
         throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);
@@ -995,7 +983,7 @@ export class GameController {
     // displaying its result. Only the overlay follows the moving notes.
     if (this.game === null || this.game.status === GameStatus.READY) this.applyCandidate();
     if (previous === null && cameraBoard !== null) {
-      this.changed("Post-its detectados. Listo para lanzar.");
+      this.changed("Post-its detectados. Listo para soltar la pelota.");
       this.log("live_board_ready", { bumpers: cameraBoard.bumpers.length, camera_width: width,
         camera_height: height, space: candidate[1] });
     } else if (previous !== null && cameraBoard === null) {

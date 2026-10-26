@@ -47,9 +47,7 @@ de 8 MB y el JPEG de 12 megapíxeles, comprobado antes de decodificarlo.
 | `align_cancel`, `align_clear` | ninguno | Cancela la alineación en curso; borra la alineación. |
 | `check_solve` | ninguno | Juzga los dos cuadros del chequeo: `alignment.overlay.status` pasa a `ok` (relleno de color permitido) o `fill_off`. |
 | `projection_restore` | ninguno | Vuelve al modo `live`. |
-| `aim` | `degrees` | Dirección del próximo lanzamiento. |
-| `aim_left`, `aim_right` | ninguno | Ajusta la dirección 5°. |
-| `launch` | ninguno | Inicia un intento con el tablero listo. |
+| `launch` | ninguno | Suelta la pelota: cae desde abajo del inicio (no hay dirección). |
 | `reset` | ninguno | Prepara una pelota con el tablero válido más reciente. |
 | `pause`, `resume` | ninguno | Pausa o reanuda el intento. |
 | `palette_set` | `role` (`start`, `goal`, `bumper`, `marker`), `hex` (`#rrggbb`) | Cambia el color. Rechaza colores grises, oscuros o demasiado parecidos a otro rol. |

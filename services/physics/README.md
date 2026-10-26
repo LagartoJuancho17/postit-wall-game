@@ -21,7 +21,15 @@ keeps `RESTITUTION = 0.8` of its normal speed; one weaker than `REST_STEPS`
 steps of gravity rests and the ball slides along the surface (no endless
 micro-bounces, one event per step); an attempt is lost after
 `MAX_ATTEMPT_S = 20`. `ballistic_aim_degrees(dx, dy, speed, gravity)` gives the
-lower arc through a point. With `gravity_px_s2 = 0` (the classic game) the
+lower arc through a point (classic aiming only).
+
+**Drop (the web game since 2026-10-26).** `drop(board, gravity_px_s2)`
+starts the ball at rest at `drop_point(board)`: straight below the start
+note's centroid, `DROP_GAP_PX = 2` under its lowest edge. `drop_ready_state`
+is the motionless version. A ball slower than `STILL_SPEED_PX_S = 5` for
+`STALL_S = 1.5` s is lost (it stopped on a note or in a V). Bumpers touched
+at the same instant answer together, and a ball can rest on two surfaces at
+once (a V holds it). With `gravity_px_s2 = 0` (the classic game) the
 motion is straight and elastic, bit for bit as before. The service calculates the time of each
 edge or corner impact, including multiple contacts during one `step`. The
 returned immutable `GameState` records position, velocity, elapsed simulation
@@ -55,6 +63,7 @@ python3.12 -m services.physics.evals.gravity
 
 The first command is the local gate suite. The second produces a JSON quality
 score for direct shots, rebounds, misses, fast targets, and corner impacts;
-its pass threshold is 100%. The third measures gravity: the share of random
-boards some 5° aim wins (79/80, threshold 95%), the error against the
-analytic parabola (3e-12 px), and that every attempt with bumpers ends.
+its pass threshold is 100%. The third measures the dropped ball: the error
+against y0 + g t²/2 (1e-12 px), goals under the start won (60/60), off-side
+goals won with one tilted note (40/40, threshold 95%), and that every drop
+onto random ramps and bumpers ends without an error (1245/1245).

@@ -5,7 +5,8 @@ import unittest
 from dataclasses import FrozenInstanceError
 
 from contracts.model import Board, Point, Polygon
-from services.physics import BALL_RADIUS_PX, GameStatus, launch, ready_state, step
+from services.physics import BALL_RADIUS_PX, DROP_GAP_PX, GameStatus, drop, drop_point, drop_ready_state, launch, ready_state, step
+from services.physics.engine import STALL_S, STILL_SPEED_PX_S
 
 
 def rectangle(left, top, right, bottom):
@@ -155,18 +156,22 @@ class GravityTests(unittest.TestCase):
         rebound = math.sqrt(2 * self.G * (220 - BALL_RADIUS_PX - apex.position.y))
         self.assertAlmostEqual(rebound / speed, 0.8, delta=0.02)
 
-    def test_a_ball_settles_on_a_floor_without_endless_bounces_then_times_out(self):
+    def test_a_ball_settles_on_a_floor_without_endless_bounces_then_ends_once_still(self):
         floor = rectangle(20, 220, 480, 260)
         game = board(bumpers=(floor,))
         state = launch(game, 90, 50.0, self.G)
-        bounces = []
+        settled = None   # when the ball last went still (a bounce's apex is still for a moment too)
         for _ in range(round(25 * 120)):
-            state = step(game, state, 1 / 120)
-            bounces.append(state.bounce_count)
+            previous, state = state, step(game, state, 1 / 120)
+            if previous.still_s == 0 and state.still_s > 0:
+                settled = previous.elapsed_s
             if state.status != GameStatus.RUNNING:
                 break
-        self.assertEqual(state.status, GameStatus.LOST, "resting forever ends the attempt")
-        self.assertAlmostEqual(state.elapsed_s, 20.0, delta=0.02)
+        self.assertEqual(state.status, GameStatus.LOST, "a ball resting on a note has stopped: the attempt ends")
+        self.assertIsNotNone(settled)
+        # Lost STALL_S after it went still, long before MAX_ATTEMPT_S.
+        self.assertAlmostEqual(state.elapsed_s - settled, STALL_S, delta=2 / 120)
+        self.assertLess(state.elapsed_s, 10.0)
         self.assertAlmostEqual(state.position.y, 220 - BALL_RADIUS_PX, delta=0.01, msg="it rests on the floor")
         self.assertLess(state.bounce_count, 30, "resting contact does not count as bounces")
 
@@ -198,3 +203,87 @@ class BallisticAimTests(unittest.TestCase):
         from services.physics import ballistic_aim_degrees
         self.assertIsNone(ballistic_aim_degrees(5000, 0, 100, 400))
         self.assertAlmostEqual(ballistic_aim_degrees(10, 10, 100, 0), 45.0)
+
+
+class DropTests(unittest.TestCase):
+    """The web game drops the ball from rest under the start note."""
+
+    G = 400.0
+
+    def test_the_drop_point_is_under_the_start_below_its_centroid(self):
+        game = board()
+        self.assertEqual(drop_point(game), Point(50.0, 160 + BALL_RADIUS_PX + DROP_GAP_PX))
+        ready = drop_ready_state(game)
+        self.assertEqual((ready.status, ready.velocity, ready.elapsed_s), (GameStatus.READY, Point(0.0, 0.0), 0.0))
+
+    def test_a_slanted_start_still_leaves_the_ball_clear_of_it(self):
+        slanted = Polygon((Point(40, 140), Point(80, 150), Point(76, 190), Point(36, 180)))
+        position = drop_point(board(start=slanted))
+        corners = slanted.points
+        distance = min(math.dist((position.x, position.y), (p.x, p.y)) for p in corners)
+        self.assertGreater(distance, BALL_RADIUS_PX)
+        game = board(start=slanted)
+        state = drop(game, self.G)
+        self.assertEqual(state.status, GameStatus.RUNNING)
+
+    def test_a_drop_falls_straight_on_the_parabola_from_rest(self):
+        game = Board(playfield=rectangle(0, 0, 500, 3000), start=rectangle(40, 140, 60, 160),
+                     goal=rectangle(460, 2800, 480, 2820), bumpers=(), markers=())
+        y0 = drop_point(game).y
+        for dt in (1 / 120, 1 / 30):
+            state = drop(game, self.G)
+            for k in range(1, round(1.0 / dt) + 1):
+                state = step(game, state, dt)
+            self.assertAlmostEqual(state.position.x, 50.0, places=9)
+            self.assertAlmostEqual(state.position.y, y0 + 0.5 * self.G * 1.0, places=6)
+
+    def test_a_goal_under_the_start_is_reached_by_the_bare_drop(self):
+        game = board(goal=rectangle(40, 260, 60, 280))
+        state = drop(game, self.G)
+        while state.status == GameStatus.RUNNING:
+            state = step(game, state, 1 / 120)
+        self.assertEqual(state.status, GameStatus.WON)
+
+    def test_a_ball_wedged_in_a_v_stops_and_the_attempt_ends_without_an_error(self):
+        # Regression (2026-10-26): the gravity eval wedged a slow ball between
+        # two tilted notes; resting on one face pushed it into the other, over
+        # and over, until step() raised "more than 1024 collisions".
+        left = Polygon((Point(10, 200), Point(50, 250), Point(50, 270), Point(10, 220)))
+        right = Polygon((Point(50, 250), Point(90, 200), Point(90, 220), Point(50, 270)))
+        game = board(bumpers=(left, right))
+        state = drop(game, self.G)
+        for _ in range(round(10 * 120)):
+            state = step(game, state, 1 / 120)
+            if state.status != GameStatus.RUNNING:
+                break
+        self.assertEqual(state.status, GameStatus.LOST)
+        self.assertLess(state.elapsed_s, 10.0, "lost STALL_S after it stopped, not at MAX_ATTEMPT_S")
+        self.assertGreaterEqual(state.still_s, STALL_S)
+        self.assertLess(abs(state.position.x - 50.0), 1e-6, "it rests in the crease, between both faces")
+
+    def test_a_ball_dropped_onto_a_symmetric_v_never_passes_through_a_face(self):
+        # Regression (2026-10-26): touching both faces at the same instant, only
+        # one was answered and the ball tunneled through the other.
+        left = Polygon((Point(0, 150), Point(50, 250), Point(50, 275), Point(0, 175)))
+        right = Polygon((Point(50, 250), Point(100, 150), Point(100, 175), Point(50, 275)))
+        game = board(bumpers=(left, right))
+        state = drop(game, self.G)
+        while state.status == GameStatus.RUNNING:
+            state = step(game, state, 1 / 120)
+            self.assertLess(state.position.y, 250 - BALL_RADIUS_PX + 1e-6, "above the crease, never below an arm")
+
+    def test_drop_needs_positive_gravity_and_room_under_the_start(self):
+        for gravity in (0.0, -1.0, math.inf, math.nan):
+            with self.subTest(gravity=gravity), self.assertRaises(ValueError):
+                drop(board(), gravity)
+        with self.assertRaisesRegex(ValueError, "under the start note"):
+            drop_ready_state(board(start=rectangle(40, 270, 60, 290)))
+        with self.assertRaisesRegex(ValueError, "start overlaps a bumper"):
+            drop_ready_state(board(bumpers=(rectangle(30, 165, 70, 185),)))
+
+    def test_the_still_clock_counts_only_while_slower_than_the_threshold(self):
+        game = board()
+        state = drop(game, self.G)
+        state = step(game, state, 1 / 120)
+        self.assertGreater(self.G / 120, STILL_SPEED_PX_S * 0)   # moving from the first step on
+        self.assertEqual(state.still_s, 0.0 if self.G / 120 >= STILL_SPEED_PX_S else 1 / 120)

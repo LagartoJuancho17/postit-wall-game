@@ -488,9 +488,9 @@ class HotPathTests(unittest.TestCase):
         rig = Rig(self)
         rig.open()
         rig.preview()
-        # The goal covers the start's right edge: the start's centroid ends
-        # up 8.5 px from the goal, inside the 10 px ball radius.
-        rig.preview(wall_frame(notes=(("start", 120, 120), ("goal", 136, 120))))
+        # The goal right under the start: the ball dropped from 2 px below
+        # the start (y 144) would already touch it (top edge at y 138).
+        rig.preview(wall_frame(notes=(("start", 120, 120), ("goal", 120, 150))))
         state = rig.game.snapshot()
         self.assertEqual(state["message"], "El inicio toca la llegada. Separalos.")
         invalid = [event for event in rig.events() if event["event"] == "live_board_invalid"]

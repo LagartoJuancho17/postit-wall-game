@@ -42,13 +42,12 @@ const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", 
 const previews = JSON.parse(readFileSync(new URL("../contract/preview-samples.json", import.meta.url), "utf8"));
 const cameraTrials = JSON.parse(readFileSync(new URL("../contract/camera-trials.json", import.meta.url), "utf8"));
 const c920 = JSON.parse(readFileSync(new URL("../contract/c920-capabilities.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "launch", "aim", "reset", "resume", "align"];
+const CONTROLS = ["scan", "launch", "reset", "resume", "align"];
 const NEEDS_CAMERA = ["scan", "launch"];
 const JOURNEY = [
   ["waiting_camera", "scan"],
   ["partial_live", "scan"],
   ["no_markers", "launch"],
-  ["ready", "aim"],
   ["ready", "launch"],
   ["running", "reset"],
   ["won", "reset"],

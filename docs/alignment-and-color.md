@@ -313,13 +313,26 @@ tener gravedad"). In either space, with `S = min(game.width, game.height)`:
 launch speed `1.7 S` px/s, gravity `1.6 S` px/s^2 toward +y (down the wall),
 so a 45 degree shot rises ~0.45 S and lands ~1.8 S away after ~1.5 s. A
 bounce keeps 80% of the normal speed; one weaker than 2.5 steps of gravity
-rests and slides; an attempt is lost after 20 s. The snapshot `game` gains
-`gravity_px_s2` and `launch_speed_px_s` (what a launch now would use) and the
-projector draws the aim as the first 0.3 s of that flight. Both backends:
+rests and slides; an attempt is lost after 20 s.
+
+**Drop, no aim** (2026-10-26, Tobias: "quiero que la pelota CAIGA por la
+gravedad, quitale la parte de dirección"). `launch` drops the ball: it
+starts at rest straight below the start note's centroid, 2 px under its
+lowest edge (`drop_point`; 1 px lower at a time while a slanted edge still
+touches it), and only gravity moves it. The player steers by moving the
+post-its. The `aim`, `aim_left` and `aim_right` actions, the panel's
+direction control and the projector's aim line are gone; the snapshot
+`game` keeps `gravity_px_s2` (no `aim_degrees`, no `launch_speed_px_s`).
+A ball slower than 5 px/s for 1.5 s has stopped (resting on a flat note or
+wedged in a V) and the attempt is lost then. Contacts with several notes
+at the same instant are answered together, and a contact the step's
+gravity alone brings in is a resting one: before, a V crease let the ball
+through one face and a rounded corner made `step` raise. Both backends:
 `services/physics/engine.py`, `services/browser/physics.mjs`
-(`services.physics.evals.gravity`: 79/80 random boards winnable with the
-panel's 5 degree aim, flight on the analytic parabola to 3e-12 px, 150 of
-150 attempts with bumpers end).
+(`services.physics.evals.gravity`: a drop follows y0 + g t^2 / 2 to 1e-12
+px; 60/60 goals under the start won; 40/40 off-side goals won with one
+tilted note; 1095 random ramp drops and 150 drops with bumpers end without
+an error).
 
 Physics validation messages reach the operator in Spanish (both backends map
 the English `ValueError` texts):
@@ -379,8 +392,11 @@ draws nothing on the wall around it. Unaligned it draws only neutral rims.
   paper: two papers a few px apart never cut each other, and two pieces of
   one paper heal on the next frame. A neutral hint `Sin alinear · pulsá A en
   el panel` at the bottom-left in the rim color, 16 px.
-- Ball, aim line and result text: neutral only (dark theme `#f6fbfc`, light
-  theme `#17211f`). The won/lost texts (`¡LLEGASTE!`, `FUERA DEL CAMPO`)
+- Ball and result text: neutral only (dark theme `#f6fbfc`, light
+  theme `#17211f`). The ball is a shaded sphere: a 4 px glow at alpha 0.22,
+  then a radial gradient from a highlight up and left (`#ffffff` /
+  `#5d6b68`) through the ball color to a shade at the edge (`#a3afb3` /
+  `#050807`), all neutral. The won/lost texts (`¡LLEGASTE!`, `FUERA DEL CAMPO`)
   use the same neutral color. Apart from the aligned papers' own color,
   nothing projected uses a role hue.
 - The panel's own overlay on the camera video (not projected) keeps colored

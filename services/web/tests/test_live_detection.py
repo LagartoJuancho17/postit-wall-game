@@ -6,7 +6,7 @@ import unittest
 
 import cv2
 
-from services.physics import LAUNCH_SPEED_SHARE
+from services.physics import GRAVITY_SHARE
 from services.web.backend.eval import FRAME_HUES, _color, _image
 from services.web.backend.server import GameController, RequestError
 
@@ -117,13 +117,14 @@ class LiveDetectionTests(unittest.TestCase):
         self.assertEqual(state['game'], before['game'])
         self.assertNotEqual(state['camera_board']['bumpers'], state['board']['bumpers'])
 
-    def test_projection_resize_preserves_camera_coordinates_attempt_and_speed(self) -> None:
+    def test_projection_resize_preserves_camera_coordinates_attempt_and_gravity(self) -> None:
         running = self.launch()
         velocity = self.game.game.velocity
         resized = self.open(1920, 1080)
         self.assertEqual(resized['board'], running['board'])
         self.assertEqual(resized['game'], running['game'])
-        self.assertAlmostEqual((velocity.x ** 2 + velocity.y ** 2) ** 0.5, 720 * LAUNCH_SPEED_SHARE)
+        self.assertEqual((velocity.x, velocity.y), (0.0, 0.0))   # dropped from rest
+        self.assertAlmostEqual(self.game.game.gravity_px_s2, 720 * GRAVITY_SHARE)
         self.assertEqual((resized['game']['width'], resized['game']['height']), (960, 720))
 
     def test_detection_expires_after_1500ms_and_prevents_stale_launch(self) -> None:

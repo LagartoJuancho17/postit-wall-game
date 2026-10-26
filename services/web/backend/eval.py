@@ -15,7 +15,6 @@ import numpy as np
 
 from contracts import quadrilateral_center
 from services.calibration import ALIGNMENT_FRAMES
-from services.physics import GRAVITY_SHARE, LAUNCH_SPEED_SHARE, ballistic_aim_degrees
 from services.calibration.tests.render import homography_from_quad, project_to_camera, render_pattern
 
 from .server import GameController, RequestError
@@ -33,31 +32,34 @@ def _color(hue: int) -> tuple[int, int, int]:
 FRAME_HUES = {"start": 30, "goal": 12, "bumper": 65, "marker": 157}
 # Note centers in _frame, for sampling a color the way the panel's eyedropper does.
 FRAME_CENTERS = {"start": (180, 350), "goal": (780, 350), "bumper": (430, 235), "marker": (90, 90)}
+# The ball is dropped, never aimed: a wall it can win has the goal under the start.
+DROP_GOAL = (180, 560)
 
 
 def _image(green_x: int, hues: dict[str, int] | None = None, *,
-           markers: bool = True) -> np.ndarray:
+           markers: bool = True, goal: tuple[int, int] = FRAME_CENTERS["goal"]) -> np.ndarray:
     hue = {**FRAME_HUES, **(hues or {})}
     image = np.full((720, 960, 3), 220, dtype=np.uint8)
     for x, y in (((90, 90), (870, 90), (870, 630), (90, 630)) if markers else ()):
         cv2.rectangle(image, (x - 22, y - 22), (x + 22, y + 22), _color(hue["marker"]), -1)
     cv2.rectangle(image, (150, 320), (210, 380), _color(hue["start"]), -1)
-    cv2.rectangle(image, (750, 320), (810, 380), _color(hue["goal"]), -1)
+    cv2.rectangle(image, (goal[0] - 30, goal[1] - 30), (goal[0] + 30, goal[1] + 30), _color(hue["goal"]), -1)
     cv2.rectangle(image, (green_x - 35, 210), (green_x + 35, 260), _color(hue["bumper"]), -1)
     return image
 
 
-def _frame(green_x: int, hues: dict[str, int] | None = None, *, markers: bool = True) -> bytes:
-    okay, encoded = cv2.imencode(".jpg", _image(green_x, hues, markers=markers),
+def _frame(green_x: int, hues: dict[str, int] | None = None, *, markers: bool = True,
+           goal: tuple[int, int] = FRAME_CENTERS["goal"]) -> bytes:
+    okay, encoded = cv2.imencode(".jpg", _image(green_x, hues, markers=markers, goal=goal),
                                 [cv2.IMWRITE_JPEG_QUALITY, 96])
     assert okay
     return encoded.tobytes()
 
 
-def sampled_hex(jpeg: bytes, role: str) -> str:
+def sampled_hex(jpeg: bytes, role: str, centers: dict = FRAME_CENTERS) -> str:
     """Mean color of a 5x5 patch at a note center, read from the decoded JPEG."""
     image = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
-    x, y = FRAME_CENTERS[role]
+    x, y = centers[role]
     blue, green, red = (int(round(c)) for c in image[y - 2:y + 3, x - 2:x + 3].reshape(-1, 3).mean(axis=0))
     return f"#{red:02x}{green:02x}{blue:02x}"
 
@@ -71,7 +73,7 @@ def recolored_wall() -> dict[str, object]:
     now = [0.0]
     game = GameController(log_path=None, clock=lambda: now[0])
     game.action({"action": "projection_open", "width": 1280, "height": 800})
-    frame = _frame(430, {"start": 105, "goal": 176, "bumper": 28, "marker": 140})
+    frame = _frame(430, {"start": 105, "goal": 176, "bumper": 28, "marker": 140}, goal=DROP_GOAL)
     before = _counts(game.preview_jpeg(frame))
     try:
         game.scan_jpeg(frame)
@@ -79,10 +81,10 @@ def recolored_wall() -> dict[str, object]:
     except ValueError:
         default_scan = "refused"
     for role in ("marker", "start", "goal", "bumper"):
-        game.action({"action": "palette_set", "role": role, "hex": sampled_hex(frame, role)})
+        game.action({"action": "palette_set", "role": role,
+                     "hex": sampled_hex(frame, role, {**FRAME_CENTERS, "goal": DROP_GOAL})})
     after = _counts(game.preview_jpeg(frame))
     assert game.scan_jpeg(frame)["phase"] == "ready"
-    game.action({"action": "aim", "degrees": _aim_at_goal(game)})
     game.action({"action": "launch"})
     for _ in range(25):
         now[0] += 0.1
@@ -95,16 +97,6 @@ def recolored_wall() -> dict[str, object]:
     assert state["game"]["status"] == "won", state["game"]
     return {"preview_default_colors": before, "default_scan": default_scan,
             "preview_picked_colors": after, "attempt_result": state["game"]["status"]}
-
-
-def _aim_at_goal(game) -> float:
-    """The lower ballistic arc from the start to the goal, as the game launches it."""
-    start = quadrilateral_center(game.board.start)
-    goal = quadrilateral_center(game.board.goal)
-    side = min(game.board_width, game.board_height)
-    aim = ballistic_aim_degrees(goal.x - start.x, goal.y - start.y, side * LAUNCH_SPEED_SHARE, side * GRAVITY_SHARE)
-    assert aim is not None, "the goal is out of reach"
-    return aim
 
 
 def _boards_close(first: dict, second: dict, tolerance: float) -> bool:
@@ -121,12 +113,12 @@ def aligned_flow() -> dict[str, object]:
     """Align with coded patterns, then play in projector px (contract 1.5).
 
     Pass: the mapped board lands within 1.5 projector px of where the true
-    homography puts the camera notes, and an attempt aimed at the goal wins.
+    homography puts the camera notes, and the ball dropped over the goal wins.
     """
     now = [0.0]
     game = GameController(log_path=None, clock=lambda: now[0])
     game.action({"action": "projection_open", "width": ALIGN_PROJECTOR[0], "height": ALIGN_PROJECTOR[1]})
-    frame = _frame(430, markers=False)
+    frame = _frame(430, markers=False, goal=DROP_GOAL)
     game.preview_jpeg(frame, "Cámara sintética")
     layout = game.action({"action": "align_start"})["alignment"]["layout"]
     G = homography_from_quad(ALIGN_PROJECTOR, ALIGN_QUAD)
@@ -150,7 +142,6 @@ def aligned_flow() -> dict[str, object]:
         expected = cv2.perspectiveTransform(camera.reshape(-1, 1, 2), truth).reshape(-1, 2)
         mapped = np.float32([[p["x"], p["y"]] for p in state["board"][name]["points"]])
         errors.extend(np.linalg.norm(mapped - expected, axis=1).tolist())
-    game.action({"action": "aim", "degrees": _aim_at_goal(game)})
     game.action({"action": "launch"})
     for _ in range(40):
         now[0] += 0.1
@@ -174,7 +165,7 @@ def run() -> dict[str, object]:
         opened = game.action({"action": "projection_open", "width": 1280, "height": 800})
         assert opened["projection"]["mode"] == "live"
         assert "calibration" not in opened
-        frame = _frame(430, markers=False)
+        frame = _frame(430, markers=False, goal=DROP_GOAL)
         preview = game.preview_jpeg(frame)
         ready = game.snapshot()
         assert ready["phase"] == "ready"
@@ -188,10 +179,9 @@ def run() -> dict[str, object]:
                                abs(game_start.y - camera_start.y))
         assert coordinate_error == 0
 
-        game.action({"action": "aim", "degrees": _aim_at_goal(game)})
         launched = game.action({"action": "launch"})
         frozen_board, frozen_position = game.board, game.game.position
-        moved_frame = _frame(540, markers=False)
+        moved_frame = _frame(540, markers=False, goal=DROP_GOAL)
         game.preview_jpeg(moved_frame)
         live = game.snapshot()
         assert game.board == frozen_board and game.game.position == frozen_position
@@ -207,7 +197,7 @@ def run() -> dict[str, object]:
                 break
         assert current["game"]["status"] == "won", current["game"]
         elapsed_s = current["game"]["elapsed_s"]
-        assert 0.3 < elapsed_s < 1.0, elapsed_s   # under gravity the shot arrives in ~0.5 s
+        assert 0.3 < elapsed_s < 1.0, elapsed_s   # dropped 128 px onto the goal: ~0.47 s
         reset = game.action({"action": "reset"})
         # The latest detection of the same wall: equal up to sub-pixel noise
         # (later frames also discount the projector's own rims, contract 2.5).
@@ -217,7 +207,7 @@ def run() -> dict[str, object]:
                     - quadrilateral_center(frozen_board.bumpers[0]).x)
         assert shift_px > 100
 
-        partial = _image(540, markers=False)
+        partial = _image(540, markers=False, goal=DROP_GOAL)
         partial[315:386, 145:216] = 220
         okay, encoded = cv2.imencode(".jpg", partial)
         assert okay

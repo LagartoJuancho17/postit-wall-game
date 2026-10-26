@@ -185,8 +185,12 @@ class RendererTests(unittest.TestCase):
                 # there is no rim outside the paper: the wall stays background.
                 unchecked = render_scene(state, theme, PROJECTOR, "new", matrix=ALIGNMENT, fill=False)
                 np.testing.assert_array_equal(unchecked, filled)
-                rim = rgb(RIM_COLOR[theme])   # the ball and aim line stay neutral, drawn anywhere
-                self.assertEqual(int((unchecked[~aligned] == rim).all(axis=1).sum()), 0)
+                rim = rgb(RIM_COLOR[theme])   # the ball stays neutral, drawn anywhere: leave its disk out
+                ball = np.asarray(apply_homography(ALIGNMENT, [(state["game"]["position"]["x"],
+                                                               state["game"]["position"]["y"])])[0])
+                ys, xs = np.mgrid[0:PROJECTOR[1], 0:PROJECTOR[0]]
+                away = np.hypot(xs + 0.5 - ball[0], ys + 0.5 - ball[1]) > 40
+                self.assertEqual(int((unchecked[~aligned & away] == rim).all(axis=1).sum()), 0)
                 rims_only = render_scene(state, theme, PROJECTOR, "new", fill=True)  # unaligned: fill ignored
                 self.assertLessEqual(int(chroma(rims_only).max()), NEUTRAL_CHROMA)
                 self.assertTrue(unaligned.any())
@@ -208,9 +212,10 @@ class RendererTests(unittest.TestCase):
 
     def test_aligned_ball_follows_h_like_placeBall(self):
         state = snapshot(preview(*CAMERA, {}))
-        state["game"]["status"] = "running"  # no aim line: only the ball has the ball color
+        state["game"]["status"] = "running"
         image = render_scene(state, "dark", PROJECTOR, "new", matrix=ALIGNMENT)
-        ball = np.argwhere((image == rgb(NEUTRAL_COLOR["dark"])).all(axis=2))
+        # The shaded body (shade, color, highlight) is far brighter than its 0.22 glow.
+        ball = np.argwhere(image.mean(axis=2) > 110)
         center = apply_homography(ALIGNMENT, [(60.0, 60.0)])[0]
         self.assertLess(np.linalg.norm(ball.mean(axis=0)[::-1] - center), 0.5)
         # Radius 10 camera px through H's local stretch, like placeBall.

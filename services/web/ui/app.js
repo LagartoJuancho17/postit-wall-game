@@ -26,7 +26,6 @@ import {
   isProjectorShortcut,
   isThemeShortcut,
   isTypingTarget,
-  normalizeAngle,
   noteColorHex,
   PALETTE_ROLES,
   patchOrigin,
@@ -862,18 +861,6 @@ async function sendAction(name, extra = {}) {
   }
 }
 
-function setAngle(value) {
-  const angle = normalizeAngle(value);
-  $("angle-range").value = String(angle);
-  $("angle-value").textContent = `${angle < 0 ? "−" : ""}${Math.abs(angle)}°`;
-  return angle;
-}
-
-async function changeAngle(value) {
-  const angle = setAngle(value);
-  await sendAction("aim", { degrees: angle });
-}
-
 function drawCameraOverlay() {
   const box = $("camera-stage");
   const dpr = window.devicePixelRatio || 1;
@@ -949,9 +936,6 @@ function render() {
   $("resume-button").hidden = !controls.resume;
   $("resume-button").disabled = aligning || !controls.resume;
   $("reset-button").disabled = aligning || !controls.reset;
-  $("angle-range").disabled = aligning || !controls.aim;
-  $("aim-left").disabled = aligning || !controls.aim;
-  $("aim-right").disabled = aligning || !controls.aim;
   // The light must not change between the captures of a run, a search or a pick.
   const lightLocked = aligning || Boolean(tuning) || pickBusy;
   $("theme-dark").disabled = lightLocked;
@@ -991,7 +975,6 @@ function render() {
   $("game-pill").textContent = attempt.label;
   $("game-pill").dataset.tone = attempt.phase;
   $("attempt-hint").textContent = attempt.hint;
-  if (document.activeElement !== $("angle-range")) setAngle(game.aim_degrees ?? -45);
   $("stat-bounces").textContent = String(game.bounces ?? 0);
   $("stat-time").textContent = `${Number(game.elapsed_s ?? 0).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
   $("stat-attempts").textContent = String(game.attempts ?? 0);
@@ -1041,10 +1024,6 @@ $("scan-button").addEventListener("click", scanBoard);
 $("launch-button").addEventListener("click", () => sendAction("launch"));
 $("resume-button").addEventListener("click", () => sendAction("resume"));
 $("reset-button").addEventListener("click", () => sendAction("reset"));
-$("aim-left").addEventListener("click", () => changeAngle(Number($("angle-range").value) - 5));
-$("aim-right").addEventListener("click", () => changeAngle(Number($("angle-range").value) + 5));
-$("angle-range").addEventListener("input", (event) => setAngle(event.target.value));
-$("angle-range").addEventListener("change", (event) => changeAngle(event.target.value));
 for (const role of PALETTE_ROLES) {
   $(`color-${role}`).addEventListener("change", (event) => setColor(role, event.target.value));
   $(`pick-${role}`).addEventListener("click", () => togglePick(role));
@@ -1085,7 +1064,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (isTypingTarget(event.target) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
-  if (aligning) return; // S, A, R, Space and the arrows wait for the run to end
+  if (aligning) return; // S, A, R and Space wait for the run to end
   const key = event.key.toLowerCase();
   if (key === "s") {
     event.preventDefault();
@@ -1102,12 +1081,6 @@ document.addEventListener("keydown", (event) => {
   } else if (event.code === "Space" && !$("resume-button").disabled) {
     event.preventDefault();
     sendAction("resume");
-  } else if (key === "arrowleft" && !$("aim-left").disabled) {
-    event.preventDefault();
-    changeAngle(Number($("angle-range").value) - 5);
-  } else if (key === "arrowright" && !$("aim-right").disabled) {
-    event.preventDefault();
-    changeAngle(Number($("angle-range").value) + 5);
   }
 });
 

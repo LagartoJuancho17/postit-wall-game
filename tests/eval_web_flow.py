@@ -62,7 +62,6 @@ def _case(name: str, **frame_options: object) -> dict[str, object]:
               _center(board["bumpers"][0])]
     geometry_error = max(_error(a, b) for a, b in zip(actual, expected))
 
-    controller.action({"action": "aim", "degrees": 0})
     running = controller.action({"action": "launch"})
     if running["game"]["status"] != "running":
         raise AssertionError("Launch must start the attempt")

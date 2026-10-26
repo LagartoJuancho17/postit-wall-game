@@ -58,7 +58,7 @@ function panel() {
     ${segment(operator, "async function previewTick()", "function sampleHex(")}
     ${segment(operator, "async function setColor(", "function currentTrack()")}
     ${segment(operator, "function currentTrack()", "function cameraKeys(")}
-    ${segment(operator, "async function sendAction(", "function setAngle(")}
+    ${segment(operator, "async function sendAction(", "function drawCameraOverlay(")}
     globalThis.controls = {
       previewTick, setColor, sendAction, stopCamera,
       current: () => preview,
@@ -166,6 +166,7 @@ function recordingContext() {
     fill() { draws.push({ kind: path.length === 1 && path[0].radius ? "dot" : "fill", color: this.fillStyle, alpha: this.globalAlpha }); },
     stroke() { draws.push({ kind: "stroke", color: this.strokeStyle }); },
     fillText(text) { draws.push({ kind: "text", text, color: this.fillStyle }); },
+    createRadialGradient() { return { addColorStop() {} }; },
   };
 }
 const contours = (draws) => draws.filter((draw) => draw.kind === "stroke" || draw.kind === "fill");
@@ -270,7 +271,7 @@ test("the projector draw path follows the projection mode and the panel's local 
     const plain = show({ ...live, projection: { mode: "live" } });
     assert.deepEqual(plain.filter((draw) => draw.kind === "fill").map((draw) => [draw.color, draw.alpha]), [["#30d0c0", 0.35]],
       "aligned, the paper carries its role color without waiting for the check (contract 2.1)");
-    assert.equal(plain.filter((draw) => draw.kind === "stroke").length, 2, "the inner border in the role color, and the aim line");
+    assert.equal(plain.filter((draw) => draw.kind === "stroke").length, 1, "the inner border in the role color; no aim line");
     assert.equal(plain.filter((draw) => draw.kind === "stroke" && draw.color === "#30d0c0").length, 1);
     assert.equal(view.body.dataset.mode, "live");
     assert.equal(view.stateLabel.textContent, "Post-it Wall · Detección en vivo");

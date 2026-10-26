@@ -32,13 +32,13 @@ from services.calibration import (ALIGNMENT_FRAMES, alignment_code, alignment_la
                                   estimate_homography, lens_for, pattern_dots, transform_board, transform_point)
 from services.calibration.tests.render import (capture_frames, film_through_lens, homography_from_quad,
                                                project_to_camera, render_pattern)
-from services.physics import GameStatus, launch, ready_state, step
+from services.physics import GameStatus, drop, drop_ready_state, launch, ready_state, step
 from services.vision import build_palette, detect_board, find_notes, frame_quality, hsv_from_hex, rule_from_hex
 from services.vision.detector import refine_quad
 from services.vision.palette import DEFAULT_PALETTE
 from services.vision.tests.scene import bgr, hex_at, scene
 from services.vision.tests.test_refine import ring, saturation_image, tilted_paper
-from services.web.backend.eval import FRAME_CENTERS, FRAME_HUES, _color, _image
+from services.web.backend.eval import DROP_GOAL, FRAME_CENTERS, FRAME_HUES, _color, _image
 from services.web.backend.server import (GameController, RequestError, _board_json, _normalized_inverse,
                                          _polygon_json, place_probes)
 
@@ -95,6 +95,7 @@ def build_frames() -> Frames:
     frames = Frames()
     frames.add_jpeg("wall_430", _image(430))
     frames.add_jpeg("wall_540", _image(540))
+    frames.add_jpeg("wall_drop", _image(430, goal=DROP_GOAL))   # goal under the start: a dropped ball wins
     frames.add_jpeg("recolored", _image(430, RECOLORED))
     no_start = _image(430)
     no_start[315:386, 145:216] = 220
@@ -543,6 +544,30 @@ def physics_cases() -> list[dict[str, Any]]:
         board = Board(field, start, goal, bumpers, ())
         cases.append(_physics_case(board, rng.uniform(-90, 10), rng.uniform(300, 1300),
                                    rng.choice([1 / 120, 1 / 60, 0.05]), 900, rng.uniform(300, 1800)))
+    # Drops (the web game since 2026-10-26): from rest under the start, onto
+    # ramps and V creases, including the two that once raised (a wedge, a
+    # rounded corner the chord kept re-entering) and the stall rule.
+    for index in range(80):
+        start = _rotated(rng.uniform(150, 1100), rng.uniform(60, 250), 60, 60, rng.uniform(-20, 20))
+        goal = _rotated(rng.uniform(150, 1100), rng.uniform(450, 700), 60, 60, rng.uniform(-20, 20))
+        bumpers = tuple(_rotated(rng.uniform(100, 1150), rng.uniform(330, 650), rng.uniform(40, 300),
+                                 rng.uniform(20, 60), rng.uniform(-50, 50)) for _ in range(rng.randrange(0, 5)))
+        board = Board(field, start, goal, bumpers, ())
+        cases.append(_physics_case(board, 0, 0, rng.choice([1 / 120, 1 / 60, 0.05]), 900,
+                                   rng.uniform(300, 1800), drop_mode=True))
+    v_left = Polygon((Point(560, 360), Point(610, 460), Point(610, 485), Point(560, 385)))
+    v_right = Polygon((Point(610, 460), Point(660, 360), Point(660, 385), Point(610, 485)))
+    crease = Board(field, _rect(580, 160, 640, 220), _rect(900, 600, 960, 660), (v_left, v_right), ())
+    cases.append(_physics_case(crease, 0, 0, 1 / 120, 900, 1152.0, drop_mode=True))
+    corner = Board(Polygon((Point(0, 0), Point(960, 0), Point(960, 720), Point(0, 720))),
+                   Polygon((Point(401.15372734355446, 53.169847720408555), Point(458.7537273435545, 53.169847720408555),
+                            Point(458.7537273435545, 110.76984772040855), Point(401.15372734355446, 110.76984772040855))),
+                   Polygon((Point(520.5892176969736, 489.457870616359), Point(578.1892176969735, 489.457870616359),
+                            Point(578.1892176969735, 547.057870616359), Point(520.5892176969736, 547.057870616359))),
+                   (Polygon((Point(391.29476073531345, 121.98904294770749), Point(452.6968814681515, 149.28530884778687),
+                             Point(440.99779079378806, 175.60205783760367), Point(379.59567006095, 148.30579193752428))),),
+                   ())
+    cases.append(_physics_case(corner, 0, 0, 1 / 120, 900, 1152.0, drop_mode=True))
     bad = Board(field, _rect(100, 100, 160, 160), _rect(120, 120, 180, 180), (), ())
     cases.append(_physics_case(bad, 0, 100, 1 / 120, 3))
     outside = Board(field, _rect(0, 0, 40, 40), _rect(600, 300, 660, 360), (), ())
@@ -554,10 +579,11 @@ def physics_cases() -> list[dict[str, Any]]:
 
 
 def _physics_case(board: Board, angle: float, speed: float, dt: float, steps: int,
-                  gravity: float = 0.0) -> dict[str, Any]:
-    case = {"board": _board(board), "angle": angle, "speed": speed, "dt": dt, "gravity": gravity}
+                  gravity: float = 0.0, *, drop_mode: bool = False) -> dict[str, Any]:
+    case = {"board": _board(board), "angle": angle, "speed": speed, "dt": dt, "gravity": gravity,
+            "mode": "drop" if drop_mode else "launch"}
     try:
-        state = launch(board, angle, speed, gravity)
+        state = drop(board, gravity) if drop_mode else launch(board, angle, speed, gravity)
     except ValueError as exc:
         case.update(ok=False, error=str(exc))
         return case
@@ -567,10 +593,12 @@ def _physics_case(board: Board, angle: float, speed: float, dt: float, steps: in
         if index % 15 == 0 or state.status != GameStatus.RUNNING:
             trace.append({"i": index, "x": state.position.x, "y": state.position.y,
                           "vx": state.velocity.x, "vy": state.velocity.y,
-                          "t": state.elapsed_s, "bounces": state.bounce_count, "status": state.status.value})
+                          "t": state.elapsed_s, "bounces": state.bounce_count, "status": state.status.value,
+                          "still": state.still_s})
         if state.status != GameStatus.RUNNING:
             break
-    case.update(ok=True, ready=_point(ready_state(board).position), trace=trace)
+    ready = drop_ready_state(board) if drop_mode else ready_state(board)
+    case.update(ok=True, ready=_point(ready.position), trace=trace)
     return case
 
 
@@ -596,13 +624,13 @@ def alignment_scripts(align_names: dict[str, str]) -> dict[str, list[dict[str, A
         "align_ok": [*start, act("align_start"), {"op": "state"}, *feed, act("align_solve"),
                      {"op": "preview", "frame": "wall_430", "camera": label}, *check("wall_430"),
                      {"op": "preview", "frame": "wall_430", "camera": label},
-                     act("aim", degrees=0), act("launch"), *[{"op": "tick", "advance": 0.1} for _ in range(12)],
+                     act("launch"), *[{"op": "tick", "advance": 0.1} for _ in range(12)],
                      {"op": "state"}, act("pause"), act("align_start"), act("align_cancel"), act("resume"),
                      act("projection_open", width=1920, height=1080), {"op": "state"}],
         "align_lens": [*start, act("align_start"), *feed_lens, act("align_solve"),
                        {"op": "preview", "frame": "wall_430", "camera": label}, *check("wall_430"),
                        {"op": "preview", "frame": "wall_430", "camera": label},
-                       act("aim", degrees=-10), act("launch"), *[{"op": "tick", "advance": 0.1} for _ in range(6)],
+                       act("launch"), *[{"op": "tick", "advance": 0.1} for _ in range(6)],
                        {"op": "state"}],
         "align_fill_off": [*start, act("align_start"), *feed, act("align_solve"), *check("probe_hit"),
                            {"op": "state"}, act("projection_open", width=1920, height=1080), {"op": "state"},
@@ -655,13 +683,12 @@ def controller_scripts() -> dict[str, list[dict[str, Any]]]:
     play = [{"op": "tick", "advance": 0.1} for _ in range(30)]
     ready = [{"op": "preview", "frame": "wall_430", "camera": "Cámara de iPhone de Tobias"}, open_]
     return {
-        "win": [*ready, act("aim", degrees=-10), act("launch"), *play, {"op": "state"}],
-        "lose": [*ready, act("aim", degrees=180), act("launch"), *play],
-        "aim_buttons": [*ready, act("aim_left"), act("aim_left"), act("aim_right"),
-                        act("aim", degrees=725.5), act("aim", degrees=-190), act("aim", degrees="x"),
-                        act("aim", degrees=True), act("aim", degrees=None)],
+        "win": [{"op": "preview", "frame": "wall_drop", "camera": "Cámara de iPhone de Tobias"}, open_,
+                {"op": "state"}, act("launch"), *play, {"op": "state"}],
+        "lose": [*ready, act("launch"), *play],
+        "aim_is_gone": [*ready, act("aim", degrees=0), act("aim_left"), act("aim_right"), {"op": "state"}],
         "guards": [act("launch"), act("calibrate"), act("reset"), act("resume"), act("pause"),
-                   act("aim", degrees=0), act("dance"), {"op": "action", "payload": {}},
+                   act("dance"), {"op": "action", "payload": {}},
                    {"op": "action", "payload": {"action": 3}},
                    act("projection_open", width=100, height=800),
                    act("projection_open", width=1280.5, height=800),

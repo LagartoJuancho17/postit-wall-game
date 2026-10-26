@@ -13,8 +13,8 @@ Rule sets, chosen with ``rules``:
   (a camera -> projector matrix): neutral rim along the polygon offset
   outward by 6 px (3 px wide, miter limit 2), optional role fill at alpha
   .35 inset by 5 px. Not aligned: neutral rims through the contain
-  transform, never fills, plus the ``Sin alinear`` hint. Ball, aim line and
-  texts are neutral.
+  transform, never fills, plus the ``Sin alinear`` hint. The ball (dropped,
+  no aim line, a shaded neutral sphere) and texts are neutral.
 - ``"neutral"``: contract 2.2, the theme background only.
 
 ``render_pattern`` draws the coded dot frames of contract 1.2.
@@ -86,10 +86,15 @@ OLD_RESULT_COLOR = {"dark": {"won": "#77ec8f", "lost": "#ff8680"},
 CANVAS_MITER_LIMIT = 10.0  # canvas default
 FALLBACK_COLORS = {"start": "#ffdf53", "goal": "#ffa659", "bumper": "#77ec8f", "marker": "#ff77d3"}
 BALL_RADIUS_PX = 10.0
-AIM_LENGTH_PX = 70.0
-AIM_PREVIEW_S = 0.3      # under gravity the aim shows this much of the real flight
-AIM_PREVIEW_STEPS = 12
+AIM_LENGTH_PX = 70.0     # the old rules' straight aim line (commit 8238278)
 AIM_WIDTH_PX = 3.0
+# The new rules' ball (live-view.mjs drawBall): glow, then a shaded body. The
+# canvas has no gradients; the body is three neutral layers that land the
+# same light where the gradient does (shade at the edge, highlight up-left).
+BALL_GLOW_PX = 4.0
+BALL_GLOW_ALPHA = 0.22
+BALL_SHADE = {"dark": "#a3afb3", "light": "#050807"}
+BALL_HIGHLIGHT = {"dark": "#ffffff", "light": "#5d6b68"}
 
 SUBROWS = 8  # coverage samples per pixel row; exact along x
 _EPS = 1e-9
@@ -504,13 +509,13 @@ class Canvas:
         self._shape(np.array((start + side, end + side, end - side, start - side)), None,
                     color, 1.0, None)
 
-    def circle(self, center, radius: float, color: str) -> None:
+    def circle(self, center, radius: float, color: str, alpha: float = 1.0) -> None:
         center = np.asarray(center, np.float64)
         if not np.isfinite(center).all() or not radius > 0:
             return
         roi = self._roi(center.reshape(1, 2), radius)
         if roi is not None:
-            self._blend(roi, circle_coverage(center, radius, roi), color, 1.0)
+            self._blend(roi, circle_coverage(center, radius, roi), color, alpha)
 
     def text(self, text: str, x: float, y: float, font_px: float, color: str, *,
              align: str = "left", baseline: str = "alphabetic", bold: bool = False) -> None:
@@ -631,25 +636,13 @@ def _projected_notes(preview: Any, mapping: _Mapping | None, width: int, height:
 
 
 def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width: int, height: int):
-    """``placeBall``: center, radius and aim path in projector px, or None."""
+    """``placeBall``: center and radius in projector px, or None."""
     try:
         position = np.array((float(game["position"]["x"]), float(game["position"]["y"])))
     except (KeyError, TypeError, ValueError):
         return None
     if not np.isfinite(position).all():
         return None
-    try:
-        angle = math.radians(float(game.get("aim_degrees", -45.0)))
-    except (TypeError, ValueError):
-        angle = math.radians(-45.0)
-    direction = np.array((math.cos(angle), math.sin(angle)))
-    # ``aimPath``: the first AIM_PREVIEW_S of the flight under gravity, else straight.
-    gravity, speed = game.get("gravity_px_s2"), game.get("launch_speed_px_s")
-    if isinstance(gravity, (int, float)) and gravity > 0 and _positive(speed):
-        path = [position + speed * direction * t + np.array((0.0, 0.5 * gravity * t * t))
-                for t in (AIM_PREVIEW_S * k / AIM_PREVIEW_STEPS for k in range(AIM_PREVIEW_STEPS + 1))]
-    else:
-        path = [position, position + AIM_LENGTH_PX * direction]
     projector_space = game.get("space") == "projector"
     if not projector_space and mapping is not None:
         center = mapping.to_projector(position)
@@ -657,8 +650,7 @@ def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width:
                    * lens_local_scale(position, mapping.lens) if center is not None else None)
         if center is None or not _positive(stretch):
             return None
-        aim = [mapping.to_projector(point) for point in path]
-        return center, BALL_RADIUS_PX * stretch, aim if all(point is not None for point in aim) else []
+        return center, BALL_RADIUS_PX * stretch
     if projector_space:  # a game measured on another viewport is contain-fitted
         fit = _fit(game.get("width") or width, game.get("height") or height, width, height)
     else:
@@ -667,23 +659,34 @@ def _place_ball(game: Mapping, camera: Mapping, mapping: _Mapping | None, width:
     if fit is None:
         return None
     scale, offset_x, offset_y = fit
-    return (position * scale + (offset_x, offset_y), BALL_RADIUS_PX * scale,
-            [point * scale + (offset_x, offset_y) for point in path])
+    return position * scale + (offset_x, offset_y), BALL_RADIUS_PX * scale
 
 
 def _draw_game(canvas: Canvas, state: Mapping, mapping: _Mapping | None,
-               ball_color: str, result_colors: Mapping[str, str]) -> None:
+               ball_color: str, result_colors: Mapping[str, str], *, theme: str | None = None) -> None:
+    """The ball and result text. ``theme`` set: the new rules' dropped,
+    shaded ball (no aim). None: the old rules' flat ball with its aim line."""
     game = state.get("game")
     if not isinstance(game, Mapping):
         return
     camera = state.get("camera") if isinstance(state.get("camera"), Mapping) else {}
     ball = _place_ball(game, camera, mapping, canvas.width, canvas.height)
     if ball is not None:
-        center, radius, aim = ball
-        if game.get("status") == "ready" and len(aim) > 1:
-            for start, end in zip(aim, aim[1:]):
-                canvas.segment(start, end, AIM_WIDTH_PX, ball_color)
-        canvas.circle(center, radius, ball_color)
+        center, radius = ball
+        if theme is None:
+            if game.get("status") == "ready":
+                try:
+                    angle = math.radians(float(game.get("aim_degrees", -45.0)))
+                except (TypeError, ValueError):
+                    angle = math.radians(-45.0)
+                tip = np.asarray(center) + AIM_LENGTH_PX * radius / BALL_RADIUS_PX * np.array((math.cos(angle), math.sin(angle)))
+                canvas.segment(center, tip, AIM_WIDTH_PX, ball_color)
+            canvas.circle(center, radius, ball_color)
+        else:
+            canvas.circle(center, radius + BALL_GLOW_PX, ball_color, BALL_GLOW_ALPHA)
+            canvas.circle(center, radius, BALL_SHADE[theme])
+            canvas.circle(center, 0.8 * radius, ball_color)
+            canvas.circle(np.asarray(center) + (-0.35 * radius, -0.4 * radius), 0.3 * radius, BALL_HIGHLIGHT[theme])
     status = game.get("status")
     if status in RESULT_TEXT:
         canvas.text(RESULT_TEXT[status], canvas.width / 2, RESULT_BASELINE_PX, RESULT_FONT_PX,
@@ -744,7 +747,7 @@ def _draw_new(canvas: Canvas, state: Mapping, theme: str, mapping: _Mapping | No
             square = np.array([(point["x"], point["y"]) for point in probe["points"]], dtype=np.float64)
             canvas.fill(square, _role_hex(state.get("palette"), probe["role"], strict=True), FILL_ALPHA)
     neutral = NEUTRAL_COLOR[theme]
-    _draw_game(canvas, state, mapping, neutral, {"won": neutral, "lost": neutral})
+    _draw_game(canvas, state, mapping, neutral, {"won": neutral, "lost": neutral}, theme=theme)
     if mapping is None:
         canvas.text(UNALIGNED_HINT, HINT_MARGIN_PX, canvas.height - HINT_MARGIN_PX, HINT_FONT_PX,
                     rim, baseline="bottom")

@@ -97,7 +97,7 @@ test("the whole operator journey works through the routes", async () => {
   assert.equal(scanned.body.camera.label, label);
   assert.deepEqual([scanned.body.camera.width, scanned.body.camera.height], [960, 720]);
 
-  const preview = await frame("/api/preview", "wall_430");
+  const preview = await frame("/api/preview", "wall_drop");
   assert.equal(preview.status, 200);
   assert.deepEqual(Object.fromEntries(Object.entries(preview.body.roles).map(([r, v]) => [r, v.count])),
     { start: 1, goal: 1, bumper: 1, marker: 4 });
@@ -105,7 +105,6 @@ test("the whole operator journey works through the routes", async () => {
 
   assert.equal(controller.snapshot().phase, "ready");
   assert.equal(controller.snapshot().projection.mode, "live");
-  act("aim", { degrees: -10 }); // under gravity: the lower arc to the goal of wall_430
   assert.equal(act("launch").body.phase, "running");
   let state;
   for (let i = 0; i < 30; i += 1) {
@@ -115,7 +114,7 @@ test("the whole operator journey works through the routes", async () => {
   }
   assert.equal(state.game.status, "won");
   assert.ok(state.game.elapsed_s > 0.3 && state.game.elapsed_s < 1.0, state.game.elapsed_s);
-  assert.deepEqual(decoded, ["wall_430", "wall_430", "wall_430"]);
+  assert.deepEqual(decoded, ["wall_430", "wall_430", "wall_drop"]);
   const names = events.map((e) => e.event);
   for (const event of ["board_scanned", "live_board_ready", "attempt_started", "attempt_finished"]) {
     assert.ok(names.includes(event), `${event} is logged`);

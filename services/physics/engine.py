@@ -27,8 +27,18 @@ LAUNCH_SPEED_SHARE = 1.7
 RESTITUTION = 0.8
 REST_STEPS = 2.5
 MAX_ATTEMPT_S = 20.0
+# A ball slower than STILL_SPEED_PX_S for STALL_S (wedged in a V between two
+# notes, or resting on a flat one) has stopped: the attempt is lost then
+# instead of after MAX_ATTEMPT_S.
+STILL_SPEED_PX_S = 5.0
+STALL_S = 1.5
+# The web game drops the ball: it starts at rest DROP_GAP_PX under the start
+# note's lowest point, straight below its centroid, and gravity does the rest.
+DROP_GAP_PX = 2.0
+_DROP_NUDGE_LIMIT = 200
 _EPS = 1e-9
 _POSITION_NUDGE_PX = 1e-7
+_SIMULTANEOUS_S = 1e-9   # bumper contacts this close in time are one event
 _MAX_EVENTS_PER_STEP = 1024
 
 
@@ -47,6 +57,7 @@ class GameState:
     bounce_count: int
     status: GameStatus
     gravity_px_s2: float = 0.0   # pulls toward +y (down the wall)
+    still_s: float = 0.0         # how long the ball has been slower than STILL_SPEED_PX_S
 
 
 @dataclass(frozen=True)
@@ -156,6 +167,51 @@ def ready_state(board: Board) -> GameState:
     return GameState(position, Point(0.0, 0.0), 0.0, 0, GameStatus.READY)
 
 
+def drop_point(board: Board) -> Point:
+    """Where a dropped ball starts: under the start note, below its centroid.
+
+    The note's lowest edge point on the vertical through the centroid, plus
+    the ball radius and DROP_GAP_PX; then 1 px lower at a time while the
+    ball would still touch the note (a slanted bottom edge).
+    """
+    _validate_board(board)
+    center = _centroid(board.start)
+    bottom = -math.inf
+    for a, b in _edges(board.start):
+        if a.x == b.x:
+            continue
+        low, high = (a, b) if a.x < b.x else (b, a)
+        if low.x <= center.x <= high.x:
+            bottom = max(bottom, low.y + (center.x - low.x) * (high.y - low.y) / (high.x - low.x))
+    if not math.isfinite(bottom):
+        bottom = max(point.y for point in board.start.points)
+    position = Point(center.x, bottom + BALL_RADIUS_PX + DROP_GAP_PX)
+    for _ in range(_DROP_NUDGE_LIMIT):
+        if not _overlaps_polygon(position, board.start):
+            break
+        position = Point(position.x, position.y + 1.0)
+    return position
+
+
+def drop_ready_state(board: Board) -> GameState:
+    """A motionless ball at `drop_point`, checked like `ready_state`."""
+    position = drop_point(board)
+    if not _fits_playfield(position, board.playfield):
+        raise ValueError("the ball must fit inside the playfield under the start note")
+    if _overlaps_polygon(position, board.goal):
+        raise ValueError("start overlaps goal")
+    if any(_overlaps_polygon(position, obstacle) for obstacle in board.bumpers):
+        raise ValueError("start overlaps a bumper")
+    return GameState(position, Point(0.0, 0.0), 0.0, 0, GameStatus.READY)
+
+
+def drop(board: Board, gravity_px_s2: float) -> GameState:
+    """Release the ball at rest under the start note; gravity pulls it down."""
+    if not math.isfinite(gravity_px_s2) or gravity_px_s2 <= 0:
+        raise ValueError("gravity_px_s2 must be positive and finite")
+    return replace(drop_ready_state(board), status=GameStatus.RUNNING, gravity_px_s2=float(gravity_px_s2))
+
+
 def launch(board: Board, angle_degrees: float, speed_px_s: float, gravity_px_s2: float = 0.0) -> GameState:
     """Launch from yellow. An angle of 0° aims right; 90° aims down.
 
@@ -244,6 +300,13 @@ def _playfield_exit(position: Point, velocity: Point, playfield: Polygon) -> _Hi
     return min(candidates, key=lambda hit: hit.time_s) if candidates else None
 
 
+def _rest_on(supports: list[Point], normal: Point) -> None:
+    """A new resting surface for the rest of a step: keep the newest two (a V holds the ball)."""
+    if not any(_dot(normal, kept) > 1 - 1e-9 for kept in supports):
+        supports.append(normal)
+        del supports[:-2]
+
+
 def step(board: Board, state: GameState, dt_s: float) -> GameState:
     """Advance a fixed board by ``dt_s``; terminal states remain unchanged.
 
@@ -261,18 +324,31 @@ def step(board: Board, state: GameState, dt_s: float) -> GameState:
         return replace(state, status=GameStatus.WON)
 
     gravity = state.gravity_px_s2
-    if gravity > 0 and state.elapsed_s >= MAX_ATTEMPT_S:
+    if gravity > 0 and (state.elapsed_s >= MAX_ATTEMPT_S or state.still_s >= STALL_S):
         return replace(state, status=GameStatus.LOST)
     position, velocity = state.position, state.velocity
     elapsed, bounce_count, remaining = state.elapsed_s, state.bounce_count, dt_s
-    support: Point | None = None   # a surface the ball rests on for the rest of this step
+    supports: list[Point] = []   # surfaces the ball rests on for the rest of this step (at most 2)
+
+    def slide(vector: Point, normal: Point) -> Point:
+        into = _dot(vector, normal)
+        return vector if into >= 0 else Point(vector.x - into * normal.x, vector.y - into * normal.y)
 
     def along(vector: Point) -> Point:
-        """Without its component into the supporting surface: the ball slides."""
-        if support is None:
+        """Without its components into the supporting surfaces: the ball slides
+        along one, or stops when it rests on two that both hold it (a V)."""
+        if not supports:
             return vector
-        into = _dot(vector, support)
-        return vector if into >= 0 else Point(vector.x - into * support.x, vector.y - into * support.y)
+        if len(supports) == 1:
+            return slide(vector, supports[0])
+        first, second = supports
+        if _dot(vector, first) >= 0 and _dot(vector, second) >= 0:
+            return vector
+        for normal, other in ((first, second), (second, first)):
+            moved = slide(vector, normal)
+            if _dot(moved, other) >= -_EPS and _dot(moved, normal) >= -_EPS:
+                return moved
+        return Point(0.0, 0.0)
 
     def chord_over(travel: float) -> Point:
         # Under gravity the straight chord with the mean velocity ends exactly
@@ -280,9 +356,11 @@ def step(board: Board, state: GameState, dt_s: float) -> GameState:
         return along(Point(velocity.x, velocity.y + 0.5 * gravity * travel))
 
     def running(travel: float) -> GameState:
-        return GameState(_add_scaled(position, chord_over(travel), travel),
-                         along(Point(velocity.x, velocity.y + gravity * travel)),
-                         elapsed + travel, bounce_count, GameStatus.RUNNING, gravity)
+        end = along(Point(velocity.x, velocity.y + gravity * travel))
+        speed = math.sqrt(end.x * end.x + end.y * end.y)
+        still = state.still_s + dt_s if gravity > 0 and speed < STILL_SPEED_PX_S else 0.0
+        return GameState(_add_scaled(position, chord_over(travel), travel), end,
+                         elapsed + travel, bounce_count, GameStatus.RUNNING, gravity, still)
 
     for _ in range(_MAX_EVENTS_PER_STEP):
         # Collisions are swept along the chord of the rest of this step; it
@@ -313,24 +391,43 @@ def step(board: Board, state: GameState, dt_s: float) -> GameState:
         elapsed += travel
         remaining -= travel
         if hit.kind == "goal":
-            return GameState(position, velocity, elapsed, bounce_count, GameStatus.WON, gravity)
+            return GameState(position, velocity, elapsed, bounce_count, GameStatus.WON, gravity, state.still_s)
         if hit.kind == "exit":
-            return GameState(position, velocity, elapsed, bounce_count, GameStatus.LOST, gravity)
-        normal = hit.normal
-        into = _dot(velocity, normal)
-        if gravity > 0:
-            # Lose part of the normal speed; too weak a bounce rests and slides
-            # along the surface for the rest of the step (one event per step).
-            out = -RESTITUTION * into
-            if out < REST_STEPS * gravity * dt_s:
-                out = 0.0
-                support = normal
-            velocity = Point(velocity.x + (out - into) * normal.x, velocity.y + (out - into) * normal.y)
-        else:
-            velocity = _sub(velocity, Point(2 * into * normal.x, 2 * into * normal.y))
-        position = _add_scaled(position, normal, _POSITION_NUDGE_PX)
-        if support is None or support is not normal:
-            bounce_count += 1   # resting contact is not a bounce
+            return GameState(position, velocity, elapsed, bounce_count, GameStatus.LOST, gravity, state.still_s)
+        # Every bumper touched at this same instant answers together: a ball
+        # dropped into a symmetric V touches both faces at once, and leaving
+        # one of them unanswered let it pass through that face.
+        contacts = [candidate.normal for candidate in events
+                    if candidate.kind == "bumper" and candidate.time_s <= hit.time_s + _SIMULTANEOUS_S]
+        bounced = False
+        for normal in contacts:
+            into = _dot(velocity, normal)
+            if into >= 0:
+                # Already leaving (an earlier answer, or the step's gravity alone
+                # brought the chord in): rest on it so the chord slides along it,
+                # else gravity re-detects it at once, forever (a rounded corner).
+                if gravity > 0:
+                    _rest_on(supports, normal)
+                continue
+            resting = False
+            if gravity > 0:
+                # Lose part of the normal speed; too weak a bounce rests and slides
+                # along the surface for the rest of the step.
+                out = -RESTITUTION * into
+                resting = out < REST_STEPS * gravity * dt_s
+                if resting:
+                    out = 0.0
+                velocity = Point(velocity.x + (out - into) * normal.x, velocity.y + (out - into) * normal.y)
+                if resting:
+                    _rest_on(supports, normal)
+                    velocity = along(velocity)
+            else:
+                velocity = _sub(velocity, Point(2 * into * normal.x, 2 * into * normal.y))
+            bounced = bounced or not resting   # resting contact is not a bounce
+        for normal in contacts:
+            position = _add_scaled(position, normal, _POSITION_NUDGE_PX)
+        if bounced:
+            bounce_count += 1
         if remaining <= _EPS:
             return running(remaining)
     raise RuntimeError(f"more than {_MAX_EVENTS_PER_STEP} collisions in one step; reduce dt_s or speed")

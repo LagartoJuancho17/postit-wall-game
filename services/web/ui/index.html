@@ -137,18 +137,13 @@
             <div class="section-heading compact">
               <div>
                 <h2 id="play-heading">Intento</h2>
-                <p id="attempt-hint">Mostrá un inicio y una llegada a la cámara para lanzar.</p>
+                <p id="attempt-hint">Mostrá un inicio y una llegada a la cámara para soltar la pelota.</p>
               </div>
               <span id="game-pill" class="game-pill">Sin tablero</span>
             </div>
-            <label class="angle-label" for="angle-range"><span>Dirección de salida</span><strong id="angle-value">−45°</strong></label>
-            <div class="angle-control">
-              <button id="aim-left" class="angle-step" type="button" aria-label="Girar 5 grados a la izquierda" disabled>−</button>
-              <input id="angle-range" type="range" min="-180" max="180" step="1" value="-45" disabled>
-              <button id="aim-right" class="angle-step" type="button" aria-label="Girar 5 grados a la derecha" disabled>+</button>
-            </div>
+            <p class="drop-note">La pelota cae desde abajo del inicio. Mové los post-its para guiarla hasta la llegada.</p>
             <div class="play-actions">
-              <button id="launch-button" class="button button-dark" type="button" disabled>Lanzar pelota <kbd>Espacio</kbd></button>
+              <button id="launch-button" class="button button-dark" type="button" disabled>Soltar pelota <kbd>Espacio</kbd></button>
               <button id="resume-button" class="button button-primary" type="button" hidden disabled>Continuar intento <kbd>Espacio</kbd></button>
               <button id="reset-button" class="button button-text" type="button" disabled>Nuevo intento <kbd>R</kbd></button>
             </div>

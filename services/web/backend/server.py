@@ -28,8 +28,7 @@ from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon
 from contracts.geometry import offset_convex_polygon
 from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_alignment, distort,
                                   transform_board, transform_point, undistort)
-from services.physics import (GRAVITY_SHARE, LAUNCH_SPEED_SHARE, GameState, GameStatus, launch, ready_state,
-                              step)
+from services.physics import GRAVITY_SHARE, GameState, GameStatus, drop, drop_ready_state, step
 from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
 from services.uvc import UvcBridge, UvcError
@@ -80,6 +79,8 @@ PHYSICS_MESSAGES = {
         "El inicio está demasiado cerca del borde del área de juego.",
     "start overlaps goal": "El inicio toca la llegada. Separalos.",
     "start overlaps a bumper": "El inicio toca un rebote. Separalos.",
+    "the ball must fit inside the playfield under the start note":
+        "La pelota no entra debajo del inicio. Subilo un poco.",
 }
 PHYSICS_FALLBACK = "Un post-it detectado no tiene una forma válida."
 
@@ -376,7 +377,6 @@ class GameController:
         self._last_detection: float | None = None
         self.board_width = 0
         self.board_height = 0
-        self.aim_degrees = -45.0
         self.attempts = 0
         self.paused = False
         self._last_tick: float | None = None
@@ -505,10 +505,8 @@ class GameController:
                 "position": _point_json(game.position) if game else None,
                 "bounces": game.bounce_count if game else 0,
                 "elapsed_s": round(game.elapsed_s, 3) if game else 0.0,
-                "aim_degrees": round(self.aim_degrees, 3),
-                # What a launch now would use (the projector draws its path).
+                # What a drop now would use: the ball falls from rest under the start note.
                 "gravity_px_s2": round(min(self.board_width, self.board_height) * GRAVITY_SHARE, 3),
-                "launch_speed_px_s": round(min(self.board_width, self.board_height) * LAUNCH_SPEED_SHARE, 3),
                 "attempts": self.attempts,
                 "paused": self.paused,
             },
@@ -591,9 +589,9 @@ class GameController:
             board = Board(playfield=_rectangle(self.projector_width, self.projector_height),
                           start=mapped.start, goal=mapped.goal,
                           bumpers=mapped.bumpers, markers=mapped.markers)
-            ready_state(board)
+            drop_ready_state(board)
             return board, "projector", self.projector_width, self.projector_height
-        ready_state(camera_board)
+        drop_ready_state(camera_board)
         return camera_board, "camera", width, height
 
     def _candidate_unlocked(self, notes: dict[str, tuple[Polygon, ...]], width: int, height: int):
@@ -613,7 +611,7 @@ class GameController:
             return
         board, space, width, height = self._candidate
         self.board = board
-        self.game = ready_state(board)
+        self.game = drop_ready_state(board)
         self.board_space, self.board_width, self.board_height = space, width, height
 
     def _recompute_candidate_unlocked(self) -> None:
@@ -757,7 +755,7 @@ class GameController:
         if self.game is None or self.game.status == GameStatus.READY:
             self._apply_candidate_unlocked()
         if previous is None and camera_board is not None:
-            self._changed("Post-its detectados. Listo para lanzar.")
+            self._changed("Post-its detectados. Listo para soltar la pelota.")
             self._log("live_board_ready", bumpers=len(camera_board.bumpers),
                       camera_width=width, camera_height=height, space=candidate[1])
         elif previous is not None and camera_board is None:
@@ -873,14 +871,6 @@ class GameController:
             elif action == "check_solve":
                 self._solve_overlay_check_unlocked()
                 self._hold_until = None
-            elif action in ("aim", "aim_left", "aim_right"):
-                if self.game is None or self.game.status != GameStatus.READY:
-                    raise RequestError("La dirección solo se cambia antes del lanzamiento.",
-                                       HTTPStatus.CONFLICT)
-                aim = (_finite_number(payload.get("degrees"), "degrees") if action == "aim"
-                       else self.aim_degrees + (-5 if action == "aim_left" else 5))
-                self.aim_degrees = (aim + 180) % 360 - 180
-                self.revision += 1
             elif action == "launch":
                 self._refuse_while_collecting_unlocked()
                 if (not self.projector_open or self.camera_board is None or
@@ -890,18 +880,15 @@ class GameController:
                 if self.game.status != GameStatus.READY:
                     raise RequestError("Reiniciá el intento antes de volver a lanzar.",
                                        HTTPStatus.CONFLICT)
-                side = min(self.board_width, self.board_height)
-                speed, gravity = side * LAUNCH_SPEED_SHARE, side * GRAVITY_SHARE
-                self.game = launch(self.board, self.aim_degrees, speed, gravity)
+                gravity = min(self.board_width, self.board_height) * GRAVITY_SHARE
+                self.game = drop(self.board, gravity)
                 self.attempts += 1
                 self.paused = False
                 self._last_tick = self._clock()
                 self._accumulator = 0.0
                 self.projection_mode = "live"
-                self._changed("Pelota lanzada.")
-                self._log("attempt_started", attempt=self.attempts,
-                          angle_degrees=round(self.aim_degrees, 1), speed_px_s=round(speed, 1),
-                          gravity_px_s2=round(gravity, 1))
+                self._changed("Pelota soltada.")
+                self._log("attempt_started", attempt=self.attempts, gravity_px_s2=round(gravity, 1))
             elif action == "reset":
                 if self.camera_board is None or self._candidate is None:
                     raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",

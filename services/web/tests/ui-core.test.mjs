@@ -11,7 +11,6 @@ import {
   cameraName,
   controlsFor,
   isTypingTarget,
-  normalizeAngle,
   pointInCanvas,
   preferredCamera,
   cameraToSwitchTo,
@@ -22,7 +21,7 @@ import {
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "launch", "aim", "reset", "resume", "align"];
+const CONTROLS = ["scan", "launch", "reset", "resume", "align"];
 
 // Expected panel controls per backend phase, with the camera live and the
 // projector window ready whenever the backend reports it open. Hand-written:
@@ -31,9 +30,9 @@ const EXPECTED = {
   projector_closed: [],
   waiting_camera: ["scan"],
   partial_live: ["scan", "align"],
-  no_markers: ["scan", "launch", "aim", "reset", "align"],
-  ready: ["scan", "launch", "aim", "reset", "align"],
-  aligned_ready: ["scan", "launch", "aim", "reset", "align"],
+  no_markers: ["scan", "launch", "reset", "align"],
+  ready: ["scan", "launch", "reset", "align"],
+  aligned_ready: ["scan", "launch", "reset", "align"],
   ready_closed: [],
   running: ["reset"],
   paused_open: ["scan", "reset", "resume", "align"],
@@ -285,15 +284,6 @@ test("pointInCanvas maps CSS pixels to canvas pixels and clamps to the edge", ()
   assert.deepEqual(pointInCanvas(330, 220, rect, 1280, 800), { x: 640, y: 400 });
   assert.deepEqual(pointInCanvas(-50, -50, rect, 1280, 800), { x: 0, y: 0 });
   assert.deepEqual(pointInCanvas(5000, 5000, rect, 1280, 800), { x: 1279, y: 799 });
-});
-
-test("normalizeAngle clamps to ±180 and rejects non-numbers", () => {
-  assert.equal(normalizeAngle("-45"), -45);
-  assert.equal(normalizeAngle(185), 180);
-  assert.equal(normalizeAngle(-400), -180);
-  assert.throws(() => normalizeAngle("abc"), TypeError);
-  assert.throws(() => normalizeAngle(Infinity), TypeError);
-  assert.throws(() => normalizeAngle(undefined), TypeError);
 });
 
 test("projectionSize reports whole positive CSS pixels", () => {

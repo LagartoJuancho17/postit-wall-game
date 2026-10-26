@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GameController } from "../controller.mjs";
-import { LAUNCH_SPEED_SHARE } from "../physics.mjs";
+import { GRAVITY_SHARE } from "../physics.mjs";
 import { frameMat, loadCv, loadGolden } from "./golden.mjs";
 
 const golden = loadGolden();
@@ -71,7 +71,6 @@ test("running and paused attempts retain their collision board while overlays mo
   try {
     env.game.preview(env.frame("wall_430"));
     act(env.game, "projection_open", { width: 1280, height: 800 });
-    act(env.game, "aim", { degrees: 0 });
     act(env.game, "launch");
     const launchBoard = env.game.snapshot().board;
     const ball = env.game.snapshot().game.position;
@@ -95,7 +94,7 @@ test("running and paused attempts retain their collision board while overlays mo
   } finally { env.close(); }
 });
 
-test("projector resize preserves attempt and camera geometry; speed uses camera pixels", () => {
+test("projector resize preserves attempt and camera geometry; gravity uses camera pixels", () => {
   const env = setup();
   try {
     env.game.preview(env.frame("wall_430"));
@@ -107,7 +106,9 @@ test("projector resize preserves attempt and camera geometry; speed uses camera 
     assert.deepEqual(after.game, before.game);
     assert.deepEqual(after.live_detection, before.live_detection);
     assert.equal(after.projection.mode, "live");
-    assert.ok(Math.abs(Math.hypot(env.game.game.velocity.x, env.game.game.velocity.y) - 720 * LAUNCH_SPEED_SHARE) < 1e-8);
+    // Dropped from rest; gravity scales with the camera frame's shorter side.
+    assert.deepEqual(env.game.game.velocity, { x: 0, y: 0 });
+    assert.ok(Math.abs(env.game.game.gravity_px_s2 - 720 * GRAVITY_SHARE) < 1e-8);
   } finally { env.close(); }
 });
 

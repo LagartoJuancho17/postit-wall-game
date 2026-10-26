@@ -47,11 +47,12 @@ Con la cámara y la proyección listas:
 1. Revisá en la vista en vivo que estén detectados el inicio y la llegada.
    Los contornos del proyector siguen esas mismas detecciones, incluso antes
    de que el tablero esté completo.
-2. Ajustá la dirección desde el control principal y lanzá con `Espacio`. La
-   pelota tiene gravedad: cae hacia abajo de la pared en una parábola, y el
-   proyector dibuja el comienzo de esa curva para apuntar. Rebota en los
-   post-its de rebote perdiendo algo de fuerza; sale del campo por cualquier
-   borde, también por abajo, y pierde.
+2. Soltá la pelota con `Espacio`. No se apunta: la pelota aparece quieta
+   justo debajo del post-it de inicio y cae por gravedad. Para llevarla a la
+   llegada, mové los post-its: rebota en los de rebote perdiendo algo de
+   fuerza y se desliza por los inclinados. Si sale del campo por cualquier
+   borde, también por abajo, pierde; si se queda quieta 1,5 s (apoyada o
+   trabada en una V), también.
 3. Tras ganar o perder, `R` inicia otro intento con el tablero detectado más
    reciente. `S` permite releerlo expresamente sin apagar la proyección.
 

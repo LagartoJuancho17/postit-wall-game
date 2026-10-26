@@ -9,7 +9,7 @@ import { estimateHomography, offsetConvexPolygon, transformPoint } from "../cali
 import { GameController, placeProbes, RequestError } from "../controller.mjs";
 import { pyRound } from "../numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, hsvFromHex, paletteJson, ruleFromHex } from "../palette.mjs";
-import { launch, step } from "../physics.mjs";
+import { drop, launch, step } from "../physics.mjs";
 import { detectBoard, findNotes, frameQuality, grayFeature, refineQuad } from "../vision.mjs";
 import { boardFromGolden, boardToGolden, diff, frameMat, grayFrame, grayMat, points } from "./golden.mjs";
 
@@ -55,7 +55,7 @@ export function physicsVerdicts(golden) {
     const board = boardFromGolden(c.board);
     let state;
     try {
-      state = launch(board, c.angle, c.speed, c.gravity ?? 0);
+      state = c.mode === "drop" ? drop(board, c.gravity) : launch(board, c.angle, c.speed, c.gravity ?? 0);
     } catch (error) {
       return verdict(`physics ${i} refusal`, { ok: false, error: error.message }, expected(c));
     }
@@ -65,7 +65,7 @@ export function physicsVerdicts(golden) {
       state = step(board, state, c.dt);
       if (k % 15 === 0 || state.status !== "running") {
         trace.push({ i: k, x: state.position.x, y: state.position.y, vx: state.velocity.x, vy: state.velocity.y,
-          t: state.elapsed_s, bounces: state.bounce_count, status: state.status });
+          t: state.elapsed_s, bounces: state.bounce_count, status: state.status, still: state.still_s });
       }
       if (state.status !== "running") break;
     }

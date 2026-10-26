@@ -447,21 +447,12 @@ async function run({ kind, room, url }) {
     const samples = [];
     for (let k = 0; k < 10; k += 1) {
       const s = await state();
-      // The ball (radius 10) and its aim, the first 0.3 s of the flight under
-      // gravity (else 70 px straight), in projector px: capsules in the camera.
+      // The ball (radius 10 plus its 4 px glow; dropped, never aimed) in
+      // projector px, as a capsule in the camera.
       const exclude = [];
       if (s.game?.position) {
-        const { x, y } = s.game.position;
-        const angle = (s.game.aim_degrees * Math.PI) / 180;
-        const g = s.game.gravity_px_s2 ?? 0;
-        const v = s.game.launch_speed_px_s ?? 0;
-        const path = g > 0 && v > 0
-          ? Array.from({ length: 13 }, (_, k) => {
-            const t = 0.3 * k / 12;
-            return [x + v * Math.cos(angle) * t, y + v * Math.sin(angle) * t + 0.5 * g * t * t];
-          })
-          : [[x, y], [x + 70 * Math.cos(angle), y + 70 * Math.sin(angle)]];
-        for (let k = 1; k < path.length; k += 1) exclude.push({ a: apply(G, path[k - 1]), b: apply(G, path[k]), r: 12 });
+        const center = [s.game.position.x, s.game.position.y];
+        exclude.push({ a: apply(G, center), b: apply(G, center), r: 16 });
       }
       samples.push({ ready: s.live_detection?.quality?.ready,
         counts: Object.fromEntries(Object.entries(s.live_detection?.roles ?? {}).map(([r, v]) => [r, v.count])),

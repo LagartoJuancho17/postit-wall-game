@@ -79,7 +79,7 @@ Umbral 1.0. Por fase comprueba que:
   tenga su botón habilitado.
 - **no_camera**: sin cámara, releer y lanzar estén deshabilitados.
 
-Además recorre el camino del operador (detectar, apuntar, lanzar,
+Además recorre el camino del operador (detectar, soltar la pelota,
 reiniciar, continuar una pausa) y verifica que cada fase con el proyector
 cerrado se recupere al reabrirlo con `J`. El informe incluye
 `disagreements`: la cantidad de diferencias entre panel y backend.

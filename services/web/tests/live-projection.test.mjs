@@ -21,7 +21,8 @@ import {
 } from "../ui/ui-core.mjs";
 import * as liveView from "../ui/live-view.mjs";
 import {
-  AIM_WIDTH_PX,
+  BALL_GLOW_ALPHA,
+  BALL_GLOW_PX,
   BORDER_ALPHA,
   BORDER_WIDTH_PX,
   alignedMatrix,
@@ -77,6 +78,9 @@ function canvas({ dirty = false } = {}) {
     rect(x, y, w, h) { path.push(["rect", x, y, w, h]); },
     clips: [],
     clip(rule) { this.clips.push({ rule, path: structuredClone(path) }); },
+    createRadialGradient(...circles) {
+      return { circles, stops: [], addColorStop(offset, color) { this.stops.push([offset, color]); } };
+    },
   };
   return ctx;
 }
@@ -118,7 +122,10 @@ const insideConvex = (point, polygon, margin) => polygon.every((a, i) => {
 });
 const noEffects = (draw) => draw.shadowBlur === 0 && draw.shadowOffsetX === 0 && draw.shadowOffsetY === 0
   && draw.filter === "none" && draw.globalCompositeOperation === "source-over";
-const isNeutral = (color) => Object.values(NEUTRAL).some((set) => Object.values(set).includes(color));
+/** A neutral color, or a gradient (the ball) whose every stop is one. */
+const isNeutral = (color) => (color && typeof color === "object"
+  ? color.stops.length > 0 && color.stops.every(([, stop]) => isNeutral(stop))
+  : Object.values(NEUTRAL).some((set) => Object.values(set).includes(color)));
 
 test("live data expires after the same 1.5 seconds in both views", () => {
   assert.equal(LIVE_MAX_AGE_MS, 1500);
@@ -128,14 +135,17 @@ test("contract constants and neutral colors", () => {
   assert.equal(RIM_OFFSET_PX, 6);
   assert.equal(RIM_WIDTH_PX, 3);
   assert.equal(RIM_MITER_LIMIT, 2);
-  assert.equal(AIM_WIDTH_PX, 3);
+  assert.deepEqual([BALL_GLOW_PX, BALL_GLOW_ALPHA], [4, 0.22]);
   assert.deepEqual(RESULT_TEXTS, { won: "¡LLEGASTE!", lost: "FUERA DEL CAMPO" });
   assert.equal(FILL_INSET_PX, 3);
   assert.equal(BORDER_WIDTH_PX, 4);
   assert.equal(BORDER_ALPHA, 0.35);
   assert.equal(FILL_ALPHA, 0.35);
   assert.equal(MIN_FILL_AREA_PX, 25);
-  assert.deepEqual(NEUTRAL, { dark: { rim: "#ffffff", ball: "#f6fbfc" }, light: { rim: "#2b2f2e", ball: "#17211f" } });
+  assert.deepEqual(NEUTRAL, {
+    dark: { rim: "#ffffff", ball: "#f6fbfc", ballHighlight: "#ffffff", ballShade: "#a3afb3" },
+    light: { rim: "#2b2f2e", ball: "#17211f", ballHighlight: "#5d6b68", ballShade: "#050807" },
+  });
   assert.equal(UNALIGNED_HINT, "Sin alinear · pulsá A en el panel");
   for (const theme of ["dark", "light"]) {
     const themeColors = projectorColors(theme);
@@ -377,9 +387,11 @@ test("stale detections draw no notes, and nothing projected is non-finite", () =
   assert.doesNotThrow(() => drawProjectorScene(canvas()));
 });
 
-// --- Ball, aim and result text. ---
+// --- Ball (dropped, never aimed) and result text. ---
 
-const ball = (ctx) => ctx.draws.filter((d) => d.kind === "fill" && d.path[0]?.[0] === "arc");
+/** The ball's shaded body: an arc filled with a radial gradient. */
+const ball = (ctx) => ctx.draws.filter((d) => d.kind === "fill" && d.path[0]?.[0] === "arc" && typeof d.fillStyle === "object");
+const glow = (ctx) => ctx.draws.filter((d) => d.kind === "fill" && d.path[0]?.[0] === "arc" && d.globalAlpha === BALL_GLOW_ALPHA);
 
 test("camera-space ball uses the contain transform when unaligned, game size first", () => {
   const ctx = canvas();
@@ -408,29 +420,35 @@ test("camera-space ball maps through H when aligned, radius scaled by H's local 
   const position = { x: 405, y: 190 };
   const ctx = canvas();
   drawProjectorScene(ctx, { state: { ...aligned(), game: { space: "camera", width: 640, height: 480, position,
-    status: "ready", aim_degrees: 0 } }, width: 1280, height: 800 });
+    status: "ready" } }, width: 1280, height: 800 });
   const [x, y, radius] = ball(ctx)[0].path[0].slice(1, 4);
   const center = applyHomography(H, position);
   near(x, center.x, 1e-6);
   near(y, center.y, 1e-6);
   near(radius, 10 * homographyLocalScale(H, position), 1e-9);
-  const aim = ctx.draws.find((d) => d.kind === "stroke");
-  const tip = applyHomography(H, { x: position.x + 70, y: position.y });
-  near(aim.path[1][1], tip.x, 1e-6);
-  near(aim.path[1][2], tip.y, 1e-6);
+  near(glow(ctx)[0].path[0][3], radius + BALL_GLOW_PX, 1e-9, "glow");
+  assert.equal(ctx.draws.filter((d) => d.kind === "stroke").length, 0, "no aim line: the ball is dropped");
 });
 
-test("ball, aim line and result texts are neutral in both themes", () => {
+test("the ball is a shaded neutral sphere with a soft glow, and result texts are neutral, in both themes", () => {
   for (const theme of ["dark", "light"]) {
     const ready = canvas({ dirty: true });
-    drawProjectorScene(ready, { state: { game: { position: { x: 100, y: 50 }, status: "ready", aim_degrees: 0, width: 640, height: 480 } },
+    drawProjectorScene(ready, { state: { game: { position: { x: 100, y: 50 }, status: "ready", width: 640, height: 480 } },
       theme, width: 1280, height: 720 });
-    const aim = ready.draws.find((d) => d.kind === "stroke");
-    assert.deepEqual(aim.path[0], ["move", 310, 75]);
-    near(aim.path[1][1], 310 + 70 * 1.5, 1e-9);
-    assert.equal(aim.strokeStyle, NEUTRAL[theme].ball);
-    assert.ok(noEffects(aim));
-    assert.equal(ball(ready)[0].fillStyle, NEUTRAL[theme].ball);
+    assert.equal(ready.draws.filter((d) => d.kind === "stroke").length, 0, "no aim line");
+    const [halo] = glow(ready);
+    assert.deepEqual(halo.path[0].slice(1, 4), [310, 75, 15 + BALL_GLOW_PX]);
+    assert.equal(halo.fillStyle, NEUTRAL[theme].ball);
+    const [body] = ball(ready);
+    assert.deepEqual(body.path[0].slice(1, 4), [310, 75, 15]);
+    assert.equal(body.globalAlpha, 1);
+    assert.ok(noEffects(body) && noEffects(halo), "no colored shadow or blur");
+    const { circles, stops } = body.fillStyle;
+    // Lit from up and left: the inner circle sits there, the outer is the ball.
+    assert.ok(circles[0] < 310 && circles[1] < 75, "highlight up and left");
+    assert.deepEqual(circles.slice(3), [310, 75, 15]);
+    assert.deepEqual(stops, [[0, NEUTRAL[theme].ballHighlight], [0.55, NEUTRAL[theme].ball], [1, NEUTRAL[theme].ballShade]]);
+    for (const [, color] of stops) assert.ok(isNeutral(color), `${color} is neutral`);
     for (const [status, label] of [["won", "¡LLEGASTE!"], ["lost", "FUERA DEL CAMPO"]]) {
       const ended = canvas();
       drawProjectorScene(ended, { state: { game: { position: { x: 100, y: 50 }, status, width: 640, height: 480 } }, theme, width: 1280, height: 720 });
@@ -488,12 +506,12 @@ test("H scaled by any factor, even a negative one, draws the same notes and ball
   const draw = (matrix) => {
     const ctx = canvas();
     drawProjectorScene(ctx, { state: { ...aligned({ matrix, overlay: { fill: true } }),
-      game: { space: "camera", position: { x: 405, y: 190 }, status: "ready", aim_degrees: 30, width: 640, height: 480 } },
+      game: { space: "camera", position: { x: 405, y: 190 }, status: "ready", width: 640, height: 480 } },
     preview, palette, width: 1280, height: 800 });
-    return ctx.draws.map((d) => ({ kind: d.kind, path: d.path, color: d.fillStyle + d.strokeStyle }));
+    return ctx.draws.map((d) => ({ kind: d.kind, path: d.path, color: JSON.stringify([d.fillStyle, d.strokeStyle]) }));
   };
   const expected = draw(H);
-  assert.equal(expected.filter((d) => d.kind === "stroke").length, 5, "four rims and the aim line");
+  assert.equal(expected.filter((d) => d.kind === "stroke").length, 4, "four borders, no aim line");
   for (const factor of [-1, 2.5, -0.01]) {
     const scaled = draw(H.map((row) => row.map((value) => value * factor)));
     assert.equal(scaled.length, expected.length, `factor ${factor}`);
@@ -583,24 +601,15 @@ test("unaligned, a rim is clipped out of every other note grown by RIM_CLEAR_PX,
   assert.equal(liveView.RIM_CLEAR_PX, 3);
 });
 
-test("under gravity the aim shows the first 0.3 s of the real flight, bending down", () => {
-  const game = { status: "ready", space: "projector", width: 1280, height: 800, position: { x: 200, y: 600 },
-    aim_degrees: -45, gravity_px_s2: 1280, launch_speed_px_s: 1360 };
-  const ctx = canvas();
-  drawProjectorScene(ctx, { state: { game }, width: 1280, height: 800 });
-  const aim = ctx.draws.find((draw) => draw.kind === "stroke" && draw.lineWidth === AIM_WIDTH_PX);
-  assert.ok(aim, "the aim is drawn");
-  const path = points(aim.path);
-  assert.equal(path.length, 13);
-  const v = 1360 / Math.SQRT2;
-  path.forEach((point, k) => {
-    const t = liveView.AIM_PREVIEW_S * k / 12;
-    near(point.x, 200 + v * t, 1e-9, `x${k}`);
-    near(point.y, 600 - v * t + 0.5 * 1280 * t * t, 1e-9, `y${k}`);
-  });
-  // Without the launch fields (an older backend) the aim stays straight.
-  const straight = liveView.aimPath({ position: { x: 0, y: 0 }, aim_degrees: 0 });
-  assert.deepEqual(straight, [{ x: 0, y: 0 }, { x: liveView.AIM_LENGTH_PX, y: 0 }]);
+test("the dropped ball shows no direction at any status, and the aim API is gone", () => {
+  for (const status of ["ready", "running", "won", "lost"]) {
+    const ctx = canvas();
+    drawProjectorScene(ctx, { state: { game: { status, space: "projector", width: 1280, height: 800, position: { x: 200, y: 600 },
+      gravity_px_s2: 1280 } }, width: 1280, height: 800 });
+    assert.equal(ctx.draws.filter((d) => d.kind === "stroke").length, 0, status);
+    assert.equal(ball(ctx).length, 1, status);
+  }
+  for (const name of ["aimPath", "AIM_LENGTH_PX", "AIM_PREVIEW_S", "AIM_WIDTH_PX"]) assert.equal(name in liveView, false, name);
 });
 
 test("an alignment with a lens straightens every camera point before H (contract 1.3.1)", () => {

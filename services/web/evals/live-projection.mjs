@@ -79,6 +79,9 @@ function recordingCanvas() {
     fillText(text, x, y) { draws.push({ kind: "text", text, x, y, ...snapshot(this) }); },
     fillRect(...rect) { draws.push({ kind: "rect", rect, ...snapshot(this) }); }, drawImage() { draws.push({ kind: "image" }); },
     rect() {}, clip() {},
+    createRadialGradient(...circles) {
+      return { circles, stops: [], addColorStop(offset, color) { this.stops.push([offset, color]); } };
+    },
   };
 }
 
@@ -262,10 +265,13 @@ for (const [name, { state }] of Object.entries(phases)) {
         check(`ball:${space}:${theme}:${name}:${width}x${height}`, () => {
           const ctx = recordingCanvas();
           drawProjectorScene(ctx, { state: expected.state, theme, width, height });
-          // The ball is the one arc fill; aligned scenes also light each live
-          // paper in its role color (contract 2.1), checked geometrically above.
-          const balls = ctx.draws.filter((d) => d.kind === "fill" && Number.isFinite(d.points?.[0]?.radius));
+          // The ball is its glow and its shaded body (the arc filled with a
+          // gradient); aligned scenes also light each live paper in its role
+          // color (contract 2.1), checked geometrically above.
+          const arcs = ctx.draws.filter((d) => d.kind === "fill" && Number.isFinite(d.points?.[0]?.radius));
+          const balls = arcs.filter((d) => typeof d.fillStyle === "object");
           assert.equal(balls.length, 1, "one ball, no frozen board polygons");
+          assert.equal(arcs.length, 2, "the ball and its glow");
           const roleHexes = new Set(Object.values(state.palette?.roles ?? {}).map((role) => role.hex));
           const paperLight = (draw) => !Number.isFinite(draw.points?.[0]?.radius) && expected.state.alignment
             && roleHexes.has(draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle);
@@ -276,7 +282,9 @@ for (const [name, { state }] of Object.entries(phases)) {
           for (const draw of ctx.draws) {
             assert.notEqual(draw.kind, "image");
             const color = draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle;
-            assert.ok(([ink.ball, ink.rim].includes(color) || paperLight(draw)) && plain(draw),
+            const neutral = (value) => [ink.ball, ink.rim, ink.ballHighlight, ink.ballShade].includes(value);
+            const shaded = typeof color === "object" && color.stops.length === 3 && color.stops.every(([, stop]) => neutral(stop));
+            assert.ok((neutral(color) || shaded || paperLight(draw)) && plain(draw),
               `${draw.kind} ${color} is neutral, or a paper's own color, and plain`);
           }
           const texts = ctx.draws.filter((d) => d.kind === "text").map((d) => d.text);

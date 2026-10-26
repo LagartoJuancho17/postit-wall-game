@@ -29,7 +29,7 @@ import cv2
 
 from services.calibration import ALIGNMENT_FRAMES, alignment_layout
 from services.calibration.tests.render import homography_from_quad, project_to_camera, render_pattern
-from services.web.backend.eval import FRAME_HUES, _color, _frame, _image, sampled_hex
+from services.web.backend.eval import DROP_GOAL, FRAME_HUES, _color, _frame, _image, sampled_hex
 from services.web.backend.server import GameController, RequestError
 
 MATRIX_PATH = Path(__file__).with_name("state-matrix.json")
@@ -37,7 +37,7 @@ PREVIEWS_PATH = Path(__file__).with_name("preview-samples.json")
 RECOLORED = {"start": 105, "goal": 176, "bumper": 28, "marker": 140}
 PROJECTOR = (1280, 800)
 # Each UI control, expressed as the backend calls the browser makes for it.
-CONTROLS = ("scan", "launch", "aim", "reset", "resume", "align")
+CONTROLS = ("scan", "launch", "reset", "resume", "align")
 # Where the projector's corners land in the 960x720 synthetic camera frame.
 ALIGN_QUAD = ((30, 25), (930, 20), (935, 700), (25, 695))
 
@@ -72,9 +72,8 @@ class _Wall:
     def scan(self) -> None:
         self.controller.scan_jpeg(_frame(430))
 
-    def launch(self, degrees: float) -> None:
-        self.act("aim", degrees=degrees)
-        self.act("launch")
+    def launch(self) -> None:
+        self.act("launch")   # the ball drops from under the start note
 
     def align(self) -> None:
         """A real alignment run: coded patterns filmed through a known homography."""
@@ -87,11 +86,11 @@ class _Wall:
         self.controller.preview_jpeg(_frame(430))
 
 
-    def play_out(self) -> None:
+    def play_out(self, frame: bytes | None = None) -> None:
         for _ in range(80):
             self.now += 0.1
             if self.controller.tick()["game"]["status"] != "running":
-                self.controller.preview_jpeg(_frame(430))
+                self.controller.preview_jpeg(frame or _frame(430))
                 return
         raise AssertionError("attempt never finished")
 
@@ -118,8 +117,10 @@ def _ready(w: _Wall) -> None:
 
 
 def _running(w: _Wall) -> None:
-    _ready(w)
-    w.launch(-10)   # under gravity the lower arc to the goal of _frame(430)
+    # The goal under the start: the dropped ball wins (_won plays it out).
+    w.open_projector()
+    w.controller.preview_jpeg(_frame(430, goal=DROP_GOAL))
+    w.launch()
 
 
 def _paused_closed(w: _Wall) -> None:
@@ -134,12 +135,12 @@ def _paused_open(w: _Wall) -> None:
 
 def _won(w: _Wall) -> None:
     _running(w)
-    w.play_out()
+    w.play_out(_frame(430, goal=DROP_GOAL))
 
 
 def _lost(w: _Wall) -> None:
-    _ready(w)
-    w.launch(180)
+    _ready(w)   # the goal beside the start: the dropped ball falls out of the field
+    w.launch()
     w.play_out()
 
 
@@ -171,7 +172,6 @@ PHASES: dict[str, Callable[[_Wall], None]] = {
 _PROBES: dict[str, Callable[[_Wall], None]] = {
     "scan": _Wall.scan,
     "launch": lambda w: w.act("launch"),
-    "aim": lambda w: w.act("aim", degrees=0),
     "reset": lambda w: w.act("reset"),
     "resume": lambda w: w.act("resume"),
     "align": lambda w: w.act("align_start"),

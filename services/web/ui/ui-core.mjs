@@ -82,8 +82,8 @@ export function boardCounts(state) {
 }
 
 const ATTEMPT_VIEWS = {
-  none: { label: "Sin tablero", hint: "Mostrá un inicio y una llegada a la cámara para lanzar." },
-  ready: { label: "Listo", hint: "Ajustá la dirección y lanzá desde el post-it de inicio." },
+  none: { label: "Sin tablero", hint: "Mostrá un inicio y una llegada a la cámara para soltar la pelota." },
+  ready: { label: "Listo", hint: "Soltá la pelota: cae desde abajo del post-it de inicio." },
   running: { label: "En juego", hint: "La pelota está en movimiento." },
   paused: {
     label: "En pausa",
@@ -115,7 +115,6 @@ export function controlsFor(state, cameraReady, popupReady) {
     scan: live && !moving,
     launch: live && detected && phase === "ready",
     reset: popup && detected && phase !== "none",
-    aim: popup && detected && phase === "ready",
     resume: popup && phase === "paused",
     // Same rule as the backend's align_start: projector open, camera frames
     // seen, no attempt moving; and not while a run is collecting.
@@ -131,7 +130,7 @@ const SETUP_GUIDES = {
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
   align: "Alineá el proyector con A: proyecta unos puntos, la cámara los mira y corrige la imagen sola. Ponelo antes en pantalla completa.",
   detect: "Mostrá 1 inicio y 1 llegada a la cámara. Los rebotes y las esquinas son opcionales; la detección se actualiza sola.",
-  play: "Los contornos del proyector siguen la detección en vivo. Ajustá la dirección y lanzá.",
+  play: "Los contornos del proyector siguen la detección en vivo. Soltá la pelota con Espacio: cae desde abajo del inicio.",
 };
 const STAGE_OF = { camera: "camera", projector: "projector", align: "align", detect: "detect", play: "play" };
 
@@ -801,12 +800,6 @@ export function pointInCanvas(clientX, clientY, rect, width, height) {
   const x = Math.max(0, Math.min(width - 1, (clientX - rect.left) * width / rect.width));
   const y = Math.max(0, Math.min(height - 1, (clientY - rect.top) * height / rect.height));
   return { x, y };
-}
-
-export function normalizeAngle(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) throw new TypeError("Ángulo no válido");
-  return Math.max(-180, Math.min(180, number));
 }
 
 export function projectionSize(win) {
