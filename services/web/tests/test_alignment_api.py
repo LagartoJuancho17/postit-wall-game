@@ -105,7 +105,7 @@ class AlignmentLifecycleTests(unittest.TestCase):
         error = np.linalg.norm(cv2.perspectiveTransform(points, H) - cv2.perspectiveTransform(points, truth), axis=2)
         self.assertLess(float(error.max()), 1.0)
         self.assertEqual(state["projection"]["mode"], "live")
-        self.assertTrue(state["message"].startswith("Proyector alineado: error "))
+        self.assertTrue(state["message"].startswith("Proyector alineado: los contornos caen a "))
         self.assertEqual(alignment["overlay"]["status"], "unchecked")
         self.assertFalse(alignment["overlay"]["fill"])
         self.assertEqual(alignment["overlay"]["detail"], "El relleno de color todavía no se verificó.")
@@ -131,7 +131,7 @@ class AlignmentLifecycleTests(unittest.TestCase):
         self.assertEqual(list(lens), ["k", "cx", "cy", "r"])
         self.assertAlmostEqual(lens["k"], 0.06, delta=0.005)
         self.assertEqual((lens["cx"], lens["cy"], lens["r"]), (160.0, 120.0, 200.0))
-        self.assertTrue(state["message"].endswith("(lente de la cámara corregido)."), state["message"])
+        self.assertTrue(state["message"].endswith("también se corrigió la curva del lente de la cámara)."), state["message"])
         H = np.array(alignment["matrix"])
         truth_lens = lens_for(*CAMERA, 0.06)
         worst = 0.0
@@ -192,7 +192,7 @@ class AlignmentLifecycleTests(unittest.TestCase):
         self.assertEqual(state["alignment"]["status"], "failed")
         self.assertIsNone(state["alignment"]["matrix"])
         self.assertEqual(state["projection"]["mode"], "live")
-        self.assertTrue(state["alignment"]["detail"].startswith("La cámara vio solo 0 de"))
+        self.assertTrue(state["alignment"]["detail"].startswith("La cámara encontró solo 0 de"))
         self.assertEqual(state["message"], state["alignment"]["detail"])
         failed = [event for event in rig.events() if event["event"] == "alignment_failed"]
         self.assertEqual(failed[-1]["code"], "few_points")

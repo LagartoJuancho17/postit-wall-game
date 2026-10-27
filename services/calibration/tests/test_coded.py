@@ -411,8 +411,8 @@ class SolveTests(unittest.TestCase):
         self.assertTrue(solve(self.layout, found_dots(self.layout, sixteen))["ok"])
         result = solve(self.layout, found_dots(self.layout, sixteen[:-1]))
         self.assertEqual(result["code"], "few_points")
-        self.assertEqual(result["reason"], "La cámara vio solo 15 de 63 puntos. Revisá que la "
-                         "cámara vea la proyección completa y que el proyector esté encendido.")
+        self.assertTrue(result["reason"].startswith(
+            "La cámara encontró solo 15 de los 63 puntos que proyecta la alineación."))
         self.assertEqual((result["decoded"], result["fit"], result["holdout"]), (15, 10, 5))
         self.assertIsNone(result["matrix"])
         self.assertIsNone(result["inliers"])
@@ -441,8 +441,8 @@ class SolveTests(unittest.TestCase):
                 self.assertEqual(result["ok"], ok)
                 if not ok:
                     self.assertEqual(result["code"], "inaccurate")
-                    self.assertEqual(result["reason"], "La alineación quedó imprecisa (0.0 px). "
-                                     "Fijá la cámara y el proyector y volvé a alinear.")
+                    self.assertTrue(result["reason"].startswith(
+                        "La alineación salió poco precisa: los contornos caerían corridos unos 0.0 px"))
 
     def test_holdout_p95_and_max(self):
         holdout = range(5, 64, 5)
@@ -456,7 +456,7 @@ class SolveTests(unittest.TestCase):
         self.assertAlmostEqual(result["holdout_max_px"], 3.2, places=6)
         self.assertEqual(result["outliers"], 0)
         self.assertEqual(result["code"], "inaccurate")
-        self.assertIn("(1.4 px)", result["reason"])
+        self.assertIn("corridos unos 1.4 px", result["reason"])
         self.assertIsNone(result["coverage"])
 
     def test_needs_four_holdout_points(self):
@@ -598,7 +598,7 @@ class DecodeTests(unittest.TestCase):
                 result = decode_alignment(broken, layout)
                 self.assertContractShape(result)
                 self.assertEqual(result["code"], "frames")
-                self.assertEqual(result["reason"], "Faltan cuadros del patrón de alineación.")
+                self.assertEqual(result["reason"], ALIGNMENT_REASONS["frames"])
                 self.assertFalse(result["ok"])
                 self.assertEqual(result["total"], 63)
                 computed = {k for k, v in result.items() if v is not None}
@@ -612,9 +612,19 @@ class DecodeTests(unittest.TestCase):
         rows = re.findall(r"^\| (\w+) \| `(.+)` \|$", CONTRACT.read_text(encoding="utf-8"), re.M)
         self.assertEqual(len(rows), 5)
         self.assertEqual(dict(rows), ALIGNMENT_REASONS)
-        self.assertEqual(ALIGNMENT_REASONS["inaccurate"].format(p95=1.25),
-                         "La alineación quedó imprecisa (1.2 px). Fijá la cámara y el "
-                         "proyector y volvé a alinear.")
+        self.assertIn("corridos unos 1.2 px de los papeles", ALIGNMENT_REASONS["inaccurate"].format(p95=1.25))
+
+    def test_reasons_are_plain_words_with_an_action(self):
+        # Tobias, 2026-10-27: "no entiendo los mensajes de alineación". Each
+        # reason says what the camera saw and what to do, without jargon.
+        jargon = ("coheren", "homograf", "holdout", "p95", "cuadros", "inlier", "imprecis", "patrón")
+        actions = ("Mirá", "Sacá", "Bajá", "Movela", "No cambies")
+        for code, template in ALIGNMENT_REASONS.items():
+            text = template.format(decoded=15, total=63, p95=2.5)
+            with self.subTest(code=code):
+                self.assertFalse([word for word in jargon if word in text.lower()], text)
+                self.assertTrue(any(action in text for action in actions), text)
+                self.assertNotIn("volvé a alinear", text)   # the panel adds "Pulsá A para alinear de nuevo."
 
 
 if __name__ == "__main__":

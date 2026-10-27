@@ -44,15 +44,19 @@ const MIN_COVERAGE = 0.30;     // step 12
 
 /** Operator texts, exactly as in the contract table. `code` is the stable key. */
 export const ALIGNMENT_REASONS = Object.freeze({
-  few_points: ({ decoded, total }) => `La cámara vio solo ${decoded} de ${total} puntos. Revisá que la cámara ` +
-    "vea la proyección completa y que el proyector esté encendido.",
-  inconsistent: () => "Los puntos detectados no forman una proyección coherente. Evitá " +
-    "reflejos y volvé a alinear.",
-  inaccurate: ({ p95 }) => `La alineación quedó imprecisa (${pyRound(p95, 1).toFixed(1)} px). Fijá la cámara y el ` +
-    "proyector y volvé a alinear.",
-  low_coverage: () => "La cámara ve muy poca parte de la proyección. Encuadrala para que vea " +
-    "toda la pared.",
-  frames: () => "Faltan cuadros del patrón de alineación.",
+  few_points: ({ decoded, total }) => `La cámara encontró solo ${decoded} de los ${total} puntos que proyecta la ` +
+    "alineación. Mirá en el video que se vea toda la imagen del proyector, que " +
+    "el proyector esté encendido y que no haya luz fuerte sobre la pared.",
+  inconsistent: () => "La cámara vio puntos que no encajan entre sí, como pasa con reflejos o " +
+    "algo que brilla en la pared. Sacá o tapá lo que brille.",
+  inaccurate: ({ p95 }) => "La alineación salió poco precisa: los contornos caerían corridos unos " +
+    `${pyRound(p95, 1).toFixed(1)} px de los papeles, o más en algunas partes. Suele ser mucha luz ` +
+    "sobre la pared o que se movió la cámara o el proyector. Bajá la luz y no " +
+    "toques los equipos.",
+  low_coverage: () => "La cámara ve solo una parte chica de la imagen del proyector. Movela o " +
+    "alejala para que en el video entre toda la pared proyectada.",
+  frames: () => "La alineación se cortó antes de terminar: faltan fotos de los puntos. No " +
+    "cambies de ventana mientras alinea.",
 });
 
 const REJECTION_KEYS = ["ambiguous", "parity", "unknown_id", "duplicate", "area"];

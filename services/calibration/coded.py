@@ -63,22 +63,28 @@ MIN_COVERAGE = 0.30      # step 12
 # Operator texts, exactly as in the contract table. `code` is the stable key.
 ALIGNMENT_REASONS = {
     "few_points": (
-        "La cámara vio solo {decoded} de {total} puntos. Revisá que la cámara "
-        "vea la proyección completa y que el proyector esté encendido."
+        "La cámara encontró solo {decoded} de los {total} puntos que proyecta la "
+        "alineación. Mirá en el video que se vea toda la imagen del proyector, que "
+        "el proyector esté encendido y que no haya luz fuerte sobre la pared."
     ),
     "inconsistent": (
-        "Los puntos detectados no forman una proyección coherente. Evitá "
-        "reflejos y volvé a alinear."
+        "La cámara vio puntos que no encajan entre sí, como pasa con reflejos o "
+        "algo que brilla en la pared. Sacá o tapá lo que brille."
     ),
     "inaccurate": (
-        "La alineación quedó imprecisa ({p95:.1f} px). Fijá la cámara y el "
-        "proyector y volvé a alinear."
+        "La alineación salió poco precisa: los contornos caerían corridos unos "
+        "{p95:.1f} px de los papeles, o más en algunas partes. Suele ser mucha luz "
+        "sobre la pared o que se movió la cámara o el proyector. Bajá la luz y no "
+        "toques los equipos."
     ),
     "low_coverage": (
-        "La cámara ve muy poca parte de la proyección. Encuadrala para que vea "
-        "toda la pared."
+        "La cámara ve solo una parte chica de la imagen del proyector. Movela o "
+        "alejala para que en el video entre toda la pared proyectada."
     ),
-    "frames": "Faltan cuadros del patrón de alineación.",
+    "frames": (
+        "La alineación se cortó antes de terminar: faltan fotos de los puntos. No "
+        "cambies de ventana mientras alinea."
+    ),
 }
 
 REJECTION_KEYS = ("ambiguous", "parity", "unknown_id", "duplicate", "area")

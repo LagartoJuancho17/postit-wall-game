@@ -16,7 +16,7 @@
       "width": 960
      },
      "code": null,
-     "detail": "Proyector alineado: error 0.1 px con 60 puntos.",
+     "detail": "Proyector alineado: los contornos caen a 0.1 px de cada papel (60 puntos medidos).",
      "layout": null,
      "lens": null,
      "matrix": [
@@ -679,7 +679,7 @@
      },
      "width": 960
     },
-    "message": "Proyector alineado: error 0.1 px con 60 puntos.",
+    "message": "Proyector alineado: los contornos caen a 0.1 px de cada papel (60 puntos medidos).",
     "palette": {
      "custom": false,
      "roles": {

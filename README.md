@@ -90,11 +90,18 @@ sus píxeles (una homografía; el detalle está en
   negro durante unos 8 segundos (más con una cámara en automático, como el
   iPhone). No muevas los equipos mientras tanto. Si la toma sale imprecisa o
   incoherente, el panel la repite una vez más despacio.
-- **Resultado.** El panel dice el error medido, por ejemplo "Proyector
-  alineado: error 0.2 px con 60 puntos". Si falla, dice por qué: la cámara
-  vio pocos puntos (que vea toda la proyección y el proyector esté
-  encendido), puntos incoherentes (reflejos), una toma imprecisa (fijá los
-  equipos) o muy poca parte de la proyección (encuadrá la pared entera).
+- **Resultado.** Si sale bien, el panel dice cuánto se corren los contornos,
+  por ejemplo "Proyector alineado: los contornos caen a 0.2 px de cada papel
+  (60 puntos medidos)". Menos de 1.5 px no se nota a la vista. Si falla, dice
+  qué vio la cámara y qué hacer, y `A` la repite:
+
+  | Mensaje empieza con | Qué pasó | Qué hacer |
+  |---|---|---|
+  | "La cámara encontró solo N de los M puntos" | la cámara no ve toda la imagen del proyector, o hay mucha luz encima | encuadrá la pared entera, proyector encendido, bajá la luz |
+  | "La cámara vio puntos que no encajan entre sí" | un reflejo o algo brillante se confundió con un punto | sacá o tapá lo que brille |
+  | "La alineación salió poco precisa" | los puntos se vieron borrosos o débiles: casi siempre luz del cuarto sobre la pared, o se movió un equipo | bajá la luz, no toques cámara ni proyector |
+  | "La cámara ve solo una parte chica" | la proyección ocupa poco del video | acercá o mové la cámara |
+  | "La alineación se cortó antes de terminar" | la ventana del proyector perdió el foco o se cerró | no cambies de ventana mientras alinea |
 - **Encuadre.** La cámara tiene que ver toda la proyección. Si el panel dice
   pocos puntos (por ejemplo 32 de 60) o poca cobertura, la alineación vale
   solo para la parte que vio: encuadrá la pared entera y pulsá `A`.

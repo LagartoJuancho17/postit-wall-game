@@ -139,7 +139,7 @@ const STAGE_OF = { camera: "camera", projector: "projector", align: "align", det
 /** The align step's text follows the backend's alignment status. */
 function alignMessage(alignment) {
   if (alignment?.status === "collecting") return "Alineando cámara y proyector: no los muevas.";
-  if (alignment?.status === "failed") return `${alignment.detail} Pulsá A para reintentar.`;
+  if (alignment?.status === "failed") return `${alignment.detail} Pulsá A para alinear de nuevo.`;
   if (alignment?.status === "stale") return `${alignment.detail} Pulsá A.`;
   return SETUP_GUIDES.align;
 }

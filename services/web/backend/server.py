@@ -1066,9 +1066,10 @@ class GameController:
         self._overlay = self._overlay_state("unchecked", probes)
         self._check_frames = {}
         self._hold_detection_unlocked()   # the overlay check comes next
-        detail = (f"Proyector alineado: error {result['holdout_p95_px']:.1f} px "
-                  f"con {result['decoded']} puntos"
-                  + (" (lente de la cámara corregido)." if self._align_lens is not None else "."))
+        detail = (f"Proyector alineado: los contornos caen a {result['holdout_p95_px']:.1f} px "
+                  f"de cada papel ({result['decoded']} puntos medidos"
+                  + ("; también se corrigió la curva del lente de la cámara)."
+                     if self._align_lens is not None else ")."))
         self._align_detail = detail
         self._recompute_candidate_unlocked()
         self._changed(detail)

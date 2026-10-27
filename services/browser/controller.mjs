@@ -1109,8 +1109,9 @@ export class GameController {
     this.overlay = overlayState("unchecked", probes);
     this.checkFrames = new Map();
     this.holdDetection();   // the overlay check comes next
-    const detail = `Proyector alineado: error ${pyRound(result.holdout_p95_px, 1).toFixed(1)} px ` +
-      `con ${result.decoded} puntos` + (this.alignLens !== null ? " (lente de la cámara corregido)." : ".");
+    const detail = `Proyector alineado: los contornos caen a ${pyRound(result.holdout_p95_px, 1).toFixed(1)} px ` +
+      `de cada papel (${result.decoded} puntos medidos` +
+      (this.alignLens !== null ? "; también se corrigió la curva del lente de la cámara)." : ").");
     this.alignDetail = detail;
     this.recomputeCandidate();
     this.changed(detail);
