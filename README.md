@@ -131,11 +131,19 @@ Teclas mientras tanto: `B` toma el fondo de nuevo (si un papel nuevo quedó
 pegado y el círculo se llena solo), `R` vuelve un punto, `Esc` cancela. Los
 papeles que ya están en la pared no molestan: son el fondo.
 
-Si un toque quedó lejos, se descarta solo. Si los toques no coinciden, el
-panel dice cuál y hay que repetir. Con la cámara 2 m abajo, el simulador
-mide 1.6 px de error en toda la proyección. Con la interpolación por
-triángulos de CCV daría 11 px: por eso se ajusta una sola homografía con
-todos los toques (detalle en `docs/alignment-and-color.md`, sección 1.6).
+Si un toque quedó corrido, no hay que empezar de nuevo. Al terminar, el
+panel dice cuál repetir ("repetí el punto 7") y el proyector vuelve a
+mostrar solo esa cruz. Pegá el post-it ahí, centrado, y sacá la mano. Se
+repite como mucho tres vueltas; si los toques siguen muy dispersos, la
+calibración se rechaza en vez de dejar un contorno corrido. Ningún toque se
+descarta en silencio: perder una esquina empeora más que el toque malo.
+
+Con la cámara 2 m abajo, el simulador mide 1.6 px de error en toda la
+proyección con una mano cuidadosa. Con la interpolación por triángulos de
+CCV daría 11 px: por eso se ajusta una sola homografía con todos los
+toques. Con una mano como la de la primera prueba real (unos 4 mm de error
+por toque), el contorno queda a unos 5 px de mediana. Detalle en
+`docs/alignment-and-color.md`, sección 1.6.
 
 Alineado, el proyector pone color solo por dentro de cada papel, a 3 px de
 su borde, y nada sobre la pared vacía, así su propia luz no crea post-its

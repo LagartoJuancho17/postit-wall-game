@@ -40,7 +40,8 @@ from services.vision.tests.scene import bgr, hex_at, scene
 from services.vision.tests.test_refine import ring, saturation_image, tilted_paper
 from services.web.backend.eval import DROP_GOAL, FRAME_CENTERS, FRAME_HUES, _color, _image
 from services.calibration.touch import (note_centers, solve_touch, touch_back, touch_begin, touch_progress,
-                                        touch_targets, touch_update)
+                                        touch_retake, touch_targets, touch_update)
+from services.calibration.tests.test_touch import REAL_2026_10_27
 from services.web.tests.test_touch_api import PROJECTOR as TOUCH_PROJECTOR
 from services.web.tests.test_touch_api import QUAD as TOUCH_QUAD
 from services.web.tests.test_touch_api import seen as touch_seen
@@ -737,21 +738,47 @@ def touch_cases() -> dict[str, Any]:
             out.append(Point(float(x / w), float(y / w)))
         return out
     careful = look(targets, 1.0, 1)
+    def grid_look(cols, rows, noise, seed, slips=()):
+        out = look(touch_targets(1280, 800, cols, rows), noise, seed)
+        return [Point(p.x + (30 if i in slips else 0), p.y - (20 if i in slips else 0)) for i, p in enumerate(out)]
     solves = {
         "careful": careful,
         "exact": look(targets, 0.0, 2),
         "slip": look(targets, 1.0, 3, slip=6),
         "two_slips": [Point(p.x + (25 if i in (2, 9) else 0), p.y) for i, p in enumerate(look(targets, 1.0, 4))],
         "sloppy": look(targets, 6.0, 5),
+        "loose": look(targets, 2.6, 6),
         "transposed": [careful[(i % 4) * 4 + i // 4] for i in range(16)],
         "too_few": careful[:8],
+        "grid_3x3": (grid_look(3, 3, 1.0, 7, slips=(4,)), (1280, 800), (3, 3)),
+        "grid_6x5": (grid_look(6, 5, 1.5, 8, slips=(0, 17)), (1280, 800), (6, 5)),
+        "grid_8x6": (grid_look(8, 6, 1.5, 9, slips=(13,)), (1280, 800), (8, 6)),
+        "real_2026_10_27": (REAL_2026_10_27, (1920, 1080), (4, 4)),
     }
     solved = {}
-    for name, camera in solves.items():
-        result = solve_touch(camera, targets[:len(camera)], 1280, 800)
-        solved[name] = {"camera": _touch_json(camera), "result": _touch_json(result)}
+    for name, case in solves.items():
+        camera, size, grid = case if isinstance(case, tuple) else (case, (1280, 800), (4, 4))
+        result = solve_touch(camera, touch_targets(*size, *grid)[:len(camera)], *size)
+        solved[name] = {"camera": _touch_json(camera), "size": list(size), "grid": list(grid),
+                        "result": _touch_json(result)}
+    # Retakes: a 3 x 3 run taken whole, two touches asked again, R in between.
+    retake_run = touch_begin(1280, 800, 3, 3, [])
+    retake_frames = []
+    for index in range(9):
+        retake_frames += [[Point(100.0 + 40 * index, 200.0)]] * 11 + [[]]
+    retake_frames += [[Point(500.0, 120.0)]] * 4 + [[]] + [[Point(510.0, 130.0)]] * 11 + [[]]
+    retake_frames += [[Point(520.0, 140.0)]] * 11 + [[]]
+    retake_trace = []
+    for k, centers in enumerate(retake_frames):
+        if k == 9 * 12:
+            retake_run = touch_retake(retake_run, [2, 7])
+        if k == 9 * 12 + 2:
+            retake_run = touch_back(retake_run)
+        retake_run, event = touch_update(retake_run, centers, (640, 480), k * 0.1)
+        retake_trace.append({"event": event, "run": _touch_json(retake_run)})
     return {"grids": grids, "hold": {"baseline": _touch_json(baseline), "frames": _touch_json(frames),
                                      "trace": trace},
+            "retake": {"frames": _touch_json(retake_frames), "trace": retake_trace},
             "solves": solved}
 
 
@@ -769,7 +796,8 @@ def touch_scripts() -> dict[str, list[dict[str, Any]]]:
         "touch_ok": [*start, act("touch_start"), {"op": "state"}, *every, {"op": "state"},
                      {"op": "check_frame", "frame": "touch_wall", "kind": "neutral"},
                      {"op": "check_frame", "frame": "touch_wall", "kind": "overlay"}, act("check_solve")],
-        "touch_slip": [*start, act("touch_start"), *with_slip, {"op": "state"}],
+        "touch_slip": [*start, act("touch_start"), *with_slip, {"op": "state"}, *hold("touch_6"),
+                       {"op": "state"}, act("touch_back"), {"op": "state"}],
         "touch_transposed": [*start, act("touch_start"), *transposed, {"op": "state"}],
         "touch_controls": [act("touch_start"), *start, act("touch_back"), act("touch_start", cols=2, rows=4),
                            act("touch_start", cols="4", rows=4), act("touch_start", cols=5, rows=3),

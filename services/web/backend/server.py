@@ -28,8 +28,9 @@ from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon
 from contracts.geometry import offset_convex_polygon
 from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_alignment, distort,
                                   transform_board, transform_point, undistort)
-from services.calibration.touch import (TOUCH_GRID, note_centers, solve_touch, touch_back, touch_begin,
-                                        touch_progress, touch_update, valid_grid)
+from services.calibration.touch import (TOUCH_GRID, TOUCH_MAX_ROUNDS, note_centers, solve_touch, touch_back,
+                                        touch_begin, touch_give_up, touch_progress, touch_retake, touch_step,
+                                        touch_update, valid_grid)
 from services.physics import GRAVITY_SHARE, GameState, GameStatus, drop, drop_ready_state, step
 from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
@@ -572,7 +573,8 @@ class GameController:
             return None
         return {"cols": run["cols"], "rows": run["rows"],
                 "targets": [{"x": round(t.x, 3), "y": round(t.y, 3)} for t in run["targets"]],
-                "step": len(run["captured"]), "phase": run["phase"], "many": run["many"],
+                "step": touch_step(run), "captured": len(run["captured"]), "retake": list(run["retake"]),
+                "rounds": run["rounds"], "phase": run["phase"], "many": run["many"],
                 "progress": round(touch_progress(run, self._clock()), 3)}
 
     def _drop_alignment_unlocked(self, status: str, detail: str) -> None:
@@ -932,10 +934,14 @@ class GameController:
                     # CCV's [b]: the next frame's notes become the background.
                     self._touch = {**self._touch, "rebase": True}
                     self._changed("Fondo tomado de nuevo: los papeles que están ahora no cuentan como toque.")
+                elif self._touch["retake"]:
+                    self._touch = touch_back(self._touch)
+                    self._changed(f"Mientras se repiten toques, R no vuelve atrás: repetí el punto "
+                                  f"{touch_step(self._touch) + 1}.")
                 else:
                     self._touch = touch_back(self._touch)
-                    self._changed(f"Volvé al punto {len(self._touch['captured']) + 1}.")
-                self._log(action, step=len(self._touch["captured"]))
+                    self._changed(f"Volvé al punto {touch_step(self._touch) + 1}.")
+                self._log(action, step=touch_step(self._touch))
             elif action == "align_solve":
                 if self._align_status != "collecting":
                     raise RequestError("No hay una alineación en curso.", HTTPStatus.CONFLICT)
@@ -946,7 +952,7 @@ class GameController:
                     self._changed("Alineación cancelada.")
                     self._log("alignment_cancelled", reason="panel")
                 elif self._align_status == "touching":
-                    step = len(self._touch["captured"])
+                    step = touch_step(self._touch)
                     self._drop_alignment_unlocked("none", TOUCH_CANCELLED)
                     self._changed(TOUCH_CANCELLED)
                     self._log("touch_cancelled", reason="panel", step=step)
@@ -1157,35 +1163,50 @@ class GameController:
                   lens_k=_round6(self._align_lens["k"]) if self._align_lens is not None else None)
 
     def _touch_frame_unlocked(self, notes: dict[str, tuple[Polygon, ...]], width: int, height: int) -> None:
-        """One live frame of a touch run (contract 1.6): hold, capture, solve."""
+        """One live frame of a touch run (contract 1.6): hold, capture, solve,
+        and the touches the solve names taken again."""
         self._align_activity = self._clock()
+        at = touch_step(self._touch)
         self._touch, event = touch_update(self._touch, note_centers(notes, ROLES), (width, height), self._clock())
         if event is None:
             return
-        step = len(self._touch["captured"])
         if event == "background":
             self._log("touch_background_taken", notes=len(self._touch["baseline"]))
             return
-        self._log("touch_captured", step=step, x=_round3(self._touch["captured"][-1].x),
-                  y=_round3(self._touch["captured"][-1].y))
+        taken = self._touch["captured"][at]
+        self._log("touch_captured", step=at + 1, x=_round3(taken.x), y=_round3(taken.y),
+                  retake=bool(self._touch["rounds"]))
         if event == "captured":
-            self._changed(f"Punto {step} tomado. Sacá el post-it y llevalo a la cruz {step + 1}.")
+            self._changed(f"Punto {at + 1} tomado. Sacá el post-it y llevalo a la cruz "
+                          f"{touch_step(self._touch) + 1}.")
             return
         run = self._touch
         result = solve_touch(run["captured"], run["targets"], self.projector_width, self.projector_height)
+        if result["code"] == "touch_retake" and run["rounds"] >= TOUCH_MAX_ROUNDS:
+            result = touch_give_up(result)
         fields = {key: _round3(result[key]) for key in ("decoded", "total", "holdout_p95_px", "holdout_max_px",
-                                                        "fit_rms_px", "coverage")}
+                                                        "fit_rms_px", "model_rms_px", "outlier_bar_px",
+                                                        "coverage")}
+        if result["code"] == "touch_retake":
+            # The run goes on: only the named crosses come back.
+            self._touch = touch_retake(run, result["retake"])
+            self._align_detail = result["reason"]
+            self._changed(result["reason"])
+            self._log("touch_retake", points=[i + 1 for i in result["retake"]], round=self._touch["rounds"],
+                      **fields)
+            return
         if not result["ok"]:
             self._drop_alignment_unlocked("failed", result["reason"])
             self._align_code = result["code"]
             self._changed(result["reason"])
-            self._log("touch_failed", code=result["code"], dropped=result["dropped"], **fields)
+            self._log("touch_failed", code=result["code"], rounds=run["rounds"], **fields)
             return
-        self._log("touch_solved", dropped=result["dropped"], **fields)
+        self._log("touch_solved", rounds=run["rounds"], **fields)
         self.projection_mode = "live"
-        detail = (f"Proyector alineado por toques: los contornos caen a menos de "
-                  f"{result['holdout_p95_px']:.1f} px de cada papel ({result['fit']} toques medidos"
-                  + (f"; se descartó el toque {result['dropped']}, que quedó lejos)." if result["dropped"] else ")."))
+        detail = (f"Proyector alineado por toques: el contorno cae a unos {result['model_rms_px']:.1f} px de "
+                  f"cada papel ({result['fit']} toques medidos"
+                  + (f", {run['rounds']} vuelta{'s' if run['rounds'] > 1 else ''} de repetición)."
+                     if run["rounds"] else ")."))
         self._adopt_alignment_unlocked(result, None, "touch", detail)
 
     def align_frame_jpeg(self, data: bytes, align: str | None, camera: str | None = None) -> dict[str, Any]:

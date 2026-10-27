@@ -112,7 +112,9 @@ class TouchRunTests(unittest.TestCase):
         self.assertIsNone(alignment["touch"])
         self.assertIsNone(alignment["lens"])
         self.assertEqual(state["projection"]["mode"], "live")
-        self.assertTrue(alignment["detail"].startswith("Proyector alineado por toques: los contornos caen a menos de "))
+        self.assertRegex(alignment["detail"],
+                         r"^Proyector alineado por toques: el contorno cae a unos \d+\.\d px de cada papel "
+                         r"\(16 toques medidos\)\.$")
         self.assertTrue(alignment["overlay"]["probes"], "the overlay check comes next, as after the dots")
         # H maps camera px to projector px: the truth everywhere in the projection, not only at the touches.
         H = np.array(alignment["matrix"])
@@ -195,15 +197,48 @@ class TouchRunTests(unittest.TestCase):
         state = rig.touch(targets[1])
         self.assertEqual(state["alignment"]["touch"]["step"], 2)
 
-    def test_a_slipped_touch_is_dropped(self):
+    def test_a_slipped_touch_is_asked_again_and_the_retake_finishes_the_run(self):
         rig = Rig(self)
         rig.act("touch_start")
-        for index, target in enumerate(touch_targets(*PROJECTOR, 4, 4)):
+        targets = touch_targets(*PROJECTOR, 4, 4)
+        for index, target in enumerate(targets):
             state = rig.touch(target, dx=40 if index == 6 else 0)
         alignment = state["alignment"]
+        self.assertEqual(alignment["status"], "touching", "the run goes on: only the slip comes back")
+        self.assertEqual(alignment["detail"], "Algunos toques no coinciden con los demás: repetí el punto 7. "
+                                              "Pegá el post-it centrado en la cruz y sacá la mano.")
+        touch = alignment["touch"]
+        self.assertEqual((touch["step"], touch["captured"], touch["retake"], touch["rounds"]), (6, 16, [6], 1))
+        self.assertEqual(state["projection"]["mode"], "touch")
+        retake = rig.events("touch_retake")[0]
+        self.assertEqual((retake["points"], retake["round"]), ([7], 1))
+        state = rig.act("touch_back")
+        self.assertEqual(state["message"], "Mientras se repiten toques, R no vuelve atrás: repetí el punto 7.")
+        self.assertEqual(state["alignment"]["touch"]["captured"], 16)
+        state = rig.touch(targets[6])
+        alignment = state["alignment"]
         self.assertEqual(alignment["status"], "ready", alignment["detail"])
-        self.assertIn("se descartó el toque 7, que quedó lejos", alignment["detail"])
-        self.assertEqual(alignment["quality"]["outliers"], 1)
+        self.assertTrue(alignment["detail"].endswith("(16 toques medidos, 1 vuelta de repetición)."))
+        self.assertEqual((alignment["quality"]["outliers"], alignment["quality"]["fit"]), (0, 16))
+        captured = rig.events("touch_captured")
+        self.assertEqual((captured[-1]["step"], captured[-1]["retake"]), (7, True))
+        self.assertEqual(rig.events("touch_solved")[0]["rounds"], 1)
+
+    def test_a_hand_that_keeps_slipping_gives_up_after_three_rounds(self):
+        rig = Rig(self)
+        rig.act("touch_start")
+        targets = touch_targets(*PROJECTOR, 4, 4)
+        for index, target in enumerate(targets):
+            state = rig.touch(target, dx=40 if index == 6 else 0)
+        for round_ in range(1, 4):
+            self.assertEqual(state["alignment"]["touch"]["rounds"], round_)
+            state = rig.touch(targets[6], dx=-40 if round_ % 2 else 40)
+        alignment = state["alignment"]
+        self.assertEqual((alignment["status"], alignment["code"]), ("failed", "touch_inaccurate"))
+        self.assertTrue(alignment["detail"].startswith("Los toques están muy dispersos: el contorno quedaría a unos "))
+        self.assertEqual(state["projection"]["mode"], "live")
+        self.assertEqual(len(rig.events("touch_retake")), 3)
+        self.assertEqual(rig.events("touch_failed")[0]["rounds"], 3)
 
     def test_touches_in_another_order_are_refused(self):
         rig = Rig(self)

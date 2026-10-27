@@ -398,11 +398,39 @@ projector px, p95, median of the runs):
 | 2 m below and 1 m aside, barrel lens | 2.07 | 10.13 |
 
 Every careful run is accepted (320/320), the accepted ones are within 2.95
-px p95, a touch 25 mm off is dropped and the run still passes (320/320), and
-touches taken column by column are refused (10/10). A camera 2 m below is
-not a problem for a homography: it is a problem for the mesh. No lens model
-here: 16 hand-placed touches cannot fit `k` reliably, and the barrel rows
-above show what that costs (about 1 px).
+px p95, a touch 25 mm off is named for a retake or, when it barely bends
+the outline, passes accurate (314/320), and touches taken column by column
+are refused (10/10). A camera 2 m below is not a problem for a homography:
+it is a problem for the mesh. No lens model here: 16 hand-placed touches
+cannot fit `k` reliably, and the barrel rows above show what that costs
+(about 1 px).
+
+**Real hands (2026-10-27).** The first run on Tobias's wall (FaceTime camera
+1280 x 720, projector 1920 x 1080, 4 x 4; `REAL_2026_10_27` in
+`services/calibration/tests/test_touch.py`) was refused whole by the first
+solver (leave-one-out p95 30 px against a bar of 6), so the outline stayed
+on an older alignment. Measured on it: the touches that agree scatter ~4 px
+per axis, three (11, 15, 16) are 16-24 px off, and least squares without
+those three would have put the outline ~3 px off. The bar had been tuned on
+2 mm hands. The eval now has that hand too (`real_hand`: 1920 x 1080 over 2
+m, 4 mm per axis, 15 % of touches slipping 15-30 mm, the operator retaking
+what the solve names, at most `TOUCH_MAX_ROUNDS = 3` rounds; error over the
+whole projection, projector px):
+
+| hand | aligned | first try | retaken per run | p95 of the runs | median |
+|---|---|---|---|---|---|
+| 2 mm, no slips | 100 % | 96 % | 0.04 | 4.42 | 2.80 |
+| 4 mm, no slips (his) | 98 % | 83 % | 0.31 | 7.59 | 5.28 |
+| 4 mm, 15 % slips | 84 % | 8 % | 2.55 | 11.02 | 5.67 |
+| 10 mm | never accepted | | | | |
+
+A camera bumped 40 px halfway through is never accepted off (40/40). The
+floor of a 4 mm hand over 16 touches is ~5.4 px median / ~8.6 p95 whatever
+the solver does: the corners of the projection are extrapolated. Two
+designs measured worse and were dropped: one fixed px bar for every run
+(a 25 mm slip is 13 px at 1280 px but 24 at 1920), and dropping the touches
+that disagree (each good touch dropped, a corner above all, costs more than
+it saves: 2 mm runs went from 4.4 to 6.5 px p95).
 
 **Grid** (`touch_targets(W_p, H_p, cols, rows)`, Python
 `services/calibration/touch.py`, JS `services/browser/touch.mjs`): target
@@ -414,30 +442,62 @@ frame, pure): `centers` are the vertex means of every detected note, role
 by role. A center within `0.03 min(camera)` of a background center is that
 note. With exactly one new note the hold runs: a center farther than
 `0.012 min(camera)` from the running mean restarts it. After `TOUCH_HOLD_S
-= 1.0` s and at least 3 frames, the mean of the hold is captured, and the
+= 1.0` s and at least 3 frames, the mean of the hold is captured at
+`touch_step(run)` (the first of `retake` when there are retakes, else the
+next new cross; a retake replaces that capture, the others stay), and the
 phase is `lift` until no new note is seen (the next cross does not arm while
 the same post-it is still on the wall). Two or more new notes: no hold,
 `many: true`. `touch_background` makes the next frame's centers the
-background; `touch_back` drops the last capture.
+background; `touch_back` drops the last capture (during retakes it only
+restarts the hold). `touch_retake(run, indices)` keeps the phase, sets
+`retake` and counts a round.
 
-**Solve** (`solve_touch(camera, targets, W_p, H_p)`, once the last cross is
-captured). Least-squares homography (`findHomography`, method 0) of every
-touch; for each touch, the error of the homography fitted to all the others
-(leave one out). Pass: p95 <= `TOUCH_MAX_P95_PX = 6.0` and max <=
-`TOUCH_MAX_ERROR_PX = 9.0` projector px (leaving a corner out makes the rest
-extrapolate it: careful runs reach ~4.5 and ~6). When the max is above
-`TOUCH_OUTLIER_PX = 9.0`, the worst touch is dropped if the others then pass
-(at least 9 left; at most one dropped). The Jacobian of the mapping at the
-touches' mean must be positive: the camera does not mirror the wall, so a
-negative one means touches in another order. The result has the decoder's
-shape (`decoded`, `total`, `fit`, `inliers`, `holdout = fit`,
-`holdout_p95_px`, `holdout_max_px`, `outliers`, `coverage`) plus `dropped`
-(1-based) and `fit_rms_px`.
+**Solve** (`solve_touch(camera, targets, W_p, H_p)`, once every cross is
+captured). The mapping is the least-squares homography (`findHomography`,
+method 0) of every touch: none is ever dropped. A robust fit only says which
+touches to take again:
+
+1. Least median of squares (Rousseeuw 1984): every 4-touch subset (when
+   there are at most `TOUCH_MAX_SUBSETS = 4096`; else one touch from each
+   quarter of the grid, evenly thinned to that many), the exact homography
+   through it by Gaussian elimination with partial pivoting in plain
+   floats (same bits in JS), and its residuals at every touch; the subset
+   with the smallest `(n + 5) // 2`-th squared residual wins, the first on a
+   tie. `sigma = sqrt(that) / 1.18` per axis.
+2. `TOUCH_REFITS = 2` times: keep the touches within
+   `bar = max(TOUCH_OUTLIER_SIGMA * sigma, TOUCH_OUTLIER_MIN_PX)`
+   (`4.5`, `8.0` px; at least 9, the closest), least squares over them,
+   residuals of every touch against it, `sigma = min(sigma, sqrt(SS / (2m -
+   8)))` (never up: slips that got in would raise their own bar).
+3. Off: residual over the final bar. `shift_px`: the largest distance, at
+   the touches, between the mapping of every touch and the robust one.
+4. Pass when `model_rms_px = sqrt(8 SS / ((2n - 8) n))` (the mapping's own
+   error at the touches, least squares with 8 unknowns over 2n coordinates)
+   is at most `TOUCH_MAX_MODEL_PX = 3.5` and either none is off or
+   `shift_px <= TOUCH_MAX_SHIFT_PX = 2.0` (retaking them would not move the
+   outline). Otherwise, with none off, the `TOUCH_RETAKE_LOOSE = 2`
+   farthest from the robust fit are named; up to half of the touches named
+   is `touch_retake` with `retake` (0-based, ascending); more is
+   `touch_inaccurate`.
+
+The Jacobian of the mapping at the touches' mean must be positive: the
+camera does not mirror the wall, so a negative one means touches in another
+order (`touch_invalid`, as fewer than 9 touches or no finite fit). The
+result has the decoder's shape (`decoded`, `total`, `fit`, `inliers` = not
+off, `holdout = fit`, `holdout_p95_px`, `holdout_max_px` from leave one out,
+`outliers` = off, `coverage`) plus `retake`, `fit_rms_px`, `model_rms_px`,
+`outlier_bar_px` and `shift_px`. `touch_give_up(result)` turns a
+`touch_retake` into `touch_inaccurate` (the backends do it after
+`TOUCH_MAX_ROUNDS = 3` rounds).
 
 | code | reason (exact Spanish text) |
 |---|---|
-| touch_inaccurate | `Los toques no coinciden entre sí: el punto {worst} quedó corrido unos {error:.1f} px. Centrá el post-it en cada cruz y no muevas la cámara ni el proyector.` |
+| touch_retake | `Algunos toques no coinciden con los demás: repetí {points}. Pegá el post-it centrado en la cruz y sacá la mano.` |
+| touch_inaccurate | `Los toques están muy dispersos: el contorno quedaría a unos {error:.1f} px de cada papel. Pegá cada post-it centrado en su cruz y no muevas la cámara ni el proyector.` |
 | touch_invalid | `Los toques no forman la grilla de la proyección. Poné el post-it sobre la cruz que marca el círculo, en orden.` |
+
+`{points}` is `points_text`: `el punto 7`, `los puntos 3, 4 y 10` (1-based);
+`{error}` is `model_rms_px`.
 
 **Backend** (Python `GameController` and the JS port, identical; golden
 scripts `touch_ok`, `touch_slip`, `touch_transposed`, `touch_controls`):
@@ -453,31 +513,44 @@ scripts `touch_ok`, `touch_slip`, `touch_transposed`, `touch_controls`):
   (409 `Terminá la calibración por toques o cancelala con Esc.`); closing
   the projector cancels it; a camera or size change makes it `stale`; no
   frame for `ALIGN_STALL_S` cancels it.
-- The last capture solves. Success adopts the homography exactly as a dot
-  run does (`lens: null`, `quality.method = "touch"`, overlay probes,
-  `projection.mode = "live"`); the panel then runs the overlay check (2.3).
-  Failure: `status = "failed"`, `code` from the table.
+- The last capture solves. `touch_retake` (before round 3) keeps the run
+  going with `touch_retake(run, retake)`: status stays `touching`, the
+  projector shows the named crosses one by one and the message is the
+  reason. Success adopts the homography exactly as a dot run does (`lens:
+  null`, `quality.method = "touch"`, overlay probes, `projection.mode =
+  "live"`; detail `Proyector alineado por toques: el contorno cae a unos
+  {model_rms_px:.1f} px de cada papel ({fit} toques medidos[, {rounds}
+  vuelta(s) de repetición]).`); the panel then runs the overlay check (2.3).
+  Failure: `status = "failed"`, `code` from the table. `R` during retakes:
+  `Mientras se repiten toques, R no vuelve atrás: repetí el punto {n}.`
 - Snapshot: `alignment.touch` is null except while touching:
-  `{cols, rows, targets: [{x, y}], step, phase: "waiting" | "holding" |
-  "lift", many, progress: 0..1}` (coordinates and progress rounded to 3
-  decimals). `alignment.quality.method` is `"dots"` or `"touch"`.
-- Log: `touch_started`, `touch_captured {step, x, y}`,
+  `{cols, rows, targets: [{x, y}], step, captured, retake: [0-based],
+  rounds, phase: "waiting" | "holding" | "lift", many, progress: 0..1}`
+  (coordinates and progress rounded to 3 decimals; `step` is
+  `touch_step`). `alignment.quality.method` is `"dots"` or `"touch"`.
+- Log: `touch_started`, `touch_captured {step (1-based), x, y, retake}`,
   `touch_background_taken`, `touch_back`, `touch_background`,
-  `touch_solved` / `touch_failed {holdout_p95_px, holdout_max_px,
-  fit_rms_px, coverage, dropped}`, `touch_cancelled {reason}`, then
-  `alignment_ready {method: "touch"}`.
+  `touch_retake {points (1-based), round, ...}`, `touch_solved {rounds,
+  ...}` / `touch_failed {code, rounds, ...}` with `decoded, total,
+  holdout_p95_px, holdout_max_px, fit_rms_px, model_rms_px, outlier_bar_px,
+  coverage`, `touch_cancelled {reason}`, then `alignment_ready {method:
+  "touch"}`. Every capture is logged, so a refused run can be solved again
+  from `runs/web-events.jsonl` (that is how `REAL_2026_10_27` was found).
 
 **Projector** (`drawTouchGrid`): black, then the crosses in white and grays
 only (no projected stroke may read as a post-it, 2.1): the active one with
 arms of `0.1 min(W_p, H_p)` that stick out past a held post-it and a ring of
 radius `0.075 min(W_p, H_p)` that fills with `progress` (full in `lift`),
-done ones with a small check, the rest small and dim. The three lines of
-instructions sit at the top, or at the bottom while a cross of the upper
-half is active.
+taken ones (below `captured` and not in `retake`) with a small check, the
+rest, retakes included, small and dim. The three lines of instructions sit
+at the top, or at the bottom while a cross of the upper half is active;
+during retakes they read `REPITIENDO · punto {n} · faltan {k}` (`es el
+último` for one) and the hint drops `R`.
 
 **Panel**: **Calibrar por toques** (`T`) with the grid (3 x 3, 4 x 4, 5 x 4,
 6 x 5); while touching the same button cancels, and `B`, `R`, `Esc` are
-CCV's keys (`touchCommand`); the setup line says the point and what to do.
+CCV's keys (`touchCommand`); the setup line says the point and what to do,
+and during retakes `Toques: repetí el punto {n} (faltan {k}). ...`.
 
 ## 2. Color under projection
 
@@ -934,15 +1007,23 @@ A deterministic camera/projector/wall model for evals and tests:
   same wide-lens run fails with step 10b off) and of
   `services/web/tests/live-projection.test.mjs`.
 - Touch alignment (1.6): `services/calibration/evals/touch.py` (ours vs.
-  the CCV mesh, acceptance, a slipped touch, wrong order),
+  the CCV mesh, acceptance, a slipped touch, wrong order, and `real_hand`:
+  careful, 4 mm, 4 mm with slips and sloppy hands with retakes, a bumped
+  camera), `services/calibration/tests/test_touch.py` (the solver, retakes
+  in the run, and `REAL_2026_10_27`, the first real run, which must ask for
+  cross 15 and pass after at most two rounds),
   `services/web/tests/test_touch_api.py` (full runs with a camera below the
-  projector, hold, lift, `B`, `R`, cancel, stall, refusals),
-  `services/web/tests/touch-ui.test.mjs` (drawing, texts, keys), the
-  `touching` phase of the state matrix, and the `touch` parity cases.
+  projector, hold, lift, `B`, `R`, cancel, stall, refusals, a slip retaken,
+  giving up after three rounds), `services/web/tests/touch-ui.test.mjs`
+  (drawing, texts, keys, retakes), the `touching` phase of the state
+  matrix, and the `touch` parity cases (solves on 3 x 3 to 8 x 6 grids and
+  the real run, the retake trace).
 - Chrome closed loop (`tests/closed-loop-browser.mjs`, Playwright from
   `POSTIT_PLAYWRIGHT_MODULE`): fake camera composited from a wall image plus
   the projector canvas warped by a known `G`; runs against the static build
-  (browser backend) and against `web.py` (Python backend).
+  (browser backend) and against `web.py` (Python backend). Rooms `touch`
+  (a careful hand: no retake) and `touch-slip` (cross 7 lands 45 px off:
+  the panel says `repetí el punto 7`, the hand retakes it, the run aligns).
 
 Names: nothing new may match `/calibr/i` (existing regression tests forbid
 the removed manual calibration); use `align*`.

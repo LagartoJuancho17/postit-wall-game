@@ -36,13 +36,14 @@ test("the backend's touching phase carries the grid the projector draws", () => 
   assert.equal(touching.projection.mode, "touch");
   assert.equal(touch.targets.length, touch.cols * touch.rows);
   assert.deepEqual([touch.step, touch.phase, touch.many, touch.progress], [0, "waiting", false, 0]);
+  assert.deepEqual([touch.captured, touch.retake, touch.rounds], [0, [], 0]);
   assert.deepEqual(projectorScene({ mode: "touch" }), { kind: "touch", mode: "touch" });
   assert.equal(projectorScene({ mode: "touch", blackout: true }).kind, "black", "a blackout still wins");
 });
 
 test("the projector draws CCV's grid in white and grays only, the active cross long, its ring filling", () => {
   const ctx = canvas();
-  const active = drawTouchGrid(ctx, { ...touch, step: 5, phase: "holding", progress: 0.5 }, 1280, 800);
+  const active = drawTouchGrid(ctx, { ...touch, step: 5, captured: 5, phase: "holding", progress: 0.5 }, 1280, 800);
   assert.equal(active, 5);
   assert.equal(ctx.draws[0].kind, "rect");
   assert.equal(ctx.draws[0].color, "#000000", "black behind the crosses, whatever the theme");
@@ -63,6 +64,22 @@ test("the projector draws CCV's grid in white and grays only, the active cross l
   assert.equal(strokes.filter((d) => d.color === TOUCH_COLORS.next).length, touch.targets.length - 6);
   const texts = ctx.draws.filter((d) => d.kind === "text").map((d) => d.text);
   assert.equal(texts[0], `CALIBRANDO · punto 6 de ${touch.targets.length}`);
+});
+
+test("during retakes the named crosses come back unchecked, one by one", () => {
+  const ctx = canvas();
+  const retaking = { ...touch, step: 6, captured: 16, retake: [6, 14], rounds: 1, phase: "waiting" };
+  assert.equal(drawTouchGrid(ctx, retaking, 1280, 800), 6);
+  const strokes = ctx.draws.filter((d) => d.kind === "stroke");
+  assert.equal(strokes.filter((d) => d.color === TOUCH_COLORS.done).length, 14, "the 14 that stay get a check");
+  assert.equal(strokes.filter((d) => d.color === TOUCH_COLORS.next).length, 1, "14 is still to take");
+  const texts = ctx.draws.filter((d) => d.kind === "text").map((d) => d.text);
+  assert.deepEqual(texts, ["REPITIENDO · punto 7 · faltan 2",
+    "Ese toque quedó corrido: pegá el post-it centrado en la cruz y sacá la mano.",
+    "B: tomar el fondo de nuevo · Esc: cancelar"]);
+  assert.equal(touchLines({ ...retaking, step: 14, retake: [14] }, 16)[0], "REPITIENDO · punto 15 · es el último");
+  assert.equal(touchMessage(retaking), "Toques: repetí el punto 7 (faltan 2). Poné un post-it centrado en la cruz " +
+    "del círculo. B retoma el fondo, Esc cancela.");
 });
 
 test("the instructions move away from an active cross in the upper half", () => {

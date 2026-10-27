@@ -541,13 +541,18 @@ export function drawTouchGrid(ctx, touch, width, height) {
   const arm = 0.1 * side;
   const ring = 0.075 * side;
   const step = Number.isInteger(touch.step) ? touch.step : 0;
+  // Taken crosses get a check; the ones still to take, a retake included, a
+  // small cross.
+  const taken = Number.isInteger(touch.captured) ? touch.captured : step;
+  const retake = Array.isArray(touch.retake) ? touch.retake : [];
   ctx.lineCap = "round";
   targets.forEach((t, i) => {
     if (i === step) return;
-    ctx.strokeStyle = i < step ? TOUCH_COLORS.done : TOUCH_COLORS.next;
+    const done = i < taken && !retake.includes(i);
+    ctx.strokeStyle = done ? TOUCH_COLORS.done : TOUCH_COLORS.next;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    if (i < step) {
+    if (done) {
       // A small check where the post-it was taken.
       ctx.moveTo(t.x - 8, t.y);
       ctx.lineTo(t.x - 2, t.y + 6);
@@ -604,9 +609,13 @@ export function drawTouchGrid(ctx, touch, width, height) {
 /** The projector's instructions, CCV's wording in Spanish. */
 export function touchLines(touch, total) {
   const step = Math.min((touch?.step ?? 0) + 1, total);
-  const head = `CALIBRANDO · punto ${step} de ${total}`;
+  const left = Array.isArray(touch?.retake) ? touch.retake.length : 0;
+  const head = left ? `REPITIENDO · punto ${step} · ${left === 1 ? "es el último" : `faltan ${left}`}`
+    : `CALIBRANDO · punto ${step} de ${total}`;
   const now = touch?.many ? "Hay más de un papel nuevo: dejá uno solo."
     : touch?.phase === "lift" ? "Listo. Sacá el post-it y llevalo a la cruz siguiente."
-      : "Poné un post-it centrado en la cruz y dejalo quieto hasta que el círculo se complete.";
-  return [head, now, "B: tomar el fondo de nuevo · R: volver un punto · Esc: cancelar"];
+      : left ? "Ese toque quedó corrido: pegá el post-it centrado en la cruz y sacá la mano."
+        : "Poné un post-it centrado en la cruz y dejalo quieto hasta que el círculo se complete.";
+  return [head, now, left ? "B: tomar el fondo de nuevo · Esc: cancelar"
+    : "B: tomar el fondo de nuevo · R: volver un punto · Esc: cancelar"];
 }

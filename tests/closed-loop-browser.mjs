@@ -47,12 +47,13 @@ const python = process.env.POSTIT_PYTHON || (existsSync(join(root, ".venv/bin/py
 const GSTACK_PLAYWRIGHT = "/Users/tobiasarraiza/gstack/node_modules/playwright/index.mjs";
 const playwrightModule = process.env.POSTIT_PLAYWRIGHT_MODULE || (existsSync(GSTACK_PLAYWRIGHT) ? GSTACK_PLAYWRIGHT : null);
 const playwright = playwrightModule ? await import(pathToFileURL(resolve(playwrightModule)).href) : await import("playwright");
-const runs = (process.argv.slice(2).length ? process.argv.slice(2) : ["server", "static", "static:bright", "server:touch"])
+const runs = (process.argv.slice(2).length ? process.argv.slice(2)
+  : ["server", "static", "static:bright", "server:touch", "static:touch-slip"])
   .map((arg) => {
     const remote = arg.match(/^(https?:\/\/[^\s]+?)(?::(normal|bright))?$/);
     if (remote) return { kind: "remote", url: remote[1].replace(/\/$/, ""), room: remote[2] ?? "normal" };
     const [kind, room = "normal"] = arg.split(":");
-    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch"].includes(room)) throw new Error(`unknown run ${arg}`);
+    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch", "touch-slip"].includes(room)) throw new Error(`unknown run ${arg}`);
     return { kind, room };
   });
 
@@ -66,7 +67,7 @@ const WALL = [204, 204, 204];                  // reflectance 0.8
 const BLACK_LEVEL = 0.02;                       // light a black projector frame still emits
 /** Room light (projector full white = 1) and the fixed exposure that suits it. */
 const ROOMS = { normal: { ambient: 0.35, gain: 2.0 }, bright: { ambient: 1.0, gain: 0.75 },
-  touch: { ambient: 1.0, gain: 0.75 } };
+  touch: { ambient: 1.0, gain: 0.75 }, "touch-slip": { ambient: 1.0, gain: 0.75 } };
 /** The touch run's camera, far below the projector: the top edge of the projection is shorter. */
 const QUAD_BELOW = [[92, 34], [868, 30], [935, 700], [25, 695]];
 const COLORS = { start: "#e6e617", goal: "#e66a17", bumper: "#17e639", marker: "#e617b6" };
@@ -396,11 +397,15 @@ const HELD_COLOR = "#17e639";   // a bumper-green post-it
  * Contract 1.6, the operator's hand: while the backend is touching, hold a
  * 50 px post-it (slightly turned, placed within ~1.5 projector px of the
  * cross) on the active cross; lift it once the backend took the point.
+ * With `slipAt`, the first post-it on that cross lands 45 px off: the solve
+ * names it (touch_retake), the hand puts it right on the second visit.
  */
-async function touchHand(state, panel, G, shoot = null) {
+async function touchHand(state, panel, G, shoot = null, slipAt = null) {
   let held = null;
   let captured = 0;
   let shot = false;
+  let slipped = false;
+  let retake = null;
   let seed = 7;
   const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) - 0.5;
   await until("the touch run starts", async () => (await state())?.alignment?.status === "touching", 10000, 100);
@@ -409,6 +414,14 @@ async function touchHand(state, panel, G, shoot = null) {
     const alignment = s?.alignment;
     if (alignment?.status !== "touching") break;
     const touch = alignment.touch;
+    if (touch.retake.length && retake === null) {
+      // The panel renders on its own poll: wait for it to say so.
+      const hint = await until("the panel names the retake", async () => {
+        const text = await panel.locator("#setup-hint").textContent();
+        return text?.includes("repetí") ? text : null;
+      }, 3000, 50);
+      retake = { points: touch.retake.map((i) => i + 1), round: touch.rounds, hint };
+    }
     if (shoot && !shot && touch.step === 5 && touch.phase === "holding" && touch.progress > 0.4) {
       shot = true;
       await shoot();   // the grid on the wall, mid-run, for the report
@@ -417,7 +430,9 @@ async function touchHand(state, panel, G, shoot = null) {
     if (want !== held) {
       const points = want === null ? null : (() => {
         const t = touch.targets[want];
-        const [cx, cy] = apply(G, [t.x + 3 * random(), t.y + 3 * random()]);
+        const slip = want === slipAt && !slipped ? 45 : 0;
+        if (slip) slipped = true;
+        const [cx, cy] = apply(G, [t.x + slip + 3 * random(), t.y + 3 * random()]);
         return rotated(cx, cy, 50, 50, 8 * random());
       })();
       await panel.evaluate(([p, color]) => window.closedLoopCamera.hold(p, color), [points, HELD_COLOR]);
@@ -427,14 +442,14 @@ async function touchHand(state, panel, G, shoot = null) {
     await new Promise((done) => setTimeout(done, 100));
   }
   await panel.evaluate(() => window.closedLoopCamera.hold(null));
-  return { captured: captured + 1 };
+  return { captured: captured + 1, retake };
 }
 
 // ------------------------------------------------------------------ one run
 
 async function run({ kind, room, url }) {
   const name = `${kind}-${room}`;
-  const touchRun = room === "touch";
+  const touchRun = room.startsWith("touch");
   const { G, G_INVERSE, TRUE_H } = geometry(touchRun ? QUAD_BELOW : QUAD);
   const backend = kind === "server" ? await startPythonServer()
     : kind === "remote" ? { url, stop: () => {}, log: () => "" } : await startStaticBuild();
@@ -500,8 +515,17 @@ async function run({ kind, room, url }) {
         await projector.screenshot({ path: join(output, `${name}-touch-projector.png`) });
         const png = await panel.evaluate(() => window.closedLoopCamera.png());
         writeFileSync(join(output, `${name}-touch-camera.png`), Buffer.from(png.split(",")[1], "base64"));
-      });
+      }, room === "touch-slip" ? 6 : null);
       report.checks.push(`touch grid: ${report.touches.captured} crosses taken by the simulated hand`);
+      if (room === "touch-slip") {
+        // Contract 1.6: the slip is named and taken again, the run goes on.
+        assert.deepEqual(report.touches.retake?.points, [7], "the slipped cross is asked again");
+        assert.match(report.touches.retake.hint, /^Toques: repetí el punto 7 \(es el último\)\./);
+        report.checks.push(`slip on cross 7 named for a retake (round ${report.touches.retake.round}); ` +
+          `panel said "${report.touches.retake.hint.split(".")[0]}."`);
+      } else {
+        assert.equal(report.touches.retake, null, "a careful hand needs no retake");
+      }
     } else {
       await panel.locator("#align-projector").click();
     }

@@ -10,7 +10,7 @@ import { GameController, placeProbes, RequestError } from "../controller.mjs";
 import { pyRound } from "../numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, hsvFromHex, paletteJson, ruleFromHex } from "../palette.mjs";
 import { drop, launch, step } from "../physics.mjs";
-import { solveTouch, touchBack, touchBegin, touchProgress, touchTargets, touchUpdate } from "../touch.mjs";
+import { solveTouch, touchBack, touchBegin, touchProgress, touchRetake, touchTargets, touchUpdate } from "../touch.mjs";
 import { detectBoard, findNotes, frameQuality, grayFeature, refineQuad } from "../vision.mjs";
 import { boardFromGolden, boardToGolden, diff, frameMat, grayFrame, grayMat, points } from "./golden.mjs";
 
@@ -174,10 +174,18 @@ export function touchVerdicts(cv, golden) {
     out.push(verdict(`touch hold ${k}`, { event, run: touchJson(run), progress: touchProgress(run, k * 0.1 + 0.05) },
       hold.trace[k], 0));
   });
+  let again = touchBegin(1280, 800, 3, 3, []);
+  golden.touch.retake.frames.forEach((centers, k) => {
+    if (k === 9 * 12) again = touchRetake(again, [2, 7]);
+    if (k === 9 * 12 + 2) again = touchBack(again);
+    let event;
+    [again, event] = touchUpdate(again, pts(centers), [640, 480], k * 0.1);
+    out.push(verdict(`touch retake ${k}`, { event, run: touchJson(again) }, golden.touch.retake.trace[k], 0));
+  });
   for (const [name, c] of Object.entries(solves)) {
     const camera = pts(c.camera);
-    const targets = touchTargets(1280, 800, 4, 4).slice(0, camera.length);
-    out.push(verdict(`touch solve ${name}`, touchJson(solveTouch(cv, camera, targets, 1280, 800)), c.result, 1e-6));
+    const targets = touchTargets(...c.size, ...c.grid).slice(0, camera.length);
+    out.push(verdict(`touch solve ${name}`, touchJson(solveTouch(cv, camera, targets, ...c.size)), c.result, 1e-6));
   }
   return out;
 }

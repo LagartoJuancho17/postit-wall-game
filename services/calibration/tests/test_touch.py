@@ -10,14 +10,24 @@ from pathlib import Path
 import numpy as np
 
 from contracts import Point, Polygon
-from services.calibration.touch import (TOUCH_GRID, TOUCH_HOLD_S, TOUCH_MARGIN, TOUCH_REASONS, note_centers,
-                                        solve_touch, touch_back, touch_begin, touch_progress, touch_targets,
+from services.calibration.touch import (TOUCH_GRID, TOUCH_HOLD_S, TOUCH_MARGIN, TOUCH_MAX_MODEL_PX, TOUCH_MAX_ROUNDS,
+                                        TOUCH_REASONS,
+                                        fit_homography, note_centers, points_text, solve_touch, touch_back, touch_begin,
+                                        touch_give_up, touch_progress, touch_retake, touch_step, touch_targets,
                                         touch_update, valid_grid)
 
 CONTRACT = Path(__file__).resolve().parents[3] / "docs" / "alignment-and-color.md"
 CAMERA = (640, 480)
 # Projector px -> camera px, a camera below the projector (the top looks narrower).
 G = np.array([[0.30, -0.06, 150.0], [0.004, 0.42, 40.0], [0.0, 0.00028, 1.0]])
+# The first run on Tobias's wall (runs/web-events.jsonl, 2026-10-27 13:49-13:53,
+# FaceTime camera 1280 x 720, projector 1920 x 1080, 4 x 4): the first solver
+# refused it whole (p95 30 px) and the outline stayed on an old alignment.
+REAL_2026_10_27 = [Point(x, y) for x, y in (
+    (154.794, 108.675), (480.654, 104.876), (800.907, 108.103), (1114.364, 114.078),
+    (156.156, 281.952), (483.065, 277.573), (808.329, 276.465), (1118.763, 284.902),
+    (161.512, 454.973), (487.44, 452.208), (811.273, 442.956), (1123.876, 455.912),
+    (165.536, 628.091), (492.83, 624.435), (825.293, 636.653), (1118.688, 620.461))]
 
 
 def seen(target: Point, dx: float = 0.0, dy: float = 0.0) -> Point:
@@ -93,6 +103,30 @@ class HoldTests(unittest.TestCase):
         self.assertEqual(run["phase"], "waiting", "a note in the background is not a touch")
         self.assertEqual(touch_back(run)["captured"], [])
 
+    def test_retakes_replace_the_named_touches_in_order(self):
+        run = touch_begin(1280, 800, 3, 3, [])
+        for index in range(9):
+            for k in range(11):
+                run, event = touch_update(run, [Point(100 + 40 * index, 200)], CAMERA, index * 10 + k * 0.1)
+            if index < 8:
+                run, _ = touch_update(run, [], CAMERA, index * 10 + 5)
+        self.assertEqual((event, run["phase"]), ("done", "lift"))
+        run = touch_retake(run, [2, 7])
+        self.assertEqual((touch_step(run), run["rounds"], run["phase"]), (2, 1, "lift"))
+        run, _ = touch_update(run, [Point(420, 200)], CAMERA, 100.0)
+        self.assertEqual(run["phase"], "lift", "the last post-it leaves before the first retake arms")
+        run, _ = touch_update(run, [], CAMERA, 100.1)
+        self.assertEqual(touch_back(run)["captured"], run["captured"], "R does not undo during retakes")
+        for k in range(11):
+            run, event = touch_update(run, [Point(500, 120)], CAMERA, 101 + k * 0.1)
+        self.assertEqual((event, run["captured"][2], touch_step(run)), ("captured", Point(500, 120), 7))
+        run, _ = touch_update(run, [], CAMERA, 103.0)
+        for k in range(11):
+            run, event = touch_update(run, [Point(520, 140)], CAMERA, 104 + k * 0.1)
+        self.assertEqual((event, len(run["captured"]), run["retake"]), ("done", 9, []))
+        self.assertEqual(run["captured"][7], Point(520, 140))
+        self.assertEqual(run["captured"][3], Point(220, 200), "the others stay as taken")
+
     def test_the_last_capture_is_done(self):
         run = touch_begin(1280, 800, 3, 3, [])
         event = None
@@ -119,7 +153,7 @@ class SolveTests(unittest.TestCase):
         result = solve_touch(self.touches(), self.targets, 1280, 800)
         self.assertTrue(result["ok"])
         self.assertLess(result["holdout_max_px"], 1e-3)
-        self.assertEqual((result["fit"], result["holdout"], result["outliers"], result["dropped"]), (16, 16, 0, None))
+        self.assertEqual((result["fit"], result["holdout"], result["outliers"], result["retake"]), (16, 16, 0, None))
         H = np.array(result["matrix"])
         for x, y in ((0, 0), (1280, 800), (640, 10)):
             p = seen(Point(x, y))
@@ -131,21 +165,58 @@ class SolveTests(unittest.TestCase):
         for seed in range(10):
             result = solve_touch(self.touches(noise=1.0, seed=seed), self.targets, 1280, 800)
             self.assertTrue(result["ok"], (seed, result["reason"]))
+            self.assertEqual((result["fit"], result["outliers"], result["retake"]), (16, 0, None))
 
-    def test_one_slip_is_dropped(self):
+    def test_a_slip_is_asked_again_not_dropped(self):
+        # Dropping a touch costs more than it saves (evals/touch.py): the
+        # robust fit only names it, the run asks for that cross again.
         result = solve_touch(self.touches(noise=1.0, slip=6, slip_px=40), self.targets, 1280, 800)
-        self.assertTrue(result["ok"])
-        self.assertEqual((result["dropped"], result["fit"], result["outliers"]), (7, 15, 1))
-
-    def test_two_slips_are_refused_naming_the_worst(self):
-        camera = self.touches(noise=1.0)
-        camera[2] = seen(self.targets[2], 45, 0)
-        camera[9] = seen(self.targets[9], 0, 60)
-        result = solve_touch(camera, self.targets, 1280, 800)
         self.assertFalse(result["ok"])
-        self.assertEqual(result["code"], "touch_inaccurate")
-        self.assertIsNone(result["matrix"])
-        self.assertRegex(result["reason"], r"^Los toques no coinciden entre sí: el punto (3|10) quedó corrido unos")
+        self.assertEqual((result["code"], result["retake"], result["matrix"]), ("touch_retake", [6], None))
+        self.assertEqual(result["reason"], TOUCH_REASONS["touch_retake"].format(points="el punto 7"))
+
+    def test_slips_next_to_each_other_are_found_where_least_squares_blames_neighbors(self):
+        camera = self.touches(noise=1.0)
+        for index, (dx, dy) in {2: (45, 0), 3: (0, 40), 9: (0, 60)}.items():
+            camera[index] = seen(self.targets[index], dx, dy)
+        result = solve_touch(camera, self.targets, 1280, 800)
+        self.assertEqual((result["code"], result["retake"]), ("touch_retake", [2, 3, 9]))
+        self.assertEqual(points_text([3, 4, 10]), "los puntos 3, 4 y 10")
+
+    def test_tobias_first_run_is_fixed_by_retaking_two_crosses(self):
+        targets = touch_targets(1920, 1080, 4, 4)
+        touches = list(REAL_2026_10_27)
+        result = solve_touch(touches, targets, 1920, 1080)
+        self.assertEqual((result["code"], result["retake"]), ("touch_retake", [14]))
+        self.assertGreater(result["outlier_bar_px"], 15, "his hand scatters ~4 px: the bar follows it")
+        asked = []
+        # Retakes land where the agreeing touches put the cross, give or take
+        # the hand's own scatter (~3 px here, as in his run).
+        hand = iter([(2.5, -1.8), (-3.1, 2.2), (1.4, 3.0), (-2.2, -2.6), (3.3, 0.9), (-0.8, -3.2)])
+        for _ in range(TOUCH_MAX_ROUNDS):
+            if result["ok"]:
+                break
+            asked.append([i + 1 for i in result["retake"]])
+            keep = [i for i in range(16) if i not in result["retake"]]
+            h = np.linalg.inv(np.array(fit_homography([touches[i] for i in keep], [targets[i] for i in keep])))
+            for i in result["retake"]:
+                dx, dy = next(hand)
+                x, y, w = h @ np.array([targets[i].x + dx, targets[i].y + dy, 1.0])
+                touches[i] = Point(float(x / w), float(y / w))
+            result = solve_touch(touches, targets, 1920, 1080)
+        self.assertTrue(result["ok"], result["reason"])
+        self.assertEqual(asked[0], [15])
+        self.assertLessEqual(len(asked), 2)
+        self.assertLess(result["model_rms_px"], TOUCH_MAX_MODEL_PX)
+
+    def test_loose_runs_ask_for_their_two_worst(self):
+        # Every touch within the run's bar, but the mapping is loose.
+        result = solve_touch(self.touches(noise=6.0, seed=2), self.targets, 1280, 800)
+        self.assertEqual((result["code"], result["outliers"], result["retake"]), ("touch_retake", 0, [1, 14]))
+        self.assertGreater(result["model_rms_px"], TOUCH_MAX_MODEL_PX)
+        given_up = touch_give_up(result)
+        self.assertEqual((given_up["code"], given_up["retake"]), ("touch_inaccurate", None))
+        self.assertTrue(given_up["reason"].startswith("Los toques están muy dispersos: el contorno quedaría a unos"))
 
     def test_wrong_order_and_too_few_are_invalid(self):
         camera = self.touches(noise=1.0)
@@ -155,7 +226,14 @@ class SolveTests(unittest.TestCase):
         same = [camera[0]] * 16
         result = solve_touch(same, self.targets, 1280, 800)
         self.assertEqual(result["code"], "touch_invalid")
-        self.assertFalse(math.isfinite(result["holdout_p95_px"] or math.inf) and result["ok"])
+        self.assertIsNone(result["matrix"])
+
+    def test_big_grids_try_spread_subsets_and_stay_fast(self):
+        targets = touch_targets(1280, 800, 8, 6)
+        camera = [seen(t) for t in targets]
+        camera[13] = seen(targets[13], 35, -20)
+        result = solve_touch(camera, targets, 1280, 800)
+        self.assertEqual((result["code"], result["retake"]), ("touch_retake", [13]))
 
     def test_reasons_match_the_contract_table(self):
         rows = re.findall(r"^\| (touch_\w+) \| `(.+)` \|$", CONTRACT.read_text(encoding="utf-8"), re.M)

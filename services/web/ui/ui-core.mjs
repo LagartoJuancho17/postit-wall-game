@@ -146,10 +146,12 @@ const STAGE_OF = { camera: "camera", projector: "projector", align: "align", det
 export function touchMessage(touch) {
   const total = touch?.targets?.length ?? 0;
   const step = Math.min((touch?.step ?? 0) + 1, total);
+  const left = Array.isArray(touch?.retake) ? touch.retake.length : 0;
   const now = touch?.many ? "Hay más de un papel nuevo: dejá uno solo."
     : touch?.phase === "lift" ? "Punto tomado: sacá el post-it."
       : touch?.phase === "holding" ? "Quieto…"
         : "Poné un post-it centrado en la cruz del círculo.";
+  if (left) return `Toques: repetí el punto ${step} (${left === 1 ? "es el último" : `faltan ${left}`}). ${now} B retoma el fondo, Esc cancela.`;
   return `Toques: punto ${step} de ${total}. ${now} B retoma el fondo, R vuelve un punto, Esc cancela.`;
 }
 

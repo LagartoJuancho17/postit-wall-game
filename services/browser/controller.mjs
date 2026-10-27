@@ -17,8 +17,8 @@ import { distort, undistort } from "./lens.mjs";
 import { isPlainObject, pyJsonLength, pyLength, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
 import { drop, dropReadyState, GameStatus, GRAVITY_SHARE, step } from "./physics.mjs";
-import { noteCenters, solveTouch, touchBack, touchBegin, TOUCH_GRID, touchProgress, touchUpdate, validGrid }
-  from "./touch.mjs";
+import { noteCenters, solveTouch, touchBack, touchBegin, TOUCH_GRID, touchGiveUp, TOUCH_MAX_ROUNDS, touchProgress,
+  touchRetake, touchStep, touchUpdate, validGrid } from "./touch.mjs";
 import { boardFromNotes, findNotes, inspectFrame } from "./vision.mjs";
 
 const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
@@ -589,8 +589,8 @@ export class GameController {
     if (run === null) return null;
     return { cols: run.cols, rows: run.rows,
       targets: run.targets.map((t) => ({ x: pyRound(t.x, 3), y: pyRound(t.y, 3) })),
-      step: run.captured.length, phase: run.phase, many: run.many,
-      progress: pyRound(touchProgress(run, this.clock()), 3) };
+      step: touchStep(run), captured: run.captured.length, retake: [...run.retake], rounds: run.rounds,
+      phase: run.phase, many: run.many, progress: pyRound(touchProgress(run, this.clock()), 3) };
   }
 
   dropAlignment(status, detail) {
@@ -788,11 +788,15 @@ export class GameController {
         // CCV's [b]: the next frame's notes become the background.
         this.touch = { ...this.touch, rebase: true };
         this.changed("Fondo tomado de nuevo: los papeles que están ahora no cuentan como toque.");
+      } else if (this.touch.retake.length) {
+        this.touch = touchBack(this.touch);
+        this.changed("Mientras se repiten toques, R no vuelve atrás: repetí el punto " +
+          `${touchStep(this.touch) + 1}.`);
       } else {
         this.touch = touchBack(this.touch);
-        this.changed(`Volvé al punto ${this.touch.captured.length + 1}.`);
+        this.changed(`Volvé al punto ${touchStep(this.touch) + 1}.`);
       }
-      this.log(name, { step: this.touch.captured.length });
+      this.log(name, { step: touchStep(this.touch) });
     } else if (name === "align_solve") {
       if (this.alignStatus !== "collecting") throw new RequestError("No hay una alineación en curso.", HTTP.CONFLICT);
       this.solveAlignment();
@@ -802,7 +806,7 @@ export class GameController {
         this.changed("Alineación cancelada.");
         this.log("alignment_cancelled", { reason: "panel" });
       } else if (this.alignStatus === "touching") {
-        const stepAt = this.touch.captured.length;
+        const stepAt = touchStep(this.touch);
         this.dropAlignment("none", TOUCH_CANCELLED);
         this.changed(TOUCH_CANCELLED);
         this.log("touch_cancelled", { reason: "panel", step: stepAt });
@@ -1203,39 +1207,49 @@ export class GameController {
       lens_k: this.alignLens !== null ? round6(this.alignLens.k) : null });
   }
 
-  /** One live frame of a touch run (contract 1.6): hold, capture, solve. */
+  /** One live frame of a touch run (contract 1.6): hold, capture, solve,
+   * and the touches the solve names taken again. */
   touchFrame(notes, width, height) {
     this.alignActivity = this.clock();
+    const at = touchStep(this.touch);
     let event;
     [this.touch, event] = touchUpdate(this.touch, noteCenters(notes, ROLES), [width, height], this.clock());
     if (event === null) return;
-    const stepAt = this.touch.captured.length;
     if (event === "background") {
       this.log("touch_background_taken", { notes: this.touch.baseline.length });
       return;
     }
-    const last = this.touch.captured[stepAt - 1];
-    this.log("touch_captured", { step: stepAt, x: round3(last.x), y: round3(last.y) });
+    const taken = this.touch.captured[at];
+    this.log("touch_captured", { step: at + 1, x: round3(taken.x), y: round3(taken.y), retake: Boolean(this.touch.rounds) });
     if (event === "captured") {
-      this.changed(`Punto ${stepAt} tomado. Sacá el post-it y llevalo a la cruz ${stepAt + 1}.`);
+      this.changed(`Punto ${at + 1} tomado. Sacá el post-it y llevalo a la cruz ${touchStep(this.touch) + 1}.`);
       return;
     }
     const run = this.touch;
-    const result = solveTouch(this.requireCv(), run.captured, run.targets, this.projectorWidth, this.projectorHeight);
+    let result = solveTouch(this.requireCv(), run.captured, run.targets, this.projectorWidth, this.projectorHeight);
+    if (result.code === "touch_retake" && run.rounds >= TOUCH_MAX_ROUNDS) result = touchGiveUp(result);
     const fields = Object.fromEntries(["decoded", "total", "holdout_p95_px", "holdout_max_px", "fit_rms_px",
-      "coverage"].map((key) => [key, round3(result[key])]));
+      "model_rms_px", "outlier_bar_px", "coverage"].map((key) => [key, round3(result[key])]));
+    if (result.code === "touch_retake") {
+      // The run goes on: only the named crosses come back.
+      this.touch = touchRetake(run, result.retake);
+      this.alignDetail = result.reason;
+      this.changed(result.reason);
+      this.log("touch_retake", { points: result.retake.map((i) => i + 1), round: this.touch.rounds, ...fields });
+      return;
+    }
     if (!result.ok) {
       this.dropAlignment("failed", result.reason);
       this.alignCode = result.code;
       this.changed(result.reason);
-      this.log("touch_failed", { code: result.code, dropped: result.dropped, ...fields });
+      this.log("touch_failed", { code: result.code, rounds: run.rounds, ...fields });
       return;
     }
-    this.log("touch_solved", { dropped: result.dropped, ...fields });
+    this.log("touch_solved", { rounds: run.rounds, ...fields });
     this.projectionMode = "live";
-    const detail = "Proyector alineado por toques: los contornos caen a menos de " +
-      `${pyRound(result.holdout_p95_px, 1).toFixed(1)} px de cada papel (${result.fit} toques medidos` +
-      (result.dropped ? `; se descartó el toque ${result.dropped}, que quedó lejos).` : ").");
+    const detail = "Proyector alineado por toques: el contorno cae a unos " +
+      `${pyRound(result.model_rms_px, 1).toFixed(1)} px de cada papel (${result.fit} toques medidos` +
+      (run.rounds ? `, ${run.rounds} vuelta${run.rounds > 1 ? "s" : ""} de repetición).` : ").");
     this.adoptAlignment(result, null, "touch", detail);
   }
 

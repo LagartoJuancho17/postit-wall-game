@@ -5155,10 +5155,13 @@
      "received": 0,
      "status": "touching",
      "touch": {
+      "captured": 0,
       "cols": 4,
       "many": false,
       "phase": "waiting",
       "progress": 0.0,
+      "retake": [],
+      "rounds": 0,
       "rows": 4,
       "step": 0,
       "targets": [
