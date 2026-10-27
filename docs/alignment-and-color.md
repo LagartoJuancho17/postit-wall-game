@@ -355,6 +355,130 @@ the English `ValueError` texts):
 | `start overlaps a bumper` | `El inicio toca un rebote. Separalos.` |
 | anything else from physics | `Un post-it detectado no tiene una forma válida.` |
 
+### 1.6 Touch alignment (after NUI Group's CCV / tbeta)
+
+2026-10-27, Tobias: build "otra forma de calibración" like the touch
+calibration of NUI Group's TUIO tracker, with a grid of crosses, "porque si
+yo tengo la cámara a 2 mts por debajo del proyector, se va a ver distinto".
+
+**Source read.** NUI Group's Community Core Vision (`github.com/nuigroup/ccv15`,
+`nuigroup/ccv-tbeta`; `addons/ofxNCore/src/Calibration/Calibration.cpp` and
+`CalibrationUtils.cpp`). CCV projects a `GRIDX x GRIDY` cell grid
+(`calibration.xml`, 3 x 3 cells = 4 x 4 points by default) inside an
+adjustable bounding box. The operator touches the red circle target and
+holds; a loader arc grows with the blob's `sitting` time and the blob's
+centroid is stored when the finger lifts; `[b]` recaptures the background,
+`[r]` goes back a point. A camera point maps to the screen by barycentric
+interpolation inside the touched triangle of the mesh (two triangles per
+cell); outside the mesh it returns `(0, 0)` (`// FIXME`).
+
+**What we keep.** The row-major grid inset from the edges, touch and hold
+with a filling ring, `B` and `R`. The "touch" is a post-it held centered on
+the cross: the detector already finds post-its by color, also with room
+light on the wall, where the white coded dots of 1.3 lose contrast (the
+failed runs of 2026-10-27 in `runs/align-failures/`).
+
+**What we change, and why.** A camera far off the projector's axis sees
+each grid cell as a perspective quad, and CCV's mesh is linear inside a
+triangle. On a flat wall one homography is exact everywhere, also outside
+the grid. `services.calibration.evals.touch` (a physical scene in meters:
+projection 2.4 m wide at 3 m, post-its placed within 2 mm, center noise
+0.3 camera px, 4 x 4 grid, 40 runs per row; error over the whole projection,
+projector px, p95, median of the runs):
+
+| camera | one homography (ours) | CCV mesh |
+|---|---|---|
+| beside the projector, straight lens | 1.42 | 4.69 |
+| beside the projector, barrel lens (k = -0.05) | 2.48 | 4.59 |
+| 1 m below, straight lens | 1.55 | 6.83 |
+| 1 m below, barrel lens | 2.55 | 7.55 |
+| 2 m below, straight lens | 1.60 | 10.98 |
+| 2 m below, barrel lens | 2.27 | 11.39 |
+| 2 m below and 1 m aside, straight lens | 1.54 | 10.19 |
+| 2 m below and 1 m aside, barrel lens | 2.07 | 10.13 |
+
+Every careful run is accepted (320/320), the accepted ones are within 2.95
+px p95, a touch 25 mm off is dropped and the run still passes (320/320), and
+touches taken column by column are refused (10/10). A camera 2 m below is
+not a problem for a homography: it is a problem for the mesh. No lens model
+here: 16 hand-placed touches cannot fit `k` reliably, and the barrel rows
+above show what that costs (about 1 px).
+
+**Grid** (`touch_targets(W_p, H_p, cols, rows)`, Python
+`services/calibration/touch.py`, JS `services/browser/touch.mjs`): target
+`(i, j)`, row-major, at `((m + (1 - 2m) i / (cols - 1)) W_p, (m + (1 - 2m) j / (rows - 1)) H_p)`
+with `m = TOUCH_MARGIN = 0.12`. Default 4 x 4; any grid from 3 x 3 to 8 x 6.
+
+**Hold** (`touch_update(run, centers, camera_size, now)`, on every live
+frame, pure): `centers` are the vertex means of every detected note, role
+by role. A center within `0.03 min(camera)` of a background center is that
+note. With exactly one new note the hold runs: a center farther than
+`0.012 min(camera)` from the running mean restarts it. After `TOUCH_HOLD_S
+= 1.0` s and at least 3 frames, the mean of the hold is captured, and the
+phase is `lift` until no new note is seen (the next cross does not arm while
+the same post-it is still on the wall). Two or more new notes: no hold,
+`many: true`. `touch_background` makes the next frame's centers the
+background; `touch_back` drops the last capture.
+
+**Solve** (`solve_touch(camera, targets, W_p, H_p)`, once the last cross is
+captured). Least-squares homography (`findHomography`, method 0) of every
+touch; for each touch, the error of the homography fitted to all the others
+(leave one out). Pass: p95 <= `TOUCH_MAX_P95_PX = 6.0` and max <=
+`TOUCH_MAX_ERROR_PX = 9.0` projector px (leaving a corner out makes the rest
+extrapolate it: careful runs reach ~4.5 and ~6). When the max is above
+`TOUCH_OUTLIER_PX = 9.0`, the worst touch is dropped if the others then pass
+(at least 9 left; at most one dropped). The Jacobian of the mapping at the
+touches' mean must be positive: the camera does not mirror the wall, so a
+negative one means touches in another order. The result has the decoder's
+shape (`decoded`, `total`, `fit`, `inliers`, `holdout = fit`,
+`holdout_p95_px`, `holdout_max_px`, `outliers`, `coverage`) plus `dropped`
+(1-based) and `fit_rms_px`.
+
+| code | reason (exact Spanish text) |
+|---|---|
+| touch_inaccurate | `Los toques no coinciden entre sí: el punto {worst} quedó corrido unos {error:.1f} px. Centrá el post-it en cada cruz y no muevas la cámara ni el proyector.` |
+| touch_invalid | `Los toques no forman la grilla de la proyección. Poné el post-it sobre la cruz que marca el círculo, en orden.` |
+
+**Backend** (Python `GameController` and the JS port, identical; golden
+scripts `touch_ok`, `touch_slip`, `touch_transposed`, `touch_controls`):
+
+- `touch_start {cols?, rows?}`: 409 without the projector, without live
+  notes, during a moving attempt or its end effect; 400 for a grid outside 3
+  x 3 .. 8 x 6. The notes now on the wall become the background;
+  `alignment.status = "touching"`, `projection.mode = "touch"`, the mapping
+  is dropped.
+- While touching: every preview frame feeds the hold. `touch_background`,
+  `touch_back` (409 when not touching); `align_cancel` ends the run;
+  `launch`, `projection_black`, `projection_neutral` and scans are refused
+  (409 `Terminá la calibración por toques o cancelala con Esc.`); closing
+  the projector cancels it; a camera or size change makes it `stale`; no
+  frame for `ALIGN_STALL_S` cancels it.
+- The last capture solves. Success adopts the homography exactly as a dot
+  run does (`lens: null`, `quality.method = "touch"`, overlay probes,
+  `projection.mode = "live"`); the panel then runs the overlay check (2.3).
+  Failure: `status = "failed"`, `code` from the table.
+- Snapshot: `alignment.touch` is null except while touching:
+  `{cols, rows, targets: [{x, y}], step, phase: "waiting" | "holding" |
+  "lift", many, progress: 0..1}` (coordinates and progress rounded to 3
+  decimals). `alignment.quality.method` is `"dots"` or `"touch"`.
+- Log: `touch_started`, `touch_captured {step, x, y}`,
+  `touch_background_taken`, `touch_back`, `touch_background`,
+  `touch_solved` / `touch_failed {holdout_p95_px, holdout_max_px,
+  fit_rms_px, coverage, dropped}`, `touch_cancelled {reason}`, then
+  `alignment_ready {method: "touch"}`.
+
+**Projector** (`drawTouchGrid`): black, then the crosses in white and grays
+only (no projected stroke may read as a post-it, 2.1): the active one with
+arms of `0.1 min(W_p, H_p)` that stick out past a held post-it and a ring of
+radius `0.075 min(W_p, H_p)` that fills with `progress` (full in `lift`),
+done ones with a small check, the rest small and dim. The three lines of
+instructions sit at the top, or at the bottom while a cross of the upper
+half is active.
+
+**Panel**: **Calibrar por toques** (`T`) with the grid (3 x 3, 4 x 4, 5 x 4,
+6 x 5); while touching the same button cancels, and `B`, `R`, `Esc` are
+CCV's keys (`touchCommand`); the setup line says the point and what to do.
+
 ## 2. Color under projection
 
 ### 2.1 What the projector may emit
@@ -809,6 +933,12 @@ A deterministic camera/projector/wall model for evals and tests:
   `services/web/tests/test_alignment_api.py` (including the regression: the
   same wide-lens run fails with step 10b off) and of
   `services/web/tests/live-projection.test.mjs`.
+- Touch alignment (1.6): `services/calibration/evals/touch.py` (ours vs.
+  the CCV mesh, acceptance, a slipped touch, wrong order),
+  `services/web/tests/test_touch_api.py` (full runs with a camera below the
+  projector, hold, lift, `B`, `R`, cancel, stall, refusals),
+  `services/web/tests/touch-ui.test.mjs` (drawing, texts, keys), the
+  `touching` phase of the state matrix, and the `touch` parity cases.
 - Chrome closed loop (`tests/closed-loop-browser.mjs`, Playwright from
   `POSTIT_PLAYWRIGHT_MODULE`): fake camera composited from a wall image plus
   the projector canvas warped by a known `G`; runs against the static build

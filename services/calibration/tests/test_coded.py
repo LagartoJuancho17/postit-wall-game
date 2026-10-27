@@ -610,6 +610,7 @@ class DecodeTests(unittest.TestCase):
 
     def test_reasons_match_the_contract_table(self):
         rows = re.findall(r"^\| (\w+) \| `(.+)` \|$", CONTRACT.read_text(encoding="utf-8"), re.M)
+        rows = [row for row in rows if not row[0].startswith("touch_")]   # section 1.6 has its own table
         self.assertEqual(len(rows), 5)
         self.assertEqual(dict(rows), ALIGNMENT_REASONS)
         self.assertIn("corridos unos 1.2 px de los papeles", ALIGNMENT_REASONS["inaccurate"].format(p95=1.25))

@@ -11,7 +11,8 @@
  * strictly inside it (and only after the overlay check allowed it), and
  * the ball and texts are neutral too.
  *
- * drawAlignmentPattern draws the coded dot frames of section 1.2, and
+ * drawAlignmentPattern draws the coded dot frames of section 1.2,
+ * drawTouchGrid the crosses of the touch alignment (section 1.6), and
  * projectorScene picks which of these the projector window shows.
  */
 import {
@@ -469,6 +470,7 @@ export function projectorScene({ blackout = false, local = null, mode = "live" }
   if (local?.kind === "overlay_test") return { kind: "live", mode: "live", forceFill: true };
   if (mode === "black") return { kind: "black", mode: "black" };
   if (mode === "align") return { kind: "black", mode: "align" };
+  if (mode === "touch") return { kind: "touch", mode: "touch" };
   if (mode === "neutral") return { kind: "neutral", mode: "neutral" };
   return { kind: "live", mode: "live", forceFill: false };
 }
@@ -510,4 +512,101 @@ export function drawAlignmentPattern(ctx, layout, frame, width, height) {
   }
   ctx.restore();
   return lit;
+}
+
+/** Touch-grid colors: white and grays only, so no projected stroke reads as a post-it (section 1.6). */
+export const TOUCH_COLORS = Object.freeze({ active: "#ffffff", track: "#3a3a3a", done: "#8a8a8a", next: "#5c5c5c",
+  text: "#d0d0d0" });
+
+/**
+ * The touch alignment, as NUI Group's CCV draws its calibration: every cross
+ * of the grid, the current one with a long white cross and a ring that
+ * fills while the post-it stays still, done ones with a small check. The
+ * ring sits outside a post-it held on the cross; the arms stick out past
+ * its edges so the operator can center it. `touch` is state.alignment.touch.
+ * Returns the index of the active cross, or -1.
+ */
+export function drawTouchGrid(ctx, touch, width, height) {
+  if (!positive(width) || !positive(height)) return -1;
+  ctx.save();
+  plainEffects(ctx);
+  ctx.fillStyle = PATTERN_BACKGROUND;
+  ctx.fillRect(0, 0, width, height);
+  const targets = Array.isArray(touch?.targets) ? touch.targets.filter(validPoint) : [];
+  if (!targets.length) {
+    ctx.restore();
+    return -1;
+  }
+  const side = Math.min(width, height);
+  const arm = 0.1 * side;
+  const ring = 0.075 * side;
+  const step = Number.isInteger(touch.step) ? touch.step : 0;
+  ctx.lineCap = "round";
+  targets.forEach((t, i) => {
+    if (i === step) return;
+    ctx.strokeStyle = i < step ? TOUCH_COLORS.done : TOUCH_COLORS.next;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (i < step) {
+      // A small check where the post-it was taken.
+      ctx.moveTo(t.x - 8, t.y);
+      ctx.lineTo(t.x - 2, t.y + 6);
+      ctx.lineTo(t.x + 9, t.y - 7);
+    } else {
+      ctx.moveTo(t.x - 12, t.y);
+      ctx.lineTo(t.x + 12, t.y);
+      ctx.moveTo(t.x, t.y - 12);
+      ctx.lineTo(t.x, t.y + 12);
+    }
+    ctx.stroke();
+  });
+  const active = step < targets.length ? step : -1;
+  if (active >= 0) {
+    const t = targets[active];
+    ctx.strokeStyle = TOUCH_COLORS.active;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(t.x - arm, t.y);
+    ctx.lineTo(t.x + arm, t.y);
+    ctx.moveTo(t.x, t.y - arm);
+    ctx.lineTo(t.x, t.y + arm);
+    ctx.stroke();
+    ctx.strokeStyle = TOUCH_COLORS.track;
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, ring, 0, Math.PI * 2);
+    ctx.stroke();
+    const progress = touch.phase === "lift" ? 1 : Math.min(1, Math.max(0, Number(touch.progress) || 0));
+    if (progress > 0) {
+      ctx.strokeStyle = TOUCH_COLORS.active;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, ring, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  // The text keeps clear of the active cross: at the top, or at the bottom
+  // while a cross of the upper half is active.
+  const lines = touchLines(touch, targets.length);
+  const lineHeight = 0.026 * side;
+  const top = active < 0 || targets[active].y > height / 2 ? 0.02 * side
+    : height - 0.02 * side - (lines.length + 0.4) * lineHeight;
+  ctx.fillStyle = TOUCH_COLORS.text;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = `600 ${Math.round(0.024 * side)}px system-ui, sans-serif`;
+  ctx.fillText(lines[0], width / 2, top);
+  ctx.font = `${Math.round(0.018 * side)}px system-ui, sans-serif`;
+  lines.slice(1).forEach((line, k) => ctx.fillText(line, width / 2, top + (k + 1.4) * lineHeight));
+  ctx.restore();
+  return active;
+}
+
+/** The projector's instructions, CCV's wording in Spanish. */
+export function touchLines(touch, total) {
+  const step = Math.min((touch?.step ?? 0) + 1, total);
+  const head = `CALIBRANDO · punto ${step} de ${total}`;
+  const now = touch?.many ? "Hay más de un papel nuevo: dejá uno solo."
+    : touch?.phase === "lift" ? "Listo. Sacá el post-it y llevalo a la cruz siguiente."
+      : "Poné un post-it centrado en la cruz y dejalo quieto hasta que el círculo se complete.";
+  return [head, now, "B: tomar el fondo de nuevo · R: volver un punto · Esc: cancelar"];
 }

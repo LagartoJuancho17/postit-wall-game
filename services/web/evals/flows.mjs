@@ -42,7 +42,7 @@ const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", 
 const previews = JSON.parse(readFileSync(new URL("../contract/preview-samples.json", import.meta.url), "utf8"));
 const cameraTrials = JSON.parse(readFileSync(new URL("../contract/camera-trials.json", import.meta.url), "utf8"));
 const c920 = JSON.parse(readFileSync(new URL("../contract/c920-capabilities.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "launch", "reset", "resume", "align"];
+const CONTROLS = ["scan", "launch", "reset", "resume", "align", "touch"];
 const NEEDS_CAMERA = ["scan", "launch"];
 const JOURNEY = [
   ["waiting_camera", "scan"],
@@ -54,6 +54,8 @@ const JOURNEY = [
   ["lost", "reset"],
   ["paused_open", "resume"],
   ["paused_open", "scan"],
+  ["ready", "touch"],      // contract 1.6: the touch grid starts from a live wall
+  ["touching", "touch"],   // and the same button cancels it
 
 ];
 const REOPEN = { projector_closed: "waiting_camera", ready_closed: "ready", paused_closed: "paused_open" };

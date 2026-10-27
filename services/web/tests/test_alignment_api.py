@@ -97,7 +97,9 @@ class AlignmentLifecycleTests(unittest.TestCase):
         self.assertEqual(alignment["received"], 0)
         self.assertIsNone(alignment["lens"])   # a straight camera never gets a lens model
         self.assertEqual(set(alignment["quality"]), {"decoded", "total", "fit", "inliers", "holdout",
-                                                     "holdout_p95_px", "holdout_max_px", "outliers", "coverage"})
+                                                     "holdout_p95_px", "holdout_max_px", "outliers", "coverage", "method"})
+        self.assertEqual(alignment["quality"]["method"], "dots")
+        self.assertIsNone(alignment["touch"])
         # H maps camera px to projector px: compare with inv(G) inside the projection.
         H = np.array(alignment["matrix"])
         truth = np.linalg.inv(G)

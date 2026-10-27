@@ -38,6 +38,18 @@
                 title="Proyecta unos puntos, la cámara los mira y corrige la imagen para que cada contorno caiga sobre su post-it.">
           Alinear proyector <kbd>A</kbd>
         </button>
+        <span class="touch-align">
+          <button id="touch-align" class="button" type="button" disabled
+                  title="Como CCV de NUI Group: el proyector muestra una grilla de cruces y vos ponés un post-it en cada una hasta que el círculo se llena. Sirve con luz en el cuarto y con la cámara lejos del proyector.">
+            Calibrar por toques <kbd>T</kbd>
+          </button>
+          <select id="touch-grid" aria-label="Puntos de la grilla de toques" title="Puntos de la grilla: más puntos, más precisión y más toques.">
+            <option value="3x3">3×3</option>
+            <option value="4x4" selected>4×4</option>
+            <option value="5x4">5×4</option>
+            <option value="6x5">6×5</option>
+          </select>
+        </span>
       </div>
     </header>
 

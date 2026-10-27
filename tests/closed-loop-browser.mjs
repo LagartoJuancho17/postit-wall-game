@@ -12,9 +12,14 @@
  * patterns, acks, settle, uploads), the backend's decoder, the overlay
  * check, the live detection and the projector's drawing all run as shipped.
  *
- *   node tests/closed-loop-browser.mjs [server|static|https://…][:normal|:bright]...
- *   (default: server, static, static:bright; a URL runs against that
+ *   node tests/closed-loop-browser.mjs [server|static|https://…][:normal|:bright|:touch]...
+ *   (default: server, static, static:bright, server:touch; a URL runs against that
  *   deployment of the static build, e.g. the Vercel one)
+ *
+ * `:touch` aligns with the touch grid (contract 1.6) instead of the dots: a
+ * bright room, a camera far below the projector (the top of the projection
+ * looks narrower) and a simulated hand that holds a green post-it on the
+ * active cross until the backend takes it, then lifts it.
  *
  * Passes when, for each backend: the alignment decodes the true mapping
  * (projector px error at the papers < 1 px), the overlay check completes,
@@ -42,12 +47,12 @@ const python = process.env.POSTIT_PYTHON || (existsSync(join(root, ".venv/bin/py
 const GSTACK_PLAYWRIGHT = "/Users/tobiasarraiza/gstack/node_modules/playwright/index.mjs";
 const playwrightModule = process.env.POSTIT_PLAYWRIGHT_MODULE || (existsSync(GSTACK_PLAYWRIGHT) ? GSTACK_PLAYWRIGHT : null);
 const playwright = playwrightModule ? await import(pathToFileURL(resolve(playwrightModule)).href) : await import("playwright");
-const runs = (process.argv.slice(2).length ? process.argv.slice(2) : ["server", "static", "static:bright"])
+const runs = (process.argv.slice(2).length ? process.argv.slice(2) : ["server", "static", "static:bright", "server:touch"])
   .map((arg) => {
     const remote = arg.match(/^(https?:\/\/[^\s]+?)(?::(normal|bright))?$/);
     if (remote) return { kind: "remote", url: remote[1].replace(/\/$/, ""), room: remote[2] ?? "normal" };
     const [kind, room = "normal"] = arg.split(":");
-    if (!["server", "static"].includes(kind) || !["normal", "bright"].includes(room)) throw new Error(`unknown run ${arg}`);
+    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch"].includes(room)) throw new Error(`unknown run ${arg}`);
     return { kind, room };
   });
 
@@ -60,7 +65,10 @@ const QUAD = [[30, 25], [930, 20], [935, 700], [25, 695]];
 const WALL = [204, 204, 204];                  // reflectance 0.8
 const BLACK_LEVEL = 0.02;                       // light a black projector frame still emits
 /** Room light (projector full white = 1) and the fixed exposure that suits it. */
-const ROOMS = { normal: { ambient: 0.35, gain: 2.0 }, bright: { ambient: 1.0, gain: 0.75 } };
+const ROOMS = { normal: { ambient: 0.35, gain: 2.0 }, bright: { ambient: 1.0, gain: 0.75 },
+  touch: { ambient: 1.0, gain: 0.75 } };
+/** The touch run's camera, far below the projector: the top edge of the projection is shorter. */
+const QUAD_BELOW = [[92, 34], [868, 30], [935, 700], [25, 695]];
 const COLORS = { start: "#e6e617", goal: "#e66a17", bumper: "#17e639", marker: "#e617b6" };
 
 function rotated(cx, cy, w, h, degrees) {
@@ -117,10 +125,13 @@ const apply = (H, [x, y]) => {
   return [(H[0][0] * x + H[0][1] * y + H[0][2]) / w, (H[1][0] * x + H[1][1] * y + H[1][2]) / w];
 };
 
-const G = homography([[0, 0], [PROJECTOR.width, 0], [PROJECTOR.width, PROJECTOR.height], [0, PROJECTOR.height]], QUAD);
-const G_INVERSE = homography(QUAD, [[0, 0], [PROJECTOR.width, 0], [PROJECTOR.width, PROJECTOR.height], [0, PROJECTOR.height]]);
-/** The backend's H in its own convention: camera pixel index -> projector canvas coordinates. */
-const TRUE_H = ([i, j]) => apply(G_INVERSE, [i + 0.5, j + 0.5]);
+const FRAME = [[0, 0], [PROJECTOR.width, 0], [PROJECTOR.width, PROJECTOR.height], [0, PROJECTOR.height]];
+/** G (projector -> camera), its inverse, and the backend's H in its own convention. */
+function geometry(quad) {
+  const G = homography(FRAME, quad);
+  const G_INVERSE = homography(quad, FRAME);
+  return { G, G_INVERSE, TRUE_H: ([i, j]) => apply(G_INVERSE, [i + 0.5, j + 0.5]) };
+}
 
 /**
  * The camera, installed in the panel page before its scripts run. Every
@@ -142,7 +153,20 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
     rctx.closePath();
     rctx.fill();
   }
-  const reflectance = Float32Array.from(rctx.getImageData(0, 0, width, height).data, (v) => v / 255);
+  let reflectance = Float32Array.from(rctx.getImageData(0, 0, width, height).data, (v) => v / 255);
+  const base = rctx.getImageData(0, 0, width, height);
+  /** A post-it held on the wall (camera coordinates), or null: the touch run's hand. */
+  function hold(points, color) {
+    rctx.putImageData(base, 0, 0);
+    if (points) {
+      rctx.fillStyle = color;
+      rctx.beginPath();
+      points.forEach(([x, y], k) => (k ? rctx.lineTo(x, y) : rctx.moveTo(x, y)));
+      rctx.closePath();
+      rctx.fill();
+    }
+    reflectance = Float32Array.from(rctx.getImageData(0, 0, width, height).data, (v) => v / 255);
+  }
   // Projector pixel-index coordinates of every camera pixel center.
   const map = new Float32Array(width * height * 2);
   for (let j = 0; j < height; j += 1) {
@@ -249,6 +273,7 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
   };
   window.closedLoopCamera = {
     frames: () => frames,
+    hold,
     /** Per paper: the mean projector light (r, g, b) well inside it (>= 4 px from the edge). */
     fills() {
       return papers.map((paper) => {
@@ -362,10 +387,55 @@ async function startStaticBuild() {
     log: () => "" };
 }
 
+// ------------------------------------------------------------------ the touch hand
+
+const TOUCH_TRUTH_PX = 3.0;
+const HELD_COLOR = "#17e639";   // a bumper-green post-it
+
+/**
+ * Contract 1.6, the operator's hand: while the backend is touching, hold a
+ * 50 px post-it (slightly turned, placed within ~1.5 projector px of the
+ * cross) on the active cross; lift it once the backend took the point.
+ */
+async function touchHand(state, panel, G, shoot = null) {
+  let held = null;
+  let captured = 0;
+  let shot = false;
+  let seed = 7;
+  const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) - 0.5;
+  await until("the touch run starts", async () => (await state())?.alignment?.status === "touching", 10000, 100);
+  while (true) {
+    const s = await state();
+    const alignment = s?.alignment;
+    if (alignment?.status !== "touching") break;
+    const touch = alignment.touch;
+    if (shoot && !shot && touch.step === 5 && touch.phase === "holding" && touch.progress > 0.4) {
+      shot = true;
+      await shoot();   // the grid on the wall, mid-run, for the report
+    }
+    const want = touch.phase === "lift" ? null : touch.step;
+    if (want !== held) {
+      const points = want === null ? null : (() => {
+        const t = touch.targets[want];
+        const [cx, cy] = apply(G, [t.x + 3 * random(), t.y + 3 * random()]);
+        return rotated(cx, cy, 50, 50, 8 * random());
+      })();
+      await panel.evaluate(([p, color]) => window.closedLoopCamera.hold(p, color), [points, HELD_COLOR]);
+      if (want === null) captured += 1;
+      held = want;
+    }
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  await panel.evaluate(() => window.closedLoopCamera.hold(null));
+  return { captured: captured + 1 };
+}
+
 // ------------------------------------------------------------------ one run
 
 async function run({ kind, room, url }) {
   const name = `${kind}-${room}`;
+  const touchRun = room === "touch";
+  const { G, G_INVERSE, TRUE_H } = geometry(touchRun ? QUAD_BELOW : QUAD);
   const backend = kind === "server" ? await startPythonServer()
     : kind === "remote" ? { url, stop: () => {}, log: () => "" } : await startStaticBuild();
   const chrome = process.env.POSTIT_BROWSER_EXECUTABLE || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -421,7 +491,20 @@ async function run({ kind, room, url }) {
     await panel.locator("#theme-dark").click();
     await until("align button enabled", () => panel.locator("#align-projector").isEnabled(), 20000);
     const started = Date.now();
-    await panel.locator("#align-projector").click();
+    if (touchRun) {
+      // Contract 1.6. The panel would start the dots by itself in full
+      // screen; headless, the projector never is, so T is the only run.
+      await until("touch button enabled", () => panel.locator("#touch-align").isEnabled(), 20000);
+      await panel.keyboard.press("t");
+      report.touches = await touchHand(state, panel, G, async () => {
+        await projector.screenshot({ path: join(output, `${name}-touch-projector.png`) });
+        const png = await panel.evaluate(() => window.closedLoopCamera.png());
+        writeFileSync(join(output, `${name}-touch-camera.png`), Buffer.from(png.split(",")[1], "base64"));
+      });
+      report.checks.push(`touch grid: ${report.touches.captured} crosses taken by the simulated hand`);
+    } else {
+      await panel.locator("#align-projector").click();
+    }
     const aligned = await until("alignment and overlay check finish", async () => {
       const s = await state();
       const a = s?.alignment;
@@ -444,10 +527,19 @@ async function run({ kind, room, url }) {
       }
     }
     report.alignment.mappingErrorPx = worst;
-    assert.ok(alignment.quality.decoded >= 50, `decoded ${alignment.quality.decoded} of ${alignment.quality.total}`);
-    assert.ok(worst < 1.0, `decoded mapping ${worst.toFixed(3)} projector px from the truth at the papers`);
-    report.checks.push(`aligned through the real panel in ${report.alignSeconds.toFixed(1)} s: ${alignment.quality.decoded}/` +
-      `${alignment.quality.total} dots, holdout p95 ${alignment.quality.holdout_p95_px} px, truth error ${worst.toFixed(3)} px`);
+    if (touchRun) {
+      assert.equal(alignment.quality.method, "touch");
+      // A hand within ~1.5 px and centers measured on real frames: a few px, not the dots' sub-pixel.
+      assert.ok(worst < TOUCH_TRUTH_PX, `touch mapping ${worst.toFixed(3)} projector px from the truth at the papers`);
+      report.checks.push(`aligned by touch through the real panel in ${report.alignSeconds.toFixed(1)} s: ` +
+        `${alignment.quality.fit}/${alignment.quality.total} touches, leave-one-out p95 ${alignment.quality.holdout_p95_px} px, ` +
+        `truth error ${worst.toFixed(3)} px`);
+    } else {
+      assert.ok(alignment.quality.decoded >= 50, `decoded ${alignment.quality.decoded} of ${alignment.quality.total}`);
+      assert.ok(worst < 1.0, `decoded mapping ${worst.toFixed(3)} projector px from the truth at the papers`);
+      report.checks.push(`aligned through the real panel in ${report.alignSeconds.toFixed(1)} s: ${alignment.quality.decoded}/` +
+        `${alignment.quality.total} dots, holdout p95 ${alignment.quality.holdout_p95_px} px, truth error ${worst.toFixed(3)} px`);
+    }
     report.checks.push(`overlay check: ${alignment.overlay.status} (${alignment.overlay.detail})`);
 
     // The live loop: outlines on the papers, color only on them, no flips.

@@ -6,7 +6,8 @@
     "launch": true,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": true
    },
    "state": {
     "alignment": {
@@ -140,11 +141,13 @@
       "holdout_max_px": 0.09,
       "holdout_p95_px": 0.089,
       "inliers": 48,
+      "method": "dots",
       "outliers": 0,
       "total": 60
      },
      "received": 0,
-     "status": "ready"
+     "status": "ready",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -733,7 +736,8 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": false
+    "scan": false,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -753,7 +757,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -1342,7 +1347,8 @@
     "launch": true,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": true
    },
    "state": {
     "alignment": {
@@ -1362,7 +1368,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -1708,7 +1715,8 @@
     "launch": false,
     "reset": false,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": true
    },
    "state": {
     "alignment": {
@@ -1728,7 +1736,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": null,
     "camera": {
@@ -1963,7 +1972,8 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -1983,7 +1993,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -2572,7 +2583,8 @@
     "launch": false,
     "reset": true,
     "resume": true,
-    "scan": true
+    "scan": true,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -2592,7 +2604,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -3181,7 +3194,8 @@
     "launch": false,
     "reset": false,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -3201,7 +3215,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": null,
     "camera": {
@@ -3280,7 +3295,8 @@
     "launch": true,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": true
    },
    "state": {
     "alignment": {
@@ -3300,7 +3316,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -3889,7 +3906,8 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -3909,7 +3927,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -4498,7 +4517,8 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": false
+    "scan": false,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -4518,7 +4538,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [
@@ -5101,13 +5122,702 @@
     "revision": 3
    }
   },
+  "touching": {
+   "accepts": {
+    "align": true,
+    "launch": false,
+    "reset": true,
+    "resume": false,
+    "scan": false,
+    "touch": true
+   },
+   "state": {
+    "alignment": {
+     "camera": {
+      "height": 720,
+      "label": null,
+      "width": 960
+     },
+     "code": null,
+     "detail": "Calibración por toques: poné un post-it centrado en la cruz del círculo y dejalo quieto.",
+     "layout": null,
+     "lens": null,
+     "matrix": null,
+     "needed": 14,
+     "overlay": {
+      "detail": "El relleno de color todavía no se verificó.",
+      "fill": false,
+      "probes": [],
+      "status": "unchecked"
+     },
+     "projector": null,
+     "quality": null,
+     "received": 0,
+     "status": "touching",
+     "touch": {
+      "cols": 4,
+      "many": false,
+      "phase": "waiting",
+      "progress": 0.0,
+      "rows": 4,
+      "step": 0,
+      "targets": [
+       {
+        "x": 153.6,
+        "y": 96.0
+       },
+       {
+        "x": 477.867,
+        "y": 96.0
+       },
+       {
+        "x": 802.133,
+        "y": 96.0
+       },
+       {
+        "x": 1126.4,
+        "y": 96.0
+       },
+       {
+        "x": 153.6,
+        "y": 298.667
+       },
+       {
+        "x": 477.867,
+        "y": 298.667
+       },
+       {
+        "x": 802.133,
+        "y": 298.667
+       },
+       {
+        "x": 1126.4,
+        "y": 298.667
+       },
+       {
+        "x": 153.6,
+        "y": 501.333
+       },
+       {
+        "x": 477.867,
+        "y": 501.333
+       },
+       {
+        "x": 802.133,
+        "y": 501.333
+       },
+       {
+        "x": 1126.4,
+        "y": 501.333
+       },
+       {
+        "x": 153.6,
+        "y": 704.0
+       },
+       {
+        "x": 477.867,
+        "y": 704.0
+       },
+       {
+        "x": 802.133,
+        "y": 704.0
+       },
+       {
+        "x": 1126.4,
+        "y": 704.0
+       }
+      ]
+     }
+    },
+    "board": {
+     "bumpers": [
+      {
+       "points": [
+        {
+         "x": 394.419,
+         "y": 209.448
+        },
+        {
+         "x": 394.42,
+         "y": 260.586
+        },
+        {
+         "x": 465.56,
+         "y": 260.586
+        },
+        {
+         "x": 465.526,
+         "y": 209.448
+        }
+       ]
+      }
+     ],
+     "goal": {
+      "points": [
+       {
+        "x": 749.452,
+        "y": 319.442
+       },
+       {
+        "x": 749.455,
+        "y": 380.606
+       },
+       {
+        "x": 810.613,
+        "y": 380.575
+       },
+       {
+        "x": 810.591,
+        "y": 319.442
+       }
+      ]
+     },
+     "markers": [
+      {
+       "points": [
+        {
+         "x": 847.422,
+         "y": 607.422
+        },
+        {
+         "x": 847.421,
+         "y": 652.576
+        },
+        {
+         "x": 892.566,
+         "y": 652.569
+        },
+        {
+         "x": 892.562,
+         "y": 607.421
+        }
+       ]
+      },
+      {
+       "points": [
+        {
+         "x": 67.424,
+         "y": 607.422
+        },
+        {
+         "x": 67.428,
+         "y": 652.571
+        },
+        {
+         "x": 112.553,
+         "y": 652.575
+        },
+        {
+         "x": 112.565,
+         "y": 607.422
+        }
+       ]
+      },
+      {
+       "points": [
+        {
+         "x": 847.422,
+         "y": 67.429
+        },
+        {
+         "x": 847.422,
+         "y": 112.574
+        },
+        {
+         "x": 892.561,
+         "y": 112.56
+        },
+        {
+         "x": 892.569,
+         "y": 67.427
+        }
+       ]
+      },
+      {
+       "points": [
+        {
+         "x": 67.427,
+         "y": 67.427
+        },
+        {
+         "x": 67.424,
+         "y": 112.557
+        },
+        {
+         "x": 112.566,
+         "y": 112.575
+        },
+        {
+         "x": 112.551,
+         "y": 67.428
+        }
+       ]
+      }
+     ],
+     "playfield": {
+      "points": [
+       {
+        "x": 0,
+        "y": 0
+       },
+       {
+        "x": 960,
+        "y": 0
+       },
+       {
+        "x": 960,
+        "y": 720
+       },
+       {
+        "x": 0,
+        "y": 720
+       }
+      ]
+     },
+     "start": {
+      "points": [
+       {
+        "x": 149.481,
+        "y": 319.475
+       },
+       {
+        "x": 149.502,
+        "y": 380.576
+       },
+       {
+        "x": 210.537,
+        "y": 380.536
+       },
+       {
+        "x": 210.547,
+        "y": 319.475
+       }
+      ]
+     }
+    },
+    "camera": {
+     "height": 720,
+     "label": null,
+     "status": "browser",
+     "width": 960
+    },
+    "camera_board": {
+     "bumpers": [
+      {
+       "points": [
+        {
+         "x": 394.419,
+         "y": 209.448
+        },
+        {
+         "x": 394.42,
+         "y": 260.586
+        },
+        {
+         "x": 465.56,
+         "y": 260.586
+        },
+        {
+         "x": 465.526,
+         "y": 209.448
+        }
+       ]
+      }
+     ],
+     "goal": {
+      "points": [
+       {
+        "x": 749.452,
+        "y": 319.442
+       },
+       {
+        "x": 749.455,
+        "y": 380.606
+       },
+       {
+        "x": 810.613,
+        "y": 380.575
+       },
+       {
+        "x": 810.591,
+        "y": 319.442
+       }
+      ]
+     },
+     "markers": [
+      {
+       "points": [
+        {
+         "x": 847.422,
+         "y": 607.422
+        },
+        {
+         "x": 847.421,
+         "y": 652.576
+        },
+        {
+         "x": 892.566,
+         "y": 652.569
+        },
+        {
+         "x": 892.562,
+         "y": 607.421
+        }
+       ]
+      },
+      {
+       "points": [
+        {
+         "x": 67.424,
+         "y": 607.422
+        },
+        {
+         "x": 67.428,
+         "y": 652.571
+        },
+        {
+         "x": 112.553,
+         "y": 652.575
+        },
+        {
+         "x": 112.565,
+         "y": 607.422
+        }
+       ]
+      },
+      {
+       "points": [
+        {
+         "x": 847.422,
+         "y": 67.429
+        },
+        {
+         "x": 847.422,
+         "y": 112.574
+        },
+        {
+         "x": 892.561,
+         "y": 112.56
+        },
+        {
+         "x": 892.569,
+         "y": 67.427
+        }
+       ]
+      },
+      {
+       "points": [
+        {
+         "x": 67.427,
+         "y": 67.427
+        },
+        {
+         "x": 67.424,
+         "y": 112.557
+        },
+        {
+         "x": 112.566,
+         "y": 112.575
+        },
+        {
+         "x": 112.551,
+         "y": 67.428
+        }
+       ]
+      }
+     ],
+     "playfield": {
+      "points": [
+       {
+        "x": 0,
+        "y": 0
+       },
+       {
+        "x": 960,
+        "y": 0
+       },
+       {
+        "x": 960,
+        "y": 720
+       },
+       {
+        "x": 0,
+        "y": 720
+       }
+      ]
+     },
+     "start": {
+      "points": [
+       {
+        "x": 149.481,
+        "y": 319.475
+       },
+       {
+        "x": 149.502,
+        "y": 380.576
+       },
+       {
+        "x": 210.537,
+        "y": 380.536
+       },
+       {
+        "x": 210.547,
+        "y": 319.475
+       }
+      ]
+     }
+    },
+    "camera_presets": {},
+    "game": {
+     "attempts": 0,
+     "bounces": 0,
+     "camera_paused": false,
+     "elapsed_s": 0.0,
+     "gravity_px_s2": 1152.0,
+     "height": 720,
+     "paused": false,
+     "position": {
+      "x": 180.014,
+      "y": 392.556
+     },
+     "space": "camera",
+     "status": "ready",
+     "width": 960
+    },
+    "live_detection": {
+     "height": 720,
+     "quality": {
+      "brightness": 0.863,
+      "clipped": 0.0013,
+      "dark": 0.0,
+      "note_saturation": 219.3,
+      "ready": true,
+      "sharpness": 4.7
+     },
+     "roles": {
+      "bumper": {
+       "count": 1,
+       "expected": null,
+       "notes": [
+        {
+         "points": [
+          {
+           "x": 394.419,
+           "y": 209.448
+          },
+          {
+           "x": 394.42,
+           "y": 260.586
+          },
+          {
+           "x": 465.56,
+           "y": 260.586
+          },
+          {
+           "x": 465.526,
+           "y": 209.448
+          }
+         ]
+        }
+       ]
+      },
+      "goal": {
+       "count": 1,
+       "expected": 1,
+       "notes": [
+        {
+         "points": [
+          {
+           "x": 749.452,
+           "y": 319.442
+          },
+          {
+           "x": 749.455,
+           "y": 380.606
+          },
+          {
+           "x": 810.613,
+           "y": 380.575
+          },
+          {
+           "x": 810.591,
+           "y": 319.442
+          }
+         ]
+        }
+       ]
+      },
+      "marker": {
+       "count": 4,
+       "expected": null,
+       "notes": [
+        {
+         "points": [
+          {
+           "x": 847.422,
+           "y": 607.422
+          },
+          {
+           "x": 847.421,
+           "y": 652.576
+          },
+          {
+           "x": 892.566,
+           "y": 652.569
+          },
+          {
+           "x": 892.562,
+           "y": 607.421
+          }
+         ]
+        },
+        {
+         "points": [
+          {
+           "x": 67.424,
+           "y": 607.422
+          },
+          {
+           "x": 67.428,
+           "y": 652.571
+          },
+          {
+           "x": 112.553,
+           "y": 652.575
+          },
+          {
+           "x": 112.565,
+           "y": 607.422
+          }
+         ]
+        },
+        {
+         "points": [
+          {
+           "x": 847.422,
+           "y": 67.429
+          },
+          {
+           "x": 847.422,
+           "y": 112.574
+          },
+          {
+           "x": 892.561,
+           "y": 112.56
+          },
+          {
+           "x": 892.569,
+           "y": 67.427
+          }
+         ]
+        },
+        {
+         "points": [
+          {
+           "x": 67.427,
+           "y": 67.427
+          },
+          {
+           "x": 67.424,
+           "y": 112.557
+          },
+          {
+           "x": 112.566,
+           "y": 112.575
+          },
+          {
+           "x": 112.551,
+           "y": 67.428
+          }
+         ]
+        }
+       ]
+      },
+      "start": {
+       "count": 1,
+       "expected": 1,
+       "notes": [
+        {
+         "points": [
+          {
+           "x": 149.481,
+           "y": 319.475
+          },
+          {
+           "x": 149.502,
+           "y": 380.576
+          },
+          {
+           "x": 210.537,
+           "y": 380.536
+          },
+          {
+           "x": 210.547,
+           "y": 319.475
+          }
+         ]
+        }
+       ]
+      }
+     },
+     "width": 960
+    },
+    "message": "Calibración por toques: poné un post-it centrado en la cruz del círculo y dejalo quieto.",
+    "palette": {
+     "custom": false,
+     "roles": {
+      "bumper": {
+       "custom": false,
+       "hex": "#6cc678",
+       "hue_high": 90,
+       "hue_low": 40,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "goal": {
+       "custom": false,
+       "hex": "#ff9b49",
+       "hue_high": 19,
+       "hue_low": 5,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "marker": {
+       "custom": false,
+       "hex": "#d75ab9",
+       "hue_high": 179,
+       "hue_low": 125,
+       "min_saturation": 75,
+       "min_value": 55
+      },
+      "start": {
+       "custom": false,
+       "hex": "#f7d84b",
+       "hue_high": 39,
+       "hue_low": 20,
+       "min_saturation": 75,
+       "min_value": 55
+      }
+     }
+    },
+    "phase": "ready",
+    "projection": {
+     "height": 800,
+     "mode": "touch",
+     "open": true,
+     "width": 1280
+    },
+    "revision": 3
+   }
+  },
   "waiting_camera": {
    "accepts": {
     "align": false,
     "launch": false,
     "reset": false,
     "resume": false,
-    "scan": true
+    "scan": true,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -5127,7 +5837,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": null,
     "camera": {
@@ -5206,7 +5917,8 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": false
+    "scan": false,
+    "touch": false
    },
    "state": {
     "alignment": {
@@ -5226,7 +5938,8 @@
      "projector": null,
      "quality": null,
      "received": 0,
-     "status": "none"
+     "status": "none",
+     "touch": null
     },
     "board": {
      "bumpers": [

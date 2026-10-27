@@ -17,6 +17,8 @@ import { distort, undistort } from "./lens.mjs";
 import { isPlainObject, pyJsonLength, pyLength, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
 import { drop, dropReadyState, GameStatus, GRAVITY_SHARE, step } from "./physics.mjs";
+import { noteCenters, solveTouch, touchBack, touchBegin, TOUCH_GRID, touchProgress, touchUpdate, validGrid }
+  from "./touch.mjs";
 import { boardFromNotes, findNotes, inspectFrame } from "./vision.mjs";
 
 const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
@@ -44,6 +46,9 @@ const OVERLAY_MIN_IOU = 0.85;
 const FILL_OFF_FADE = "Si sacás un papel, su luz puede tardar unos segundos en apagarse.";
 const PROBE_GRID = [1, 2, 3, 4, 5, 6, 7, 8, 9];   // candidate centers at tenths of the viewport
 const PROBE_CAMERA_MARGIN = 8;                     // camera px a probe corner keeps from the frame edge
+const TOUCH_STARTED = "Calibración por toques: poné un post-it centrado en la cruz del círculo y dejalo quieto.";
+const TOUCH_CANCELLED = "Calibración por toques cancelada.";
+const TOUCH_STALLED = "La calibración por toques se interrumpió: dejaron de llegar imágenes de la cámara.";
 const STALE_DETAILS = Object.freeze({
   projector_resized: "Cambió el tamaño de la proyección: alineá de nuevo.",
   camera_changed: "Cambió la cámara: alineá de nuevo.",
@@ -372,6 +377,7 @@ export class GameController {
     this.holdUntil = null;
     this.finishedAt = null; // clock when the current attempt ended
     this.alignActivity = null;
+    this.touch = null;   // touch-grid run (contract 1.6), while alignStatus is "touching"
     this.cameraEpoch = 0;
     this.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J.";
     this.revision = 0;
@@ -502,13 +508,16 @@ export class GameController {
     this.holdUntil = this.clock() + ALIGN_HOLD_S;
   }
 
-  /** Back to the live scene, except during a run: patterns until it ends. */
+  /** Back to the live scene, except during a run: patterns or the touch grid until it ends. */
   liveMode() {
-    this.projectionMode = this.alignStatus === "collecting" ? "align" : "live";
+    this.projectionMode = { collecting: "align", touching: "touch" }[this.alignStatus] ?? "live";
   }
 
   refuseWhileCollecting() {
     if (this.alignStatus === "collecting") throw new RequestError("Esperá a que termine la alineación.", HTTP.CONFLICT);
+    if (this.alignStatus === "touching") {
+      throw new RequestError("Terminá la calibración por toques o cancelala con Esc.", HTTP.CONFLICT);
+    }
   }
 
   /** What a frame's answer belongs to, taken before an asynchronous decode. */
@@ -522,6 +531,11 @@ export class GameController {
       this.dropAlignment("none", "La alineación se interrumpió: el panel dejó de enviar patrones.");
       this.changed(this.alignDetail);
       this.log("alignment_cancelled", { reason: "stalled" });
+    }
+    if (this.alignStatus === "touching" && this.alignActivity !== null && now - this.alignActivity > ALIGN_STALL_S) {
+      this.dropAlignment("none", TOUCH_STALLED);
+      this.changed(TOUCH_STALLED);
+      this.log("touch_cancelled", { reason: "stalled" });
     }
     if (this.holdUntil !== null) {
       if (now < this.holdUntil) return;
@@ -561,11 +575,22 @@ export class GameController {
       received: this.alignFrames.size,
       needed: ALIGN_NEEDED,
       quality: this.alignQuality ? { ...this.alignQuality } : null,
+      touch: this.touchJson(),
       detail: this.alignDetail,
       code: this.alignCode,
       overlay: { ...this.overlay, probes: this.overlay.probes.map((probe) => ({ role: probe.role,
         points: probe.points.map((point) => ({ x: pyRound(point.x, 3), y: pyRound(point.y, 3) })) })) },
     };
+  }
+
+  /** What the projector draws and the panel says during a touch run. */
+  touchJson() {
+    const run = this.touch;
+    if (run === null) return null;
+    return { cols: run.cols, rows: run.rows,
+      targets: run.targets.map((t) => ({ x: pyRound(t.x, 3), y: pyRound(t.y, 3) })),
+      step: run.captured.length, phase: run.phase, many: run.many,
+      progress: pyRound(touchProgress(run, this.clock()), 3) };
   }
 
   dropAlignment(status, detail) {
@@ -583,13 +608,14 @@ export class GameController {
     this.checkFrames = new Map();
     this.holdUntil = null;
     this.alignActivity = null;
-    if (this.projectionMode === "align") this.projectionMode = "live";
+    this.touch = null;
+    if (this.projectionMode === "align" || this.projectionMode === "touch") this.projectionMode = "live";
     this.recomputeCandidate();
   }
 
   /** A measured mapping no longer fits the camera or the projector window. */
   invalidateAlignment(reason) {
-    if (this.alignStatus !== "ready" && this.alignStatus !== "collecting") return;
+    if (!["ready", "collecting", "touching"].includes(this.alignStatus)) return;
     const detail = STALE_DETAILS[reason];
     this.dropAlignment("stale", detail);
     this.changed(detail);
@@ -694,6 +720,9 @@ export class GameController {
       if (this.alignStatus === "collecting") {
         this.dropAlignment("none", "Alineación cancelada: se cerró el proyector.");
         this.log("alignment_cancelled", { reason: "projection_close" });
+      } else if (this.alignStatus === "touching") {
+        this.dropAlignment("none", "Calibración por toques cancelada: se cerró el proyector.");
+        this.log("touch_cancelled", { reason: "projection_close" });
       }
     } else if (name === "projection_black") {
       this.refuseWhileCollecting();
@@ -727,6 +756,43 @@ export class GameController {
       this.changed("Alineando cámara y proyector…");
       this.log("alignment_started", { width: this.projectorWidth, height: this.projectorHeight,
         dots: this.alignLayout.dots.length });
+    } else if (name === "touch_start") {
+      if (!this.projectorOpen) throw new RequestError("Abrí la ventana del proyector con J.", HTTP.CONFLICT);
+      if (this.liveDetection === null || this.frameWidth <= 0) {
+        throw new RequestError("Primero la cámara tiene que estar viendo la pared.", HTTP.CONFLICT);
+      }
+      if (running() && !this.paused) {
+        throw new RequestError("Terminá o pausá el intento antes de alinear.", HTTP.CONFLICT);
+      }
+      if (this.cameraPaused()) {
+        throw new RequestError("Esperá a que termine el efecto: la cámara no lee la pared.", HTTP.CONFLICT);
+      }
+      const cols = "cols" in payload ? payload.cols : TOUCH_GRID[0];
+      const rows = "rows" in payload ? payload.rows : TOUCH_GRID[1];
+      if (!validGrid(cols, rows)) throw new RequestError("La grilla de toques va de 3×3 a 8×6 puntos.");
+      const [notes, width, height] = this.lastNotes;
+      this.dropAlignment("touching", TOUCH_STARTED);
+      // The notes already on the wall are the background: only a new one is a touch.
+      this.touch = touchBegin(this.projectorWidth, this.projectorHeight, cols, rows, noteCenters(notes, ROLES));
+      this.alignCamera = { label: this.frameCamera, width, height };
+      this.alignActivity = this.clock();
+      this.projectionMode = "touch";
+      this.changed(TOUCH_STARTED);
+      this.log("touch_started", { cols, rows, width: this.projectorWidth, height: this.projectorHeight,
+        background: this.touch.baseline.length });
+    } else if (name === "touch_background" || name === "touch_back") {
+      if (this.alignStatus !== "touching") {
+        throw new RequestError("No hay una calibración por toques en curso.", HTTP.CONFLICT);
+      }
+      if (name === "touch_background") {
+        // CCV's [b]: the next frame's notes become the background.
+        this.touch = { ...this.touch, rebase: true };
+        this.changed("Fondo tomado de nuevo: los papeles que están ahora no cuentan como toque.");
+      } else {
+        this.touch = touchBack(this.touch);
+        this.changed(`Volvé al punto ${this.touch.captured.length + 1}.`);
+      }
+      this.log(name, { step: this.touch.captured.length });
     } else if (name === "align_solve") {
       if (this.alignStatus !== "collecting") throw new RequestError("No hay una alineación en curso.", HTTP.CONFLICT);
       this.solveAlignment();
@@ -735,6 +801,11 @@ export class GameController {
         this.dropAlignment("none", "Alineación cancelada.");
         this.changed("Alineación cancelada.");
         this.log("alignment_cancelled", { reason: "panel" });
+      } else if (this.alignStatus === "touching") {
+        const stepAt = this.touch.captured.length;
+        this.dropAlignment("none", TOUCH_CANCELLED);
+        this.changed(TOUCH_CANCELLED);
+        this.log("touch_cancelled", { reason: "panel", step: stepAt });
       } else {
         this.revision += 1;
       }
@@ -964,7 +1035,7 @@ export class GameController {
       }])),
       quality,
     };
-    if ((this.alignStatus === "ready" || this.alignStatus === "collecting") && this.alignCamera !== null) {
+    if (["ready", "collecting", "touching"].includes(this.alignStatus) && this.alignCamera !== null) {
       if (label !== null && label !== this.alignCamera.label) this.invalidateAlignment("camera_label");
       else if (width !== this.alignCamera.width || height !== this.alignCamera.height) {
         this.invalidateAlignment("camera_size");
@@ -984,6 +1055,7 @@ export class GameController {
       this.lastTick = null;
       this.accumulator = 0.0;
     }
+    if (this.alignStatus === "touching") this.touchFrame(notes, width, height);
     const [cameraBoard, candidate, error] = this.candidateFor(notes, width, height);
     preview.quality.ready = cameraBoard !== null;
     const previous = this.cameraBoard;
@@ -1050,6 +1122,9 @@ export class GameController {
     const label = this.scanLabel(camera);
     const running = () => this.game !== null && this.game.status === GameStatus.RUNNING && !this.paused;
     if (running()) throw new RequestError("Terminá o pausá el intento antes de escanear.", HTTP.CONFLICT);
+    if (this.alignStatus === "touching") {
+      throw new RequestError("Terminá la calibración por toques o cancelala con Esc.", HTTP.CONFLICT);
+    }
     if (this.cameraPaused() && this.game.status !== GameStatus.RUNNING) {
       throw new RequestError("Esperá a que termine el efecto antes de escanear.", HTTP.CONFLICT);
     }
@@ -1094,30 +1169,74 @@ export class GameController {
         rejected: result.rejected });
       return;
     }
+    const lens = result.lens ? { k: Number(result.lens.k), cx: Number(result.lens.cx),
+      cy: Number(result.lens.cy), r: Number(result.lens.r) } : null;
+    const detail = `Proyector alineado: los contornos caen a ${pyRound(result.holdout_p95_px, 1).toFixed(1)} px ` +
+      `de cada papel (${result.decoded} puntos medidos` +
+      (lens !== null ? "; también se corrigió la curva del lente de la cámara)." : ").");
+    this.adoptAlignment(result, lens, "dots", detail);
+  }
+
+  /** A measured mapping becomes the alignment; the overlay check comes next. */
+  adoptAlignment(result, lens, method, detail) {
     const camera = this.alignCamera;
     this.alignStatus = "ready";
     this.alignLayout = null;
+    this.touch = null;
     this.alignMatrix = result.matrix.map((row) => row.map(Number));
-    this.alignLens = result.lens ? { k: Number(result.lens.k), cx: Number(result.lens.cx),
-      cy: Number(result.lens.cy), r: Number(result.lens.r) } : null;
+    this.alignLens = lens;
     this.alignCamera = camera;
     this.alignProjector = { width: this.projectorWidth, height: this.projectorHeight };
     this.alignQuality = Object.fromEntries(["decoded", "total", "fit", "inliers", "holdout", "holdout_p95_px",
       "holdout_max_px", "outliers", "coverage"].map((key) => [key, round3(result[key])]));
+    this.alignQuality.method = method;
     const probes = placeProbes(this.liveDetection, this.alignMatrix, [this.projectorWidth, this.projectorHeight],
       [camera.width, camera.height], this.alignLens);
     this.overlay = overlayState("unchecked", probes);
     this.checkFrames = new Map();
     this.holdDetection();   // the overlay check comes next
-    const detail = `Proyector alineado: los contornos caen a ${pyRound(result.holdout_p95_px, 1).toFixed(1)} px ` +
-      `de cada papel (${result.decoded} puntos medidos` +
-      (this.alignLens !== null ? "; también se corrigió la curva del lente de la cámara)." : ").");
     this.alignDetail = detail;
     this.recomputeCandidate();
     this.changed(detail);
     this.log("alignment_ready", { ...this.alignQuality, probes: probes.length,
       width: this.projectorWidth, height: this.projectorHeight,
       lens_k: this.alignLens !== null ? round6(this.alignLens.k) : null });
+  }
+
+  /** One live frame of a touch run (contract 1.6): hold, capture, solve. */
+  touchFrame(notes, width, height) {
+    this.alignActivity = this.clock();
+    let event;
+    [this.touch, event] = touchUpdate(this.touch, noteCenters(notes, ROLES), [width, height], this.clock());
+    if (event === null) return;
+    const stepAt = this.touch.captured.length;
+    if (event === "background") {
+      this.log("touch_background_taken", { notes: this.touch.baseline.length });
+      return;
+    }
+    const last = this.touch.captured[stepAt - 1];
+    this.log("touch_captured", { step: stepAt, x: round3(last.x), y: round3(last.y) });
+    if (event === "captured") {
+      this.changed(`Punto ${stepAt} tomado. Sacá el post-it y llevalo a la cruz ${stepAt + 1}.`);
+      return;
+    }
+    const run = this.touch;
+    const result = solveTouch(this.requireCv(), run.captured, run.targets, this.projectorWidth, this.projectorHeight);
+    const fields = Object.fromEntries(["decoded", "total", "holdout_p95_px", "holdout_max_px", "fit_rms_px",
+      "coverage"].map((key) => [key, round3(result[key])]));
+    if (!result.ok) {
+      this.dropAlignment("failed", result.reason);
+      this.alignCode = result.code;
+      this.changed(result.reason);
+      this.log("touch_failed", { code: result.code, dropped: result.dropped, ...fields });
+      return;
+    }
+    this.log("touch_solved", { dropped: result.dropped, ...fields });
+    this.projectionMode = "live";
+    const detail = "Proyector alineado por toques: los contornos caen a menos de " +
+      `${pyRound(result.holdout_p95_px, 1).toFixed(1)} px de cada papel (${result.fit} toques medidos` +
+      (result.dropped ? `; se descartó el toque ${result.dropped}, que quedó lejos).` : ").");
+    this.adoptAlignment(result, null, "touch", detail);
   }
 
   /** Store one pattern frame of a run in progress (gray, at most 14). */

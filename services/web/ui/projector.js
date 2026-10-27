@@ -9,7 +9,7 @@ import {
   withTimeout,
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
-import { drawAlignmentPattern, drawProjectorScene, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
+import { drawAlignmentPattern, drawProjectorScene, drawTouchGrid, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
 import { effectAges, trackEffects } from "./effects.mjs";
 import { soundEvents } from "./sounds.mjs";
 
@@ -175,6 +175,12 @@ function draw() {
   }
   if (scene.kind === "pattern") {
     drawAlignmentPattern(ctx, scene.layout, scene.frame, viewport.width, viewport.height);
+    return;
+  }
+  if (scene.kind === "touch") {
+    // Contract 1.6: the grid of crosses, drawn from the state the backend
+    // advances on every camera frame.
+    drawTouchGrid(ctx, state?.alignment?.touch, viewport.width, viewport.height);
     return;
   }
   if (scene.kind === "neutral") return; // the theme background only: colors are sampled under play light

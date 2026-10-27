@@ -9,6 +9,7 @@ fi
 "$PY" -m unittest discover -s . -p 'test_*.py' -q
 "$PY" -m services.calibration.evals.synthetic
 "$PY" -m services.calibration.evals.coded
+"$PY" -m services.calibration.evals.touch >/dev/null
 "$PY" -m services.vision.eval
 "$PY" -m services.physics.evals.scenarios
 "$PY" -m services.physics.evals.gravity

@@ -12,7 +12,7 @@ import test from "node:test";
 
 import {
   alignmentVerdicts, bridgeVerdicts, controllerVerdicts, homographyVerdicts, offsetVerdicts, paletteVerdicts,
-  physicsVerdicts, probeVerdicts, refineVerdicts, visionVerdicts,
+  physicsVerdicts, probeVerdicts, refineVerdicts, touchVerdicts, visionVerdicts,
 } from "./cases.mjs";
 import { loadCv, loadGolden } from "./golden.mjs";
 
@@ -71,6 +71,13 @@ test("alignment codes, layouts, patterns and decodes match Python, every failure
   assert.ok(golden.alignment.decodes.some((c) => c.result.lens !== null), "no golden decode fits a lens");
   assert.ok(golden.probes.some((c) => c.lens !== null), "no golden probe case has a lens");
   allAgree(alignmentVerdicts(cv, golden));
+});
+
+test("touch grid, hold and solver match Python, every outcome (contract 1.6)", () => {
+  const codes = new Set(Object.values(golden.touch.solves).map((c) => c.result.code));
+  for (const code of [null, "touch_inaccurate", "touch_invalid"]) assert.ok(codes.has(code), `no golden solve ends in ${code}`);
+  assert.ok(Object.values(golden.touch.solves).some((c) => c.result.dropped !== null), "no golden solve drops a touch");
+  allAgree(touchVerdicts(cv, golden));
 });
 
 test("overlay-check probes land where Python puts them", () => {

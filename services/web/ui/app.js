@@ -51,7 +51,8 @@ import {
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
 import { playSound, readSoundOn, SOUND_KEY } from "./sounds.mjs";
-import { autoAlignKey, runAlignment, shouldAutoAlign } from "./align-run.mjs";
+import { alignTiming, autoAlignKey, runAlignment, runOverlayCheck, shouldAutoAlign, touchCommand, touchGrid }
+  from "./align-run.mjs";
 import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS } from "./live-view.mjs";
 
 const api = createApi("panel");
@@ -214,8 +215,12 @@ async function action(name, extra = {}) {
 }
 
 function applyState(next) {
+  const before = state?.alignment?.status;
   state = next;
   render();
+  // A touch run ends in the backend, on a camera frame: the panel then runs
+  // the same overlay check as after the dots (contract 2.3).
+  if (before === "touching" && next?.alignment?.status === "ready") setTimeout(checkAfterTouch, 0);
 }
 
 function cameraError(error) {
@@ -445,20 +450,7 @@ async function alignProjector() {
   notice("Alineando cámara y proyector: no los muevas.", "busy");
   render();
   try {
-    const result = await runAlignment({
-      action: async (name, extra) => {
-        const next = await action(name, extra);
-        applyState(next);
-        return next;
-      },
-      show: (message) => showOnProjector(message),
-      resume: () => channel.postMessage({ type: "resume" }),
-      settle: settleAfter,
-      sleep,
-      capture: () => jpegFromVideo(.92),
-      upload: uploadFrame,
-      progress: (text) => { notice(text, "busy"); render(); },
-    }, { cameraFixed });
+    const result = await runAlignment(alignDeps(), { cameraFixed });
     applyState(result);
     const { alignment } = result;
     if (alignment.status === "ready") {
@@ -482,6 +474,58 @@ async function alignProjector() {
     channel.postMessage({ type: "resume" });
     aligning = false;
     cameraSelect.disabled = cameraSelect.options.length === 0 || !cameraSelect.options[0].value;
+    previewGeneration += 1;
+    render();
+    schedulePreview(0);
+  }
+}
+
+/** Dependencies of align-run.mjs, wired to this panel. */
+function alignDeps() {
+  return {
+    action: async (name, extra) => {
+      const next = await action(name, extra);
+      applyState(next);
+      return next;
+    },
+    show: (message) => showOnProjector(message),
+    resume: () => channel.postMessage({ type: "resume" }),
+    settle: settleAfter,
+    sleep,
+    capture: () => jpegFromVideo(.92),
+    upload: uploadFrame,
+    progress: (text) => { notice(text, "busy"); render(); },
+  };
+}
+
+// Contract 1.6: the backend runs the touch grid on the live frames; the panel
+// only starts it, forwards B, R and Esc, and checks the overlay at the end.
+async function startTouch() {
+  if (aligning || scanBusy || tuning || pickBusy) return;
+  if (state?.alignment?.status === "touching") {
+    await sendAction("align_cancel");
+    return;
+  }
+  if (!controlsFor(state, Boolean(stream && video.videoWidth), projectorIsReady()).touch) return;
+  autoAlignTried.add(autoAlignKey(state));
+  await sendAction("touch_start", touchGrid($("touch-grid").value));
+}
+
+async function checkAfterTouch() {
+  if (aligning || state?.alignment?.status !== "ready") return;
+  aligning = true;
+  previewGeneration += 1;
+  render();
+  try {
+    const result = await runOverlayCheck(alignDeps(), alignTiming(cameraFixed));
+    applyState(result);
+    const { alignment } = result;
+    notice(`${alignment.detail} ${alignment.overlay.detail}`, alignment.overlay.fill ? "info" : "warn");
+  } catch (error) {
+    notice(error.message, "error");
+  } finally {
+    channel.postMessage({ type: "resume" });
+    aligning = false;
     previewGeneration += 1;
     render();
     schedulePreview(0);
@@ -1009,6 +1053,10 @@ function render() {
   const alignment = state?.alignment;
   $("align-projector").disabled = aligning || scanBusy || Boolean(tuning) || pickBusy || !controls.align;
   $("align-projector").dataset.attention = String(guide.step === "align");
+  const touching = alignment?.status === "touching";
+  $("touch-align").disabled = aligning || scanBusy || Boolean(tuning) || pickBusy || (!touching && !controls.touch);
+  $("touch-align").innerHTML = touching ? "Cancelar toques <kbd>Esc</kbd>" : "Calibrar por toques <kbd>T</kbd>";
+  $("touch-grid").disabled = touching || aligning;
   $("align-status").textContent = !alignment ? "" : alignment.status === "ready"
     ? `${alignment.detail} ${alignment.overlay?.detail ?? ""}`.trim()
     : alignment.detail;
@@ -1099,6 +1147,7 @@ for (const role of PALETTE_ROLES) {
   $(`pick-${role}`).addEventListener("click", () => togglePick(role));
 }
 $("camera-tune").addEventListener("click", () => tuneCamera());
+$("touch-align").addEventListener("click", () => startTouch());
 $("theme-dark").addEventListener("click", () => { setBackdrop(null); setProjectorTheme("dark"); });
 $("theme-light").addEventListener("click", () => { setBackdrop(null); setProjectorTheme("light"); });
 $("backdrop-color").addEventListener("input", (event) => setBackdrop(event.target.value));
@@ -1142,6 +1191,18 @@ document.addEventListener("keydown", (event) => {
   if (isTypingTarget(event.target) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
   if (aligning) return; // S, A, R and Space wait for the run to end
   const key = event.key.toLowerCase();
+  const command = touchCommand(state, event.key);
+  if (command) {
+    // During a touch run B, R and Esc are CCV's keys, not the game's.
+    event.preventDefault();
+    sendAction(command);
+    return;
+  }
+  if (key === "t" && !$("touch-align").disabled) {
+    event.preventDefault();
+    startTouch();
+    return;
+  }
   if (key === "s") {
     event.preventDefault();
     scanBoard();

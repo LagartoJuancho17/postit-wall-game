@@ -28,6 +28,8 @@ from contracts import ROLE_LABELS, ROLES, Board, Point, Polygon
 from contracts.geometry import offset_convex_polygon
 from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_alignment, distort,
                                   transform_board, transform_point, undistort)
+from services.calibration.touch import (TOUCH_GRID, note_centers, solve_touch, touch_back, touch_begin,
+                                        touch_progress, touch_update, valid_grid)
 from services.physics import GRAVITY_SHARE, GameState, GameStatus, drop, drop_ready_state, step
 from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
@@ -69,6 +71,9 @@ OVERLAY_MIN_IOU = 0.85
 FILL_OFF_FADE = "Si sacás un papel, su luz puede tardar unos segundos en apagarse."
 PROBE_GRID = range(1, 10)          # candidate centers at tenths of the viewport
 PROBE_CAMERA_MARGIN = 8            # camera px a probe corner keeps from the frame edge
+TOUCH_STARTED = "Calibración por toques: poné un post-it centrado en la cruz del círculo y dejalo quieto."
+TOUCH_CANCELLED = "Calibración por toques cancelada."
+TOUCH_STALLED = "La calibración por toques se interrumpió: dejaron de llegar imágenes de la cámara."
 STALE_DETAILS = {
     "projector_resized": "Cambió el tamaño de la proyección: alineá de nuevo.",
     "camera_changed": "Cambió la cámara: alineá de nuevo.",
@@ -408,7 +413,8 @@ class GameController:
         self._check_frames: dict[str, np.ndarray] = {}
         self._hold_until: float | None = None       # live detection kept until then (run in progress)
         self._finished_at: float | None = None      # clock when the current attempt ended
-        self._align_activity: float | None = None   # last frame of a collecting run
+        self._align_activity: float | None = None   # last frame of a collecting or touching run
+        self._touch: dict[str, Any] | None = None   # touch-grid run (contract 1.6), while status is "touching"
         self._camera_epoch = 0                      # camera_changed count: a late frame of the old camera is dropped
         self.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J."
         self.revision = 0
@@ -550,6 +556,7 @@ class GameController:
             "received": len(self._align_frames),
             "needed": ALIGN_NEEDED,
             "quality": dict(self._align_quality) if self._align_quality else None,
+            "touch": self._touch_json(),
             "detail": self._align_detail,
             "code": self._align_code,
             "overlay": {**self._overlay, "probes": [
@@ -557,6 +564,16 @@ class GameController:
                                                    for point in probe["points"]]}
                 for probe in self._overlay["probes"]]},
         }
+
+    def _touch_json(self) -> dict[str, Any] | None:
+        """What the projector draws and the panel says during a touch run."""
+        run = self._touch
+        if run is None:
+            return None
+        return {"cols": run["cols"], "rows": run["rows"],
+                "targets": [{"x": round(t.x, 3), "y": round(t.y, 3)} for t in run["targets"]],
+                "step": len(run["captured"]), "phase": run["phase"], "many": run["many"],
+                "progress": round(touch_progress(run, self._clock()), 3)}
 
     def _drop_alignment_unlocked(self, status: str, detail: str) -> None:
         self._align_status = status
@@ -573,13 +590,14 @@ class GameController:
         self._check_frames = {}
         self._hold_until = None
         self._align_activity = None
-        if self.projection_mode == "align":
+        self._touch = None
+        if self.projection_mode in ("align", "touch"):
             self.projection_mode = "live"
         self._recompute_candidate_unlocked()
 
     def _invalidate_alignment_unlocked(self, reason: str) -> None:
         """A measured mapping no longer fits the camera or the projector window."""
-        if self._align_status not in ("ready", "collecting"):
+        if self._align_status not in ("ready", "collecting", "touching"):
             return
         detail = STALE_DETAILS[reason]
         self._drop_alignment_unlocked("stale", detail)
@@ -644,8 +662,9 @@ class GameController:
         self._hold_until = self._clock() + ALIGN_HOLD_S
 
     def _live_mode_unlocked(self) -> None:
-        """Back to drawing the live scene, except during a run: patterns until it ends."""
-        self.projection_mode = "align" if self._align_status == "collecting" else "live"
+        """Back to drawing the live scene, except during a run: patterns or the
+        touch grid until it ends."""
+        self.projection_mode = {"collecting": "align", "touching": "touch"}.get(self._align_status, "live")
 
     def _expire_detection_unlocked(self) -> None:
         now = self._clock()
@@ -655,6 +674,11 @@ class GameController:
             self._drop_alignment_unlocked("none", "La alineación se interrumpió: el panel dejó de enviar patrones.")
             self._changed(self._align_detail)
             self._log("alignment_cancelled", reason="stalled")
+        if (self._align_status == "touching" and self._align_activity is not None
+                and now - self._align_activity > ALIGN_STALL_S):
+            self._drop_alignment_unlocked("none", TOUCH_STALLED)
+            self._changed(TOUCH_STALLED)
+            self._log("touch_cancelled", reason="stalled")
         if self._hold_until is not None:
             if now < self._hold_until:
                 return
@@ -743,7 +767,7 @@ class GameController:
                       for role in ROLES},
             "quality": quality,
         }
-        if self._align_status in ("ready", "collecting") and self._align_camera is not None:
+        if self._align_status in ("ready", "collecting", "touching") and self._align_camera is not None:
             if label is not None and label != self._align_camera["label"]:
                 self._invalidate_alignment_unlocked("camera_label")
             elif (width, height) != (self._align_camera["width"], self._align_camera["height"]):
@@ -758,6 +782,8 @@ class GameController:
             self.paused = False
             self._last_tick = None
             self._accumulator = 0.0
+        if self._align_status == "touching":
+            self._touch_frame_unlocked(notes, width, height)
         camera_board, candidate, error = self._candidate_unlocked(notes, width, height)
         preview["quality"]["ready"] = camera_board is not None
         previous = self.camera_board
@@ -838,6 +864,9 @@ class GameController:
                 if self._align_status == "collecting":
                     self._drop_alignment_unlocked("none", "Alineación cancelada: se cerró el proyector.")
                     self._log("alignment_cancelled", reason="projection_close")
+                elif self._align_status == "touching":
+                    self._drop_alignment_unlocked("none", "Calibración por toques cancelada: se cerró el proyector.")
+                    self._log("touch_cancelled", reason="projection_close")
             elif action == "projection_black":
                 self._refuse_while_collecting_unlocked()
                 if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
@@ -872,6 +901,41 @@ class GameController:
                 self._changed("Alineando cámara y proyector…")
                 self._log("alignment_started", width=self.projector_width, height=self.projector_height,
                           dots=len(self._align_layout["dots"]))
+            elif action == "touch_start":
+                if not self.projector_open:
+                    raise RequestError("Abrí la ventana del proyector con J.", HTTPStatus.CONFLICT)
+                if self.live_detection is None or self.frame_width <= 0:
+                    raise RequestError("Primero la cámara tiene que estar viendo la pared.", HTTPStatus.CONFLICT)
+                if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
+                    raise RequestError("Terminá o pausá el intento antes de alinear.", HTTPStatus.CONFLICT)
+                if self._camera_paused_unlocked():
+                    raise RequestError("Esperá a que termine el efecto: la cámara no lee la pared.",
+                                       HTTPStatus.CONFLICT)
+                cols, rows = payload.get("cols", TOUCH_GRID[0]), payload.get("rows", TOUCH_GRID[1])
+                if not valid_grid(cols, rows):
+                    raise RequestError("La grilla de toques va de 3×3 a 8×6 puntos.")
+                notes, width, height = self._last_notes
+                self._drop_alignment_unlocked("touching", TOUCH_STARTED)
+                # The notes already on the wall are the background: only a new one is a touch.
+                self._touch = touch_begin(self.projector_width, self.projector_height, cols, rows,
+                                          note_centers(notes, ROLES))
+                self._align_camera = {"label": self.frame_camera, "width": width, "height": height}
+                self._align_activity = self._clock()
+                self.projection_mode = "touch"
+                self._changed(TOUCH_STARTED)
+                self._log("touch_started", cols=cols, rows=rows, width=self.projector_width,
+                          height=self.projector_height, background=len(self._touch["baseline"]))
+            elif action in ("touch_background", "touch_back"):
+                if self._align_status != "touching":
+                    raise RequestError("No hay una calibración por toques en curso.", HTTPStatus.CONFLICT)
+                if action == "touch_background":
+                    # CCV's [b]: the next frame's notes become the background.
+                    self._touch = {**self._touch, "rebase": True}
+                    self._changed("Fondo tomado de nuevo: los papeles que están ahora no cuentan como toque.")
+                else:
+                    self._touch = touch_back(self._touch)
+                    self._changed(f"Volvé al punto {len(self._touch['captured']) + 1}.")
+                self._log(action, step=len(self._touch["captured"]))
             elif action == "align_solve":
                 if self._align_status != "collecting":
                     raise RequestError("No hay una alineación en curso.", HTTPStatus.CONFLICT)
@@ -881,6 +945,11 @@ class GameController:
                     self._drop_alignment_unlocked("none", "Alineación cancelada.")
                     self._changed("Alineación cancelada.")
                     self._log("alignment_cancelled", reason="panel")
+                elif self._align_status == "touching":
+                    step = len(self._touch["captured"])
+                    self._drop_alignment_unlocked("none", TOUCH_CANCELLED)
+                    self._changed(TOUCH_CANCELLED)
+                    self._log("touch_cancelled", reason="panel", step=step)
                 else:
                     self.revision += 1
             elif action == "align_clear":
@@ -1002,6 +1071,8 @@ class GameController:
     def _refuse_while_collecting_unlocked(self) -> None:
         if self._align_status == "collecting":
             raise RequestError("Esperá a que termine la alineación.", HTTPStatus.CONFLICT)
+        if self._align_status == "touching":
+            raise RequestError("Terminá la calibración por toques o cancelala con Esc.", HTTPStatus.CONFLICT)
 
     def _save_failure_frames(self, frames: dict, layout: dict | None, result: dict[str, Any]) -> str | None:
         """Keep a failed run's frames, layout and result on disk for diagnosis.
@@ -1049,33 +1120,73 @@ class GameController:
                       frames_dir=saved,
                       coverage=_round3(result.get("coverage")), rejected=result.get("rejected"))
             return
+        lens = ({key: float(value) for key, value in result["lens"].items()}
+                if result.get("lens") is not None else None)
+        detail = (f"Proyector alineado: los contornos caen a {result['holdout_p95_px']:.1f} px "
+                  f"de cada papel ({result['decoded']} puntos medidos"
+                  + ("; también se corrigió la curva del lente de la cámara)."
+                     if lens is not None else ")."))
+        self._adopt_alignment_unlocked(result, lens, "dots", detail)
+
+    def _adopt_alignment_unlocked(self, result: dict[str, Any], lens: dict[str, float] | None,
+                                  method: str, detail: str) -> None:
+        """A measured mapping becomes the alignment; the overlay check comes next."""
         camera = self._align_camera
         self._align_status = "ready"
         self._align_layout = None
+        self._touch = None
         self._align_matrix = [[float(value) for value in row] for row in result["matrix"]]
-        self._align_lens = ({key: float(value) for key, value in result["lens"].items()}
-                            if result.get("lens") is not None else None)
+        self._align_lens = lens
         self._align_camera = camera
         self._align_projector = {"width": self.projector_width, "height": self.projector_height}
         self._align_quality = {key: _round3(result[key]) for key in (
             "decoded", "total", "fit", "inliers", "holdout", "holdout_p95_px",
             "holdout_max_px", "outliers", "coverage")}
+        self._align_quality["method"] = method
         probes = place_probes(self.live_detection, self._align_matrix,
                               (self.projector_width, self.projector_height),
                               (camera["width"], camera["height"]), self._align_lens)
         self._overlay = self._overlay_state("unchecked", probes)
         self._check_frames = {}
         self._hold_detection_unlocked()   # the overlay check comes next
-        detail = (f"Proyector alineado: los contornos caen a {result['holdout_p95_px']:.1f} px "
-                  f"de cada papel ({result['decoded']} puntos medidos"
-                  + ("; también se corrigió la curva del lente de la cámara)."
-                     if self._align_lens is not None else ")."))
         self._align_detail = detail
         self._recompute_candidate_unlocked()
         self._changed(detail)
         self._log("alignment_ready", **self._align_quality, probes=len(probes),
                   width=self.projector_width, height=self.projector_height,
                   lens_k=_round6(self._align_lens["k"]) if self._align_lens is not None else None)
+
+    def _touch_frame_unlocked(self, notes: dict[str, tuple[Polygon, ...]], width: int, height: int) -> None:
+        """One live frame of a touch run (contract 1.6): hold, capture, solve."""
+        self._align_activity = self._clock()
+        self._touch, event = touch_update(self._touch, note_centers(notes, ROLES), (width, height), self._clock())
+        if event is None:
+            return
+        step = len(self._touch["captured"])
+        if event == "background":
+            self._log("touch_background_taken", notes=len(self._touch["baseline"]))
+            return
+        self._log("touch_captured", step=step, x=_round3(self._touch["captured"][-1].x),
+                  y=_round3(self._touch["captured"][-1].y))
+        if event == "captured":
+            self._changed(f"Punto {step} tomado. Sacá el post-it y llevalo a la cruz {step + 1}.")
+            return
+        run = self._touch
+        result = solve_touch(run["captured"], run["targets"], self.projector_width, self.projector_height)
+        fields = {key: _round3(result[key]) for key in ("decoded", "total", "holdout_p95_px", "holdout_max_px",
+                                                        "fit_rms_px", "coverage")}
+        if not result["ok"]:
+            self._drop_alignment_unlocked("failed", result["reason"])
+            self._align_code = result["code"]
+            self._changed(result["reason"])
+            self._log("touch_failed", code=result["code"], dropped=result["dropped"], **fields)
+            return
+        self._log("touch_solved", dropped=result["dropped"], **fields)
+        self.projection_mode = "live"
+        detail = (f"Proyector alineado por toques: los contornos caen a menos de "
+                  f"{result['holdout_p95_px']:.1f} px de cada papel ({result['fit']} toques medidos"
+                  + (f"; se descartó el toque {result['dropped']}, que quedó lejos)." if result["dropped"] else ")."))
+        self._adopt_alignment_unlocked(result, None, "touch", detail)
 
     def align_frame_jpeg(self, data: bytes, align: str | None, camera: str | None = None) -> dict[str, Any]:
         """Store one pattern frame of a run in progress (gray, at most 14)."""
@@ -1236,6 +1347,8 @@ class GameController:
             if self.game is not None and self.game.status == GameStatus.RUNNING and not self.paused:
                 raise RequestError("Terminá o pausá el intento antes de escanear.",
                                    HTTPStatus.CONFLICT)
+            if self._align_status == "touching":
+                raise RequestError("Terminá la calibración por toques o cancelala con Esc.", HTTPStatus.CONFLICT)
             if self._camera_paused_unlocked() and self.game.status != GameStatus.RUNNING:
                 raise RequestError("Esperá a que termine el efecto antes de escanear.", HTTPStatus.CONFLICT)
         notes, quality, palette, epoch = self._measure_or_refuse(frame)

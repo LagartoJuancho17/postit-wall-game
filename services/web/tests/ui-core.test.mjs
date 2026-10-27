@@ -21,7 +21,7 @@ import {
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "launch", "reset", "resume", "align"];
+const CONTROLS = ["scan", "launch", "reset", "resume", "align", "touch"];
 
 // Expected panel controls per backend phase, with the camera live and the
 // projector window ready whenever the backend reports it open. Hand-written:
@@ -29,10 +29,12 @@ const CONTROLS = ["scan", "launch", "reset", "resume", "align"];
 const EXPECTED = {
   projector_closed: [],
   waiting_camera: ["scan"],
-  partial_live: ["scan", "align"],
-  no_markers: ["scan", "launch", "reset", "align"],
-  ready: ["scan", "launch", "reset", "align"],
-  aligned_ready: ["scan", "launch", "reset", "align"],
+  partial_live: ["scan", "align", "touch"],
+  no_markers: ["scan", "launch", "reset", "align", "touch"],
+  ready: ["scan", "launch", "reset", "align", "touch"],
+  aligned_ready: ["scan", "launch", "reset", "align", "touch"],
+  // The touch grid owns the wall: no scan or launch; A switches to the dots, T restarts it.
+  touching: ["reset", "align", "touch"],
   ready_closed: [],
   running: ["reset"],
   paused_open: ["scan", "reset", "resume", "align"],
@@ -98,6 +100,7 @@ const EXPECTED_STEP = {
   no_markers: "align",
   ready: "align",
   aligned_ready: "play",
+  touching: "align",
   ready_closed: "projector",
   running: "play",
   paused_open: "align",

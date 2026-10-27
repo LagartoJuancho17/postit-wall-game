@@ -1,7 +1,7 @@
 /** Evaluate every synthetic frame, refinement, alignment decode and state transition against Python, threshold 100%. */
 import {
   alignmentVerdicts, bridgeVerdicts, controllerVerdicts, homographyVerdicts, offsetVerdicts, paletteVerdicts,
-  physicsVerdicts, probeVerdicts, refineVerdicts, visionVerdicts,
+  physicsVerdicts, probeVerdicts, refineVerdicts, touchVerdicts, visionVerdicts,
 } from "../tests/cases.mjs";
 import { loadCv, loadGolden } from "../tests/golden.mjs";
 
@@ -17,6 +17,7 @@ const cases = [
   ...offsetVerdicts(golden),
   ...alignmentVerdicts(cv, golden),
   ...probeVerdicts(golden),
+  ...touchVerdicts(cv, golden),
   ...Object.keys(golden.controller).flatMap((name) => controllerVerdicts(cv, golden, name)),
 ];
 const failures = cases.filter((result) => result.problems.length);

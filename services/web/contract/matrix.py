@@ -37,7 +37,7 @@ PREVIEWS_PATH = Path(__file__).with_name("preview-samples.json")
 RECOLORED = {"start": 105, "goal": 176, "bumper": 28, "marker": 140}
 PROJECTOR = (1280, 800)
 # Each UI control, expressed as the backend calls the browser makes for it.
-CONTROLS = ("scan", "launch", "reset", "resume", "align")
+CONTROLS = ("scan", "launch", "reset", "resume", "align", "touch")
 # Where the projector's corners land in the 960x720 synthetic camera frame.
 ALIGN_QUAD = ((30, 25), (930, 20), (935, 700), (25, 695))
 
@@ -149,6 +149,11 @@ def _aligned_ready(w: _Wall) -> None:
     w.align()
 
 
+def _touching(w: _Wall) -> None:
+    _ready(w)
+    w.act("touch_start")   # the grid of crosses, waiting for the first post-it
+
+
 def _ready_closed(w: _Wall) -> None:
     _ready(w)
     w.act("projection_close")
@@ -161,6 +166,7 @@ PHASES: dict[str, Callable[[_Wall], None]] = {
     "no_markers": _no_markers,
     "ready": _ready,
     "aligned_ready": _aligned_ready,
+    "touching": _touching,
     "ready_closed": _ready_closed,
     "running": _running,
     "paused_open": _paused_open,
@@ -175,6 +181,7 @@ _PROBES: dict[str, Callable[[_Wall], None]] = {
     "reset": lambda w: w.act("reset"),
     "resume": lambda w: w.act("resume"),
     "align": lambda w: w.act("align_start"),
+    "touch": lambda w: w.act("touch_start"),
 }
 
 

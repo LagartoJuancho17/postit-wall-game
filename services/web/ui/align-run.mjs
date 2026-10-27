@@ -134,3 +134,20 @@ export function autoAlignKey(state) {
   const { projection = {}, camera = {} } = state ?? {};
   return `${projection.width}x${projection.height}|${camera.label ?? ""}|${camera.width}x${camera.height}`;
 }
+
+/** Touch grids the panel offers (contract 1.6), "<cols>x<rows>" -> action fields. */
+export const TOUCH_GRIDS = Object.freeze(["3x3", "4x4", "5x4", "6x5"]);
+export function touchGrid(value) {
+  const [cols, rows] = (TOUCH_GRIDS.includes(value) ? value : "4x4").split("x").map(Number);
+  return { cols, rows };
+}
+
+/**
+ * During a touch run the keys are CCV's: B takes the background again, R
+ * goes back one point, Esc cancels. Anything else (or no run): null.
+ */
+export function touchCommand(state, key) {
+  if (state?.alignment?.status !== "touching") return null;
+  return { b: "touch_background", B: "touch_background", r: "touch_back", R: "touch_back",
+    Escape: "align_cancel" }[key] ?? null;
+}

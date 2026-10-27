@@ -111,6 +111,32 @@ sus píxeles (una homografía; el detalle está en
   confunde, el panel avisa que al sacar un papel su luz puede tardar unos
   segundos en apagarse.
 
+### Calibrar por toques (como CCV de NUI Group)
+
+Otra forma de alinear, para cuando los puntos blancos no alcanzan: mucha luz
+en el cuarto, o la cámara lejos del proyector (por ejemplo 2 m más abajo).
+Es la calibración de Community Core Vision, el tracker TUIO de NUI Group,
+pero con un post-it en vez de un dedo.
+
+1. Con la cámara viendo la pared y el proyector en pantalla completa, elegí
+   la grilla (4×4 por defecto) y pulsá `T` o **Calibrar por toques**.
+2. El proyector muestra una grilla de cruces. Poné un post-it centrado en la
+   cruz que tiene el círculo y dejalo quieto: el círculo se llena en un
+   segundo y el punto queda tomado.
+3. Sacá el post-it y llevalo a la cruz siguiente. Así hasta la última.
+4. Al terminar, el panel calcula la alineación y hace el chequeo de color,
+   igual que con `A`.
+
+Teclas mientras tanto: `B` toma el fondo de nuevo (si un papel nuevo quedó
+pegado y el círculo se llena solo), `R` vuelve un punto, `Esc` cancela. Los
+papeles que ya están en la pared no molestan: son el fondo.
+
+Si un toque quedó lejos, se descarta solo. Si los toques no coinciden, el
+panel dice cuál y hay que repetir. Con la cámara 2 m abajo, el simulador
+mide 1.6 px de error en toda la proyección. Con la interpolación por
+triángulos de CCV daría 11 px: por eso se ajusta una sola homografía con
+todos los toques (detalle en `docs/alignment-and-color.md`, sección 1.6).
+
 Alineado, el proyector pone color solo por dentro de cada papel, a 3 px de
 su borde, y nada sobre la pared vacía, así su propia luz no crea post-its
 falsos. Medido en el simulador de lazo cerrado (`services/simulation`), en

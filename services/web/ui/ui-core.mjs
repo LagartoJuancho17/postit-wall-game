@@ -113,14 +113,20 @@ export function controlsFor(state, cameraReady, popupReady) {
   const framed = state?.camera?.width > 0;
   // During the end effect the backend refuses a scan (it would read the effects).
   const endEffect = state?.game?.camera_paused === true && (phase === "won" || phase === "lost");
+  // A touch run (contract 1.6) owns the wall: the backend refuses scans and drops.
+  const touching = state?.alignment?.status === "touching";
   return {
-    scan: live && !moving && !endEffect,
-    launch: live && detected && phase === "ready",
+    scan: live && !moving && !endEffect && !touching,
+    launch: live && detected && phase === "ready" && !touching,
     reset: popup && detected && phase !== "none",
     resume: popup && phase === "paused",
     // Same rule as the backend's align_start: projector open, camera frames
     // seen, no attempt moving; and not while a run is collecting.
     align: live && framed && !moving && state?.alignment?.status !== "collecting",
+    // touch_start (contract 1.6) also needs the camera read now: live notes
+    // and no attempt or end effect freezing the view.
+    touch: live && framed && Boolean(state?.live_detection) && !moving && state?.game?.camera_paused !== true
+      && state?.alignment?.status !== "collecting",
   };
 }
 
@@ -130,15 +136,27 @@ export const SETUP_STAGES = ["camera", "projector", "align", "detect", "play"];
 const SETUP_GUIDES = {
   camera: "Primero la cámara: permití el acceso en Chrome o elegí la C920 o el iPhone debajo del video.",
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
-  align: "Alineá el proyector con A: proyecta unos puntos, la cámara los mira y corrige la imagen sola. Ponelo antes en pantalla completa.",
+  align: "Alineá el proyector con A: proyecta unos puntos, la cámara los mira y corrige la imagen sola. Con luz en el cuarto o la cámara lejos del proyector, usá T: ponés un post-it en cada cruz. Ponelo antes en pantalla completa.",
   detect: "Mostrá 1 inicio y 1 llegada a la cámara. Los rebotes y las esquinas son opcionales; la detección se actualiza sola.",
   play: "Los contornos del proyector siguen la detección en vivo. Soltá la pelota con Espacio: cae desde abajo del inicio.",
 };
 const STAGE_OF = { camera: "camera", projector: "projector", align: "align", detect: "detect", play: "play" };
 
+/** The panel's line during a touch run (contract 1.6). */
+export function touchMessage(touch) {
+  const total = touch?.targets?.length ?? 0;
+  const step = Math.min((touch?.step ?? 0) + 1, total);
+  const now = touch?.many ? "Hay más de un papel nuevo: dejá uno solo."
+    : touch?.phase === "lift" ? "Punto tomado: sacá el post-it."
+      : touch?.phase === "holding" ? "Quieto…"
+        : "Poné un post-it centrado en la cruz del círculo.";
+  return `Toques: punto ${step} de ${total}. ${now} B retoma el fondo, R vuelve un punto, Esc cancela.`;
+}
+
 /** The align step's text follows the backend's alignment status. */
 function alignMessage(alignment) {
   if (alignment?.status === "collecting") return "Alineando cámara y proyector: no los muevas.";
+  if (alignment?.status === "touching") return touchMessage(alignment.touch);
   if (alignment?.status === "failed") return `${alignment.detail} Pulsá A para alinear de nuevo.`;
   if (alignment?.status === "stale") return `${alignment.detail} Pulsá A.`;
   return SETUP_GUIDES.align;
@@ -157,7 +175,7 @@ export function setupGuide(state, cameraReady, popupReady) {
   // Not blocking: the game also runs unaligned, it just cannot land on the
   // papers. Only offered when the align button works.
   else if (alignment && alignment.status !== "ready" && controlsFor(state, cameraReady, popupReady).align) step = "align";
-  else if (alignment?.status === "collecting") step = "align";
+  else if (alignment?.status === "collecting" || alignment?.status === "touching") step = "align";
   else if (!state?.camera_board || !state?.live_detection) step = "detect";
   return {
     step,

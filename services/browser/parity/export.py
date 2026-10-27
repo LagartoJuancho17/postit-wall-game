@@ -39,6 +39,12 @@ from services.vision.palette import DEFAULT_PALETTE
 from services.vision.tests.scene import bgr, hex_at, scene
 from services.vision.tests.test_refine import ring, saturation_image, tilted_paper
 from services.web.backend.eval import DROP_GOAL, FRAME_CENTERS, FRAME_HUES, _color, _image
+from services.calibration.touch import (note_centers, solve_touch, touch_back, touch_begin, touch_progress,
+                                        touch_targets, touch_update)
+from services.web.tests.test_touch_api import PROJECTOR as TOUCH_PROJECTOR
+from services.web.tests.test_touch_api import QUAD as TOUCH_QUAD
+from services.web.tests.test_touch_api import seen as touch_seen
+from services.web.tests.test_touch_api import wall_image as touch_wall
 from services.web.backend.server import (GameController, RequestError, _board_json, _normalized_inverse,
                                          _polygon_json, place_probes)
 
@@ -140,6 +146,14 @@ def build_frames() -> Frames:
             "marker": hex_at(image, expected["markers"][0]),
         }
     frames.add_raw("tiny", np.full((12, 40, 3), 200, np.uint8))
+    # Contract 1.6: the touch grid seen by a camera far below the projector.
+    G = homography_from_quad(TOUCH_PROJECTOR, TOUCH_QUAD)
+    frames.add_jpeg("touch_wall", touch_wall())
+    for index, target in enumerate(touch_targets(*TOUCH_PROJECTOR, 4, 4)):
+        frames.add_jpeg(f"touch_{index}", touch_wall(touch_seen(G, target)))
+    frames.add_jpeg("touch_slip", touch_wall(touch_seen(G, touch_targets(*TOUCH_PROJECTOR, 4, 4)[6], 40, 0)))
+    frames.add_jpeg("touch_two", touch_wall(touch_seen(G, touch_targets(*TOUCH_PROJECTOR, 4, 4)[0]),
+                                            touch_seen(G, touch_targets(*TOUCH_PROJECTOR, 4, 4)[1])))
     return frames
 
 
@@ -676,6 +690,99 @@ def alignment_scripts(align_names: dict[str, str]) -> dict[str, list[dict[str, A
     }
 
 
+def _touch_json(value: Any) -> Any:
+    if isinstance(value, Point):
+        return [value.x, value.y]
+    if isinstance(value, dict):
+        return {key: _touch_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_touch_json(item) for item in value]
+    return value
+
+
+def touch_cases() -> dict[str, Any]:
+    """Contract 1.6: the grid, the hold state machine and the solver."""
+    rng = random.Random(16)
+    grids = [{"size": [w, h], "grid": [c, r], "targets": _touch_json(touch_targets(w, h, c, r))}
+             for (w, h) in ((1280, 800), (1920, 1080), (1024, 768)) for (c, r) in ((3, 3), (4, 4), (8, 6), (5, 3))]
+    # A scripted hold: still, a jump, two notes, the lift, a background retake, a step back.
+    baseline = [Point(40.0, 455.0), Point(600.0, 462.0)]
+    frames = []
+    for k in range(40):
+        jitter = Point(300.0 + rng.uniform(-1.5, 1.5), 200.0 + rng.uniform(-1.5, 1.5))
+        if 12 <= k < 14:
+            jitter = Point(330.0, 200.0)
+        centers = baseline + ([] if k in (20, 21) else [jitter]) + ([Point(500.0, 300.0)] if k == 25 else [])
+        frames.append(centers)
+    run = touch_begin(1280, 800, 4, 4, baseline)
+    trace = []
+    for k, centers in enumerate(frames):
+        if k == 30:
+            run = {**run, "rebase": True}
+        if k == 35:
+            run = touch_back(run)
+        run, event = touch_update(run, centers, (640, 480), k * 0.1)
+        trace.append({"event": event, "run": _touch_json(run), "progress": touch_progress(run, k * 0.1 + 0.05)})
+    G = np.array(homography_from_quad((1280, 800), ((150, 40), (500, 46), (610, 430), (30, 420))))
+    targets = touch_targets(1280, 800, 4, 4)
+
+    def look(points, noise, seed, slip=None):
+        rnd = np.random.default_rng(seed)
+        out = []
+        for index, t in enumerate(points):
+            dx, dy = rnd.normal(0, noise, 2)
+            if index == slip:
+                dx += 30
+            x, y, w = G @ np.array([t.x + dx, t.y + dy, 1.0])
+            out.append(Point(float(x / w), float(y / w)))
+        return out
+    careful = look(targets, 1.0, 1)
+    solves = {
+        "careful": careful,
+        "exact": look(targets, 0.0, 2),
+        "slip": look(targets, 1.0, 3, slip=6),
+        "two_slips": [Point(p.x + (25 if i in (2, 9) else 0), p.y) for i, p in enumerate(look(targets, 1.0, 4))],
+        "sloppy": look(targets, 6.0, 5),
+        "transposed": [careful[(i % 4) * 4 + i // 4] for i in range(16)],
+        "too_few": careful[:8],
+    }
+    solved = {}
+    for name, camera in solves.items():
+        result = solve_touch(camera, targets[:len(camera)], 1280, 800)
+        solved[name] = {"camera": _touch_json(camera), "result": _touch_json(result)}
+    return {"grids": grids, "hold": {"baseline": _touch_json(baseline), "frames": _touch_json(frames),
+                                     "trace": trace},
+            "solves": solved}
+
+
+def touch_scripts() -> dict[str, list[dict[str, Any]]]:
+    def act(name, **data):
+        return {"op": "action", "payload": {"action": name, **data}}
+    label = "Cámara de prueba"
+    preview = lambda frame: [{"op": "tick", "advance": 0.1}, {"op": "preview", "frame": frame, "camera": label}]  # noqa: E731
+    hold = lambda frame, n=13: [step for _ in range(n) for step in preview(frame)] + preview("touch_wall")  # noqa: E731
+    start = [*preview("touch_wall"), act("projection_open", width=TOUCH_PROJECTOR[0], height=TOUCH_PROJECTOR[1])]
+    every = [step for index in range(16) for step in hold(f"touch_{index}")]
+    with_slip = [step for index in range(16) for step in hold("touch_slip" if index == 6 else f"touch_{index}")]
+    transposed = [step for index in range(16) for step in hold(f"touch_{(index % 4) * 4 + index // 4}")]
+    return {
+        "touch_ok": [*start, act("touch_start"), {"op": "state"}, *every, {"op": "state"},
+                     {"op": "check_frame", "frame": "touch_wall", "kind": "neutral"},
+                     {"op": "check_frame", "frame": "touch_wall", "kind": "overlay"}, act("check_solve")],
+        "touch_slip": [*start, act("touch_start"), *with_slip, {"op": "state"}],
+        "touch_transposed": [*start, act("touch_start"), *transposed, {"op": "state"}],
+        "touch_controls": [act("touch_start"), *start, act("touch_back"), act("touch_start", cols=2, rows=4),
+                           act("touch_start", cols="4", rows=4), act("touch_start", cols=5, rows=3),
+                           *hold("touch_0"), *hold("touch_two", 5), act("touch_back"),
+                           act("touch_background"), *preview("touch_two"), *preview("touch_two"),
+                           act("launch"), act("projection_black"), {"op": "scan", "frame": "touch_wall", "camera": label},
+                           act("align_cancel"), act("touch_start"), {"op": "tick", "advance": 21.0},
+                           {"op": "state"}, *preview("touch_wall"), act("touch_start"),
+                           {"op": "preview", "frame": "touch_wall", "camera": "Otra cámara"}, {"op": "state"},
+                           act("touch_start"), act("projection_close"), {"op": "state"}],
+    }
+
+
 def controller_scripts() -> dict[str, list[dict[str, Any]]]:
     def act(name, **data):
         return {"op": "action", "payload": {"action": name, **data}}
@@ -819,7 +926,7 @@ def export() -> dict[str, Any]:
     align_names = _alignment_jpegs(frames)
     _probe_hit_frame(frames, align_names)
     frames.write(GOLDEN / "frames")
-    scripts = {**controller_scripts(), **alignment_scripts(align_names)}
+    scripts = {**controller_scripts(), **alignment_scripts(align_names), **touch_scripts()}
     golden = {
         "version": 2,
         "refine": refine,
@@ -833,6 +940,7 @@ def export() -> dict[str, Any]:
         "vision": vision,
         "homography": homography_cases(),
         "physics": physics_cases(),
+        "touch": touch_cases(),
         "controller": {name: {"steps": steps, "results": run_script(steps, frames)}
                        for name, steps in scripts.items()},
     }

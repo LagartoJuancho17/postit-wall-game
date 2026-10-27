@@ -263,3 +263,8 @@ body.projector-page[data-theme="light"] .projector-control.primary:hover { backg
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Touch alignment (contract 1.6): the button and its grid size, side by side. */
+.touch-align { display: inline-flex; align-items: center; gap: 6px; }
+.touch-align select { min-height: 40px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: #36584f; font-size: 12px; font-weight: 700; }
+.touch-align select:disabled { opacity: .55; }

@@ -10,6 +10,7 @@ import { GameController, placeProbes, RequestError } from "../controller.mjs";
 import { pyRound } from "../numbers.mjs";
 import { buildPalette, DEFAULT_PALETTE, hsvFromHex, paletteJson, ruleFromHex } from "../palette.mjs";
 import { drop, launch, step } from "../physics.mjs";
+import { solveTouch, touchBack, touchBegin, touchProgress, touchTargets, touchUpdate } from "../touch.mjs";
 import { detectBoard, findNotes, frameQuality, grayFeature, refineQuad } from "../vision.mjs";
 import { boardFromGolden, boardToGolden, diff, frameMat, grayFrame, grayMat, points } from "./golden.mjs";
 
@@ -145,6 +146,38 @@ export function alignmentVerdicts(cv, golden) {
     const frames = new Map(Object.entries(c.frames).map(([key, name]) => [key, grayFrame(golden, name)]));
     const result = decodeAlignment(cv, frames, alignmentLayout(...c.size));
     out.push(verdict(`decode ${c.case}`, result, c.result, 1e-6));
+  }
+  return out;
+}
+
+const pts = (list) => list.map(([x, y]) => ({ x, y }));
+const touchJson = (value) => {
+  if (Array.isArray(value)) return value.map(touchJson);
+  if (value && typeof value === "object") {
+    if (Object.keys(value).length === 2 && "x" in value && "y" in value) return [value.x, value.y];
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, touchJson(item)]));
+  }
+  return value;
+};
+
+/** Contract 1.6: grids, the hold state machine frame by frame, and every solver outcome. */
+export function touchVerdicts(cv, golden) {
+  const { grids, hold, solves } = golden.touch;
+  const out = grids.map((c) => verdict(`touch grid ${c.size.join("x")} ${c.grid.join("x")}`,
+    touchJson(touchTargets(...c.size, ...c.grid)), c.targets, 0));
+  let run = touchBegin(1280, 800, 4, 4, pts(hold.baseline));
+  hold.frames.forEach((centers, k) => {
+    if (k === 30) run = { ...run, rebase: true };
+    if (k === 35) run = touchBack(run);
+    let event;
+    [run, event] = touchUpdate(run, pts(centers), [640, 480], k * 0.1);
+    out.push(verdict(`touch hold ${k}`, { event, run: touchJson(run), progress: touchProgress(run, k * 0.1 + 0.05) },
+      hold.trace[k], 0));
+  });
+  for (const [name, c] of Object.entries(solves)) {
+    const camera = pts(c.camera);
+    const targets = touchTargets(1280, 800, 4, 4).slice(0, camera.length);
+    out.push(verdict(`touch solve ${name}`, touchJson(solveTouch(cv, camera, targets, 1280, 800)), c.result, 1e-6));
   }
   return out;
 }
