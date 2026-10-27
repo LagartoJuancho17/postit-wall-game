@@ -20,6 +20,7 @@ import { drop, dropReadyState, GameStatus, GRAVITY_SHARE, step } from "./physics
 import { noteCenters, solveTouch, touchBack, touchBegin, TOUCH_GRID, touchGiveUp, TOUCH_MAX_ROUNDS, touchProgress,
   touchRetake, touchStep, touchUpdate, validGrid } from "./touch.mjs";
 import { boardFromNotes, findNotes, inspectFrame } from "./vision.mjs";
+import { COUNTDOWN_S, coverBegin, coverUpdate, startNote } from "./handsfree.mjs";
 
 const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
 const LIVE_DETECTION_MAX_AGE_S = 1.5;
@@ -378,6 +379,11 @@ export class GameController {
     this.finishedAt = null; // clock when the current attempt ended
     this.alignActivity = null;
     this.touch = null;   // touch-grid run (contract 1.6), while alignStatus is "touching"
+    // Hands-free play (contract 3.1): the pending drop, who asked, the gesture.
+    this.countdownUntil = null;
+    this.countdownSource = null;
+    this.handsFree = true;
+    this.cover = coverBegin();
     this.cameraEpoch = 0;
     this.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J.";
     this.revision = 0;
@@ -451,6 +457,7 @@ export class GameController {
   }
 
   phase() {
+    if (this.countdownUntil !== null) return "countdown";
     if (this.game !== null) {
       if (this.paused && this.game.status === GameStatus.RUNNING) return "paused";
       return this.game.status;
@@ -460,6 +467,7 @@ export class GameController {
 
   snapshot() {
     this.expireDetection();
+    this.advanceCountdown();
     const { game } = this;
     return {
       revision: this.revision,
@@ -485,6 +493,9 @@ export class GameController {
         attempts: this.attempts,
         paused: this.paused,
         camera_paused: this.cameraPaused(),
+        countdown_s: this.countdownUntil !== null ? pyRound(Math.max(0.0, this.countdownUntil - this.clock()), 3) : 0.0,
+        countdown_total_s: COUNTDOWN_S,
+        hands_free: { enabled: this.handsFree, armed: Boolean(this.cover.armed) },
       },
       projection: {
         open: this.projectorOpen,
@@ -499,7 +510,8 @@ export class GameController {
   cameraPaused() {
     const game = this.game;
     if (game === null || this.liveDetection === null) return false;
-    if (game.status === GameStatus.RUNNING) return true;
+    // In the air, or about to be: the countdown lights the wall too.
+    if (game.status === GameStatus.RUNNING || this.countdownUntil !== null) return true;
     return (game.status === GameStatus.WON || game.status === GameStatus.LOST) && this.finishedAt !== null
       && this.clock() - this.finishedAt < END_EFFECT_S;
   }
@@ -511,6 +523,113 @@ export class GameController {
   /** Back to the live scene, except during a run: patterns or the touch grid until it ends. */
   liveMode() {
     this.projectionMode = { collecting: "align", touching: "touch" }[this.alignStatus] ?? "live";
+  }
+
+  // ---------------------------------------------------------- play (contract 3.1)
+
+  refuseWhileCountdown() {
+    if (this.countdownUntil !== null) {
+      throw new RequestError("La pelota está por salir: esperá la cuenta o reiniciá con R.", HTTP.CONFLICT);
+    }
+  }
+
+  requireLaunchable() {
+    if (!this.projectorOpen || this.cameraBoard === null || this.board === null || this.game === null) {
+      throw new RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.", HTTP.CONFLICT);
+    }
+    if (this.game.status !== GameStatus.READY) {
+      throw new RequestError("Reiniciá el intento antes de volver a lanzar.", HTTP.CONFLICT);
+    }
+  }
+
+  resetAttempt() {
+    this.applyCandidate();
+    this.paused = false;
+    this.lastTick = null;
+    this.accumulator = 0.0;
+    this.liveMode();
+  }
+
+  /** What comes next for whoever plays (server.py _play_unlocked). */
+  play(source) {
+    this.refuseWhileCollecting();
+    this.refuseWhileCountdown();
+    if (this.game !== null && this.game.status === GameStatus.RUNNING) {
+      throw new RequestError("Hay un intento en marcha.", HTTP.CONFLICT);
+    }
+    if (this.game !== null && (this.game.status === GameStatus.WON || this.game.status === GameStatus.LOST)) {
+      if (this.cameraBoard === null || this.candidate === null) {
+        throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);
+      }
+      this.resetAttempt();
+      this.log("attempt_reset", { source });
+    }
+    this.requireLaunchable();
+    this.countdownUntil = this.clock() + COUNTDOWN_S;
+    this.countdownSource = source;
+    this.cover = coverBegin();
+    this.projectionMode = "live";
+    this.changed("Preparados: la pelota sale en 3, 2, 1.");
+    this.log("attempt_countdown", { attempt: this.attempts + 1, source });
+  }
+
+  cancelCountdown(reason) {
+    if (this.countdownUntil === null) return;
+    this.countdownUntil = null;
+    this.countdownSource = null;
+    this.log("attempt_countdown_cancelled", { reason });
+  }
+
+  /** The countdown's drop happens on the first tick or snapshot after it. */
+  advanceCountdown() {
+    if (this.countdownUntil === null) return;
+    if (this.game === null || this.board === null || this.game.status !== GameStatus.READY || !this.projectorOpen) {
+      this.cancelCountdown("board");
+      return;
+    }
+    if (this.clock() < this.countdownUntil) return;
+    const source = this.countdownSource ?? "panel";
+    this.countdownUntil = null;
+    this.countdownSource = null;
+    this.dropBall(source);
+  }
+
+  dropBall(source) {
+    const gravity = Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE;
+    this.game = drop(this.board, gravity);
+    this.finishedAt = null;
+    this.attempts += 1;
+    this.paused = false;
+    this.lastTick = this.clock();
+    this.accumulator = 0.0;
+    this.projectionMode = "live";
+    this.changed("Pelota soltada. La cámara no lee la pared hasta que termine el efecto.");
+    this.log("attempt_started", { attempt: this.attempts, gravity_px_s2: pyRound(gravity, 1), source });
+  }
+
+  /** One live frame for the cover gesture (server.py _hands_free_frame_unlocked). */
+  handsFreeFrame(notes, width, height) {
+    const idle = this.handsFree && this.projectorOpen && this.countdownUntil === null
+      && !["collecting", "touching"].includes(this.alignStatus)
+      && (this.game === null || this.game.status !== GameStatus.RUNNING);
+    if (!idle) {
+      this.cover = coverBegin();
+      return;
+    }
+    let event;
+    [this.cover, event] = coverUpdate(this.cover, startNote(notes), (notes.goal ?? []).length > 0, this.clock(),
+      [width, height]);
+    if (event === "armed") {
+      this.changed("Sacá la mano del inicio: la pelota sale.");
+      this.log("hands_free_armed");
+    } else if (event === "fire") {
+      try {
+        this.play("gesture");
+      } catch (error) {
+        if (!(error instanceof RequestError)) throw error;
+        this.log("hands_free_refused", { reason: error.message });
+      }
+    }
   }
 
   refuseWhileCollecting() {
@@ -714,6 +833,7 @@ export class GameController {
     } else if (name === "projection_close") {
       this.projectorOpen = false;
       this.projectionMode = "live";
+      this.cancelCountdown("projection_close");
       if (running()) this.paused = true;
       this.lastTick = null;
       this.changed("Ventana del proyector cerrada. La partida quedó pausada.");
@@ -726,6 +846,7 @@ export class GameController {
       }
     } else if (name === "projection_black") {
       this.refuseWhileCollecting();
+      this.refuseWhileCountdown();
       if (running() && !this.paused) {
         throw new RequestError("Terminá o pausá el intento antes de escanear.", HTTP.CONFLICT);
       }
@@ -733,6 +854,7 @@ export class GameController {
       this.changed("Proyección en negro. Ahora podés capturar la pared.");
     } else if (name === "projection_neutral") {
       this.refuseWhileCollecting();
+      this.refuseWhileCountdown();
       if (running() && !this.paused) {
         throw new RequestError("Terminá o pausá el intento antes de escanear.", HTTP.CONFLICT);
       }
@@ -747,6 +869,7 @@ export class GameController {
       if (running() && !this.paused) {
         throw new RequestError("Terminá o pausá el intento antes de alinear.", HTTP.CONFLICT);
       }
+      this.refuseWhileCountdown();
       this.dropAlignment("collecting", "Alineando cámara y proyector…");
       this.alignLayout = alignmentLayout(this.projectorWidth, this.projectorHeight);
       this.alignCamera = { label: this.frameCamera, width: this.frameWidth, height: this.frameHeight };
@@ -821,32 +944,27 @@ export class GameController {
       this.solveOverlayCheck();
       this.holdUntil = null;
     } else if (name === "launch") {
+      // The ball drops now; the panel and the wall use `play` (3.1).
       this.refuseWhileCollecting();
-      if (!this.projectorOpen || this.cameraBoard === null || this.board === null || this.game === null) {
-        throw new RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.", HTTP.CONFLICT);
-      }
-      if (this.game.status !== GameStatus.READY) {
-        throw new RequestError("Reiniciá el intento antes de volver a lanzar.", HTTP.CONFLICT);
-      }
-      const gravity = Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE;
-      this.game = drop(this.board, gravity);
-      this.finishedAt = null;
-      this.attempts += 1;
-      this.paused = false;
-      this.lastTick = this.clock();
-      this.accumulator = 0.0;
-      this.projectionMode = "live";
-      this.changed("Pelota soltada. La cámara no lee la pared hasta que termine el efecto.");
-      this.log("attempt_started", { attempt: this.attempts, gravity_px_s2: pyRound(gravity, 1) });
+      this.refuseWhileCountdown();
+      this.requireLaunchable();
+      this.dropBall("launch");
+    } else if (name === "play") {
+      const source = "source" in payload ? payload.source : "panel";
+      if (source !== "panel" && source !== "button") throw new RequestError("Origen de jugada desconocido.");
+      this.play(source);
+    } else if (name === "hands_free") {
+      if (typeof payload.enabled !== "boolean") throw new RequestError("hands_free necesita enabled: true o false.");
+      this.handsFree = payload.enabled;
+      this.cover = coverBegin();
+      this.changed(payload.enabled ? "Soltar tapando el inicio: activado." : "Soltar tapando el inicio: desactivado.");
+      this.log("hands_free", { enabled: payload.enabled });
     } else if (name === "reset") {
       if (this.cameraBoard === null || this.candidate === null) {
         throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);
       }
-      this.applyCandidate();
-      this.paused = false;
-      this.lastTick = null;
-      this.accumulator = 0.0;
-      this.liveMode();
+      this.cancelCountdown("reset");
+      this.resetAttempt();
       this.changed("Intento reiniciado con los post-its de la vista en vivo.");
       this.log("attempt_reset");
     } else if (name === "pause") {
@@ -1084,6 +1202,8 @@ export class GameController {
     } else {
       this.revision += 1;
     }
+    // Last: a gesture that plays says so over the board's own message.
+    this.handsFreeFrame(notes, width, height);
     return [preview, error];
   }
 
@@ -1371,6 +1491,7 @@ export class GameController {
   }
 
   tickUnlocked() {
+    this.advanceCountdown();
     if (this.game === null || this.board === null || this.game.status !== GameStatus.RUNNING ||
         this.paused || !this.projectorOpen) return;
     const now = this.clock();

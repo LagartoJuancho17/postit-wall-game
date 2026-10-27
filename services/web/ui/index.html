@@ -161,9 +161,17 @@
             </div>
             <p class="drop-note">La pelota cae desde abajo del inicio. Mové los post-its para guiarla hasta la llegada.</p>
             <div class="play-actions">
-              <button id="launch-button" class="button button-dark" type="button" disabled>Soltar pelota <kbd>Espacio</kbd></button>
+              <button id="launch-button" class="button button-dark" type="button" disabled><span id="launch-label">Soltar pelota</span> <kbd>Espacio</kbd></button>
               <button id="resume-button" class="button button-primary" type="button" hidden disabled>Continuar intento <kbd>Espacio</kbd></button>
               <button id="reset-button" class="button button-text" type="button" disabled>Nuevo intento <kbd>R</kbd></button>
+            </div>
+            <div class="hands-free" aria-label="Jugar sin teclado">
+              <label class="hands-free-toggle"><input id="hands-free" type="checkbox" checked> Soltar tapando el inicio con la mano (un segundo)</label>
+              <div class="remote-row">
+                <span id="remote-key" class="remote-key">Sin botón</span>
+                <button id="remote-assign" class="button button-text button-compact" type="button" aria-pressed="false" title="Un control Bluetooth es un teclado de un botón: apretá Asignar y después ese botón">Asignar botón</button>
+                <button id="remote-clear" class="button button-text button-compact" type="button" hidden>Quitar</button>
+              </div>
             </div>
             <div class="game-stats" aria-label="Resultado del intento">
               <span>Rebotes <strong id="stat-bounces">0</strong></span>

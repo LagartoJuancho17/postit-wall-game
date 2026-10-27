@@ -74,6 +74,34 @@ ilumina por dentro con su color hasta 3 píxeles del proyector de su borde,
 con un borde más fuerte del mismo color, y la pelota se mueve en
 coordenadas del proyector.
 
+## Jugar sin teclado
+
+Quien juega está en la pared, no en la Mac. Hay tres formas de soltar la
+pelota, y las tres hacen lo mismo: si la pelota está lista, cuenta 3, 2, 1 y
+la suelta; si el intento ya terminó, vuelve a leer los post-its y cuenta de
+nuevo.
+
+- **Tapando el inicio con la mano.** Tapá el post-it de inicio un segundo:
+  la pared dice "Sacá la mano: ¡la pelota sale!". Sacá la mano y empieza la
+  cuenta. Si alguien pasa por delante, si movés el post-it a otro lado o si
+  lo sacás un rato, no pasa nada. Se apaga con la casilla **Soltar tapando
+  el inicio con la mano** del panel.
+- **Con un control Bluetooth.** Un control de un botón es un teclado. En el
+  panel apretá **Asignar botón** y después el botón del control. Queda
+  guardado en Chrome. Si el intento está en pausa, ese botón lo continúa.
+- **Con Espacio** o el botón **Soltar pelota** / **Jugar otra vez** del panel.
+
+En la pared también se ve:
+
+- Una onda blanca alrededor de cada post-it que pegás, apenas la cámara lo
+  detecta. Así sabés que lo vio sin mirar el panel.
+- La cuenta 3, 2, 1 en el color del inicio, donde va a aparecer la pelota,
+  con un pitido por número.
+- En cada rebote, el post-it verde destella y salen chispas de su color. Un
+  golpe fuerte suena más alto y hace más chispas que uno suave.
+
+`R` cancela la cuenta. Detalle en `docs/alignment-and-color.md`, sección 3.1.
+
 ## Alinear cámara y proyector
 
 La cámara y el proyector miran la pared desde lugares distintos. Para que el

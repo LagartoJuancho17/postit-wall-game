@@ -64,8 +64,10 @@ test("the projector finds the events and the panel plays them after a user gestu
   const projector = read("projector.js");
   const panel = read("app.js");
   const page = read("index.html");
-  assert.match(projector, /for \(const name of soundEvents\(lastGame, next\?\.game\)\) channel\.postMessage\(\{ type: "sound", name \}\);/);
-  assert.match(panel, /data\.type === "sound"\) \{\s*if \(soundOn && audio\) playSound\(audio, data\.name/);
+  assert.match(projector, /for \(const name of soundEvents\(lastGame, next\?\.game\)\) \{/);
+  // The bounce carries how hard it hit, the tick which beat (contract 3.1).
+  assert.match(projector, /channel\.postMessage\(\{ type: "sound", name, beat: countdownBeatOf\(game\),\s*intensity:/);
+  assert.match(panel, /data\.type === "sound"\) \{\s*if \(soundOn && audio\) \{\s*playSound\(audio, data\.name, data\.name === "bounce" \? bounceVariant\+\+ : data\.beat \?\? 0, data\.intensity \?\? 1\);/);
   assert.match(panel, /window\.addEventListener\("keydown", unlockAudio, \{ capture: true \}\);/);
   assert.match(panel, /window\.addEventListener\("pointerdown", unlockAudio, \{ capture: true \}\);/);
   assert.match(page, /id="sound-toggle"/);

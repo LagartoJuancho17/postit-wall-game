@@ -46,7 +46,9 @@ test("a paused attempt shows a working resume button", () => {
   assert.match(operator, /\$\(["']resume-button["']\)\.hidden\s*=\s*!controls\.resume;/);
   assert.match(operator, /\$\(["']resume-button["']\)\.disabled\s*=\s*aligning \|\| !controls\.resume;/);
   assert.match(operator, /\$\(["']resume-button["']\)\.addEventListener\(["']click["'],\s*\(\)\s*=>\s*sendAction\(["']resume["']\)\)/);
-  assert.match(operator, /event\.code\s*===\s*["']Space["']\s*&&\s*!\$\(["']resume-button["']\)\.disabled\)\s*\{\s*event\.preventDefault\(\);\s*sendAction\(["']resume["']\)/);
+  // Space and the remote's button resume a paused attempt (contract 3.1).
+  assert.match(operator, /event\.code === "Space"\) \{\s*event\.preventDefault\(\);\s*playOrResume\("panel"\);/);
+  assert.match(operator, /if \(command === "resume" && !\$\("resume-button"\)\.disabled\) sendAction\("resume"\);/);
   assert.match(operator, /\$\(["']game-pill["']\)\.dataset\.tone\s*=\s*attempt\.phase/);
 });
 

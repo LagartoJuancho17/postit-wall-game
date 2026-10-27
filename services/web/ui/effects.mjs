@@ -15,6 +15,13 @@ export const TRAIL_LENGTH = 16;       // ball positions kept for the trail
 export const GOAL_PARTICLES = 160;
 export const GOAL_RAYS = 14;
 export const PARTY_COLORS = ["#ffd166", "#06d6a0", "#4cc9f0", "#ef476f", "#f72585", "#b8f2e6", "#ffffff"];
+// Package 1 (Tobias, 2026-10-27: "feedback en la pared al pegar post-its,
+// cuenta regresiva, juice de rebotes"; contract 3.1).
+export const HIT_EFFECT_MS = 450;         // a bounce's sparks and flash
+export const MAX_HITS = 6;
+export const APPEAR_EFFECT_MS = 750;      // the ripple around a post-it just stuck on the wall
+export const APPEAR_FORGET_MS = 1500;     // a note unseen this long is new when it comes back
+export const APPEAR_NEAR_SHARE = 0.04;    // of the camera's short side: the same note, slightly moved
 
 const TAU = Math.PI * 2;
 const easeOut = (t) => 1 - (1 - t) ** 3;
@@ -33,7 +40,8 @@ export function noise(index, salt = 0) {
  * the ball's recent positions (game px). `now` in ms.
  */
 export function trackEffects(previous, game, now) {
-  const empty = { attempt: null, status: null, launchAt: null, endAt: null, trail: [] };
+  const empty = { attempt: null, status: null, launchAt: null, endAt: null, trail: [], bounces: 0, at: null,
+    hits: [] };
   if (!game || !game.position || !["running", "won", "lost"].includes(game.status)) return empty;
   const prev = previous ?? empty;
   const sameAttempt = prev.attempt === game.attempts;
@@ -46,7 +54,54 @@ export function trackEffects(previous, game, now) {
   const trail = sameAttempt && game.status === "running"
     ? (moved ? [...prev.trail, { ...game.position }] : prev.trail).slice(-TRAIL_LENGTH)
     : sameAttempt ? prev.trail : [{ ...game.position }];
-  return { attempt: game.attempts, status: game.status, launchAt, endAt, trail };
+  // A bounce between two states: where the ball is now, and how fast it came
+  // (game px/s over the last state interval) for the size of the burst.
+  const bounces = game.bounces ?? 0;
+  let hits = sameAttempt ? (prev.hits ?? []).filter((hit) => now - hit.at < HIT_EFFECT_MS) : [];
+  if (sameAttempt && bounces > (prev.bounces ?? 0) && last && prev.at !== null && now > prev.at) {
+    const speed = Math.hypot(game.position.x - last.x, game.position.y - last.y) / ((now - prev.at) / 1000);
+    hits = [...hits, { at: now, x: game.position.x, y: game.position.y, speed }].slice(-MAX_HITS);
+  }
+  return { attempt: game.attempts, status: game.status, launchAt, endAt, trail, bounces, at: now, hits };
+}
+
+/**
+ * Notes that just appeared on the wall (camera px). `known` are the notes
+ * seen within APPEAR_FORGET_MS, so a detection that flickers for a frame
+ * never ripples again; a window that just opened knows what is already
+ * there. `detection` is state.live_detection.
+ */
+export function trackAppearances(previous, detection, now) {
+  const notes = [];
+  for (const [role, entry] of Object.entries(detection?.roles ?? {})) {
+    for (const shape of entry?.notes ?? []) {
+      const points = shape?.points;
+      if (!Array.isArray(points) || points.length < 3) continue;
+      notes.push({ role, ...polygonCenter(points) });
+    }
+  }
+  const near = APPEAR_NEAR_SHARE * Math.min(detection?.width || 0, detection?.height || 0);
+  // The first detection this window sees is what was already there: no ripples.
+  if (!previous) return detection?.roles ? { known: notes.map((note) => ({ ...note, seen: now })), appears: [] } : null;
+  if (!detection?.roles) return { ...previous, appears: previous.appears.filter((a) => now - a.at < APPEAR_EFFECT_MS) };
+  const known = previous.known.filter((note) => now - note.seen < APPEAR_FORGET_MS).map((note) => ({ ...note }));
+  const appears = previous.appears.filter((a) => now - a.at < APPEAR_EFFECT_MS);
+  for (const note of notes) {
+    const match = known.find((k) => k.role === note.role && Math.hypot(k.x - note.x, k.y - note.y) <= near);
+    if (match) {
+      Object.assign(match, { x: note.x, y: note.y, seen: now });
+    } else {
+      known.push({ ...note, seen: now });
+      appears.push({ ...note, at: now });
+    }
+  }
+  return { known, appears };
+}
+
+/** Ripples still playing: [{role, x, y (camera px), ageMs}]. */
+export function appearAges(tracked, now) {
+  return (tracked?.appears ?? []).map((a) => ({ role: a.role, x: a.x, y: a.y, ageMs: now - a.at }))
+    .filter((a) => a.ageMs >= 0 && a.ageMs < APPEAR_EFFECT_MS);
 }
 
 /** Ages the renderer needs, in ms; null when that effect is not playing. */
@@ -58,7 +113,18 @@ export function effectAges(tracked, now) {
     trail: tracked.status === "running" ? tracked.trail : [],
     launchOrigin: tracked.trail[0] ?? null,      // game px
     endOrigin: tracked.trail.at(-1) ?? null,     // game px
+    hits: (tracked.hits ?? []).map((hit) => ({ ageMs: now - hit.at, origin: { x: hit.x, y: hit.y }, speed: hit.speed }))
+      .filter((hit) => hit.ageMs >= 0 && hit.ageMs < HIT_EFFECT_MS),
   };
+}
+
+/** 3, 2, 1 from the seconds left: the beat (3..1, 0 when done) and how far into it (0..1). */
+export function countdownBeat(remainingS, totalS, beats = 3) {
+  if (!(remainingS > 0) || !(totalS > 0)) return { beat: 0, within: 1 };
+  const length = totalS / beats;
+  // 1.6 s of 2.4 is the start of beat 2, though 1.6 / 0.8 is 2.0000000000000004.
+  const beat = Math.min(beats, Math.max(1, Math.ceil(remainingS / length - 1e-9)));
+  return { beat, within: Math.min(1, Math.max(0, 1 - (remainingS - (beat - 1) * length) / length)) };
 }
 
 function polygonCenter(points) {
@@ -200,4 +266,58 @@ export function drawLostEffect(ctx, { ageMs, origin, color = "#9aa6aa", scale = 
       0.7 * (1 - t));
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * A bounce: the bumper paper flashes, a ring and sparks in its color burst
+ * from where the ball hit. `intensity` 0..1 from the impact speed.
+ */
+export function drawHitEffect(ctx, { ageMs, origin, paper = null, color = "#77ec8f", scale = 1, intensity = 0.5 }) {
+  if (!(ageMs >= 0 && ageMs < HIT_EFFECT_MS) || !origin) return;
+  const t = ageMs / HIT_EFFECT_MS;
+  const power = Math.min(1, Math.max(0.15, intensity));
+  if (paper?.length >= 3) {
+    ctx.globalAlpha = (0.35 + 0.45 * power) * (1 - t) ** 2;
+    ctx.fillStyle = "#ffffff";
+    fillPolygonPath(ctx, paper);
+    ctx.fill();
+  }
+  ring(ctx, origin, scale * (8 + (30 + 50 * power) * easeOut(t)), scale * (3 + 4 * power) * (1 - t) + 1, color,
+    0.9 * (1 - t));
+  const sparks = 6 + Math.round(10 * power);
+  for (let i = 0; i < sparks; i += 1) {
+    const angle = TAU * (i / sparks) + noise(i, 9) * 0.6;
+    const reach = scale * (10 + (35 + 55 * power) * easeOut(t) * (0.6 + 0.8 * noise(i, 10)));
+    const spark = { x: origin.x + Math.cos(angle) * reach, y: origin.y + Math.sin(angle) * reach };
+    dot(ctx, spark, scale * (2 + 3 * power) * (1 - t) + 0.5, i % 4 === 0 ? "#ffffff" : color, 1 - t);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/**
+ * The countdown, while the camera is paused (contract 3.1): the start paper
+ * pulses on every beat, a ring closes on the spot the ball drops from and the
+ * beat's number pops there in the start color.
+ */
+export function drawCountdown(ctx, { remainingS, totalS, beats = 3, origin, startPaper = null, color = "#ffd166",
+  scale = 1, font = "sans-serif" }) {
+  const { beat, within } = countdownBeat(remainingS, totalS, beats);
+  if (!beat || !origin) return 0;
+  if (startPaper?.length >= 3) {
+    ctx.globalAlpha = 0.6 * (1 - within) ** 2;
+    ctx.fillStyle = "#ffffff";
+    fillPolygonPath(ctx, startPaper);
+    ctx.fill();
+  }
+  ring(ctx, origin, scale * (14 + 70 * (1 - easeOut(within))), scale * 5, color, 0.35 + 0.6 * (1 - within));
+  ring(ctx, origin, scale * 14, scale * 2, "#ffffff", 0.5);
+  const pop = 1.3 - 0.3 * easeOut(Math.min(1, within * 4));
+  ctx.globalAlpha = 1 - 0.55 * within;
+  ctx.fillStyle = color;
+  ctx.font = `800 ${Math.round(scale * 64 * pop)}px ${font}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(beat), origin.x, origin.y + scale * 70);
+  ctx.globalAlpha = 1;
+  return beat;
 }

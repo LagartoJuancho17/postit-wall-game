@@ -32,6 +32,8 @@ const EXPECTED = {
   partial_live: ["scan", "align", "touch"],
   no_markers: ["scan", "launch", "reset", "align", "touch"],
   ready: ["scan", "launch", "reset", "align", "touch"],
+  // 3, 2, 1 (contract 3.1): the camera is frozen like a moving attempt; R cancels.
+  countdown: ["reset"],
   aligned_ready: ["scan", "launch", "reset", "align", "touch"],
   // The touch grid owns the wall: no scan or launch; A switches to the dots, T restarts it.
   touching: ["reset", "align", "touch"],
@@ -39,9 +41,10 @@ const EXPECTED = {
   running: ["reset"],
   paused_open: ["scan", "reset", "resume", "align"],
   paused_closed: [],
-  // Captured as the attempt ends: the end effect plays, the camera is paused, no scan.
-  won: ["reset", "align"],
-  lost: ["reset", "align"],
+  // Captured as the attempt ends: the end effect plays, the camera is paused,
+  // no scan. "Jugar otra vez" (play) reads the board again and counts down.
+  won: ["launch", "reset", "align"],
+  lost: ["launch", "reset", "align"],
 };
 
 function enabled(controls) {
@@ -99,6 +102,7 @@ const EXPECTED_STEP = {
   partial_live: "align",
   no_markers: "align",
   ready: "align",
+  countdown: "play",
   aligned_ready: "play",
   touching: "align",
   ready_closed: "projector",

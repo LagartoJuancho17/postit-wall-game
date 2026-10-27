@@ -39,6 +39,7 @@ from services.vision.palette import normalize_hex
 
 from . import camera
 from .camera import camera_label as _camera_label
+from .handsfree import COUNTDOWN_S, cover_begin, cover_update, start_note
 
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -416,6 +417,12 @@ class GameController:
         self._finished_at: float | None = None      # clock when the current attempt ended
         self._align_activity: float | None = None   # last frame of a collecting or touching run
         self._touch: dict[str, Any] | None = None   # touch-grid run (contract 1.6), while status is "touching"
+        # Hands-free play (contract 3.1): when the pending drop happens, who
+        # asked for it, and the cover gesture read from the live notes.
+        self._countdown_until: float | None = None
+        self._countdown_source: str | None = None
+        self.hands_free = True
+        self._cover = cover_begin()
         self._camera_epoch = 0                      # camera_changed count: a late frame of the old camera is dropped
         self.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J."
         self.revision = 0
@@ -488,6 +495,8 @@ class GameController:
         }
 
     def _phase(self) -> str:
+        if self._countdown_until is not None:
+            return "countdown"
         if self.game is not None:
             if self.paused and self.game.status == GameStatus.RUNNING:
                 return "paused"
@@ -496,6 +505,7 @@ class GameController:
 
     def _snapshot_unlocked(self) -> dict[str, Any]:
         self._expire_detection_unlocked()
+        self._advance_countdown_unlocked()
         game = self.game
         return {
             "revision": self.revision,
@@ -522,6 +532,10 @@ class GameController:
                 "attempts": self.attempts,
                 "paused": self.paused,
                 "camera_paused": self._camera_paused_unlocked(),
+                "countdown_s": (round(max(0.0, self._countdown_until - self._clock()), 3)
+                                if self._countdown_until is not None else 0.0),
+                "countdown_total_s": COUNTDOWN_S,
+                "hands_free": {"enabled": self.hands_free, "armed": bool(self._cover["armed"])},
             },
             "projection": {
                 "open": self.projector_open,
@@ -655,8 +669,8 @@ class GameController:
         game = self.game
         if game is None or self.live_detection is None:
             return False
-        if game.status == GameStatus.RUNNING:
-            return True
+        if game.status == GameStatus.RUNNING or self._countdown_until is not None:
+            return True   # in the air, or about to be: the countdown lights the wall too
         return (game.status in (GameStatus.WON, GameStatus.LOST) and self._finished_at is not None
                 and self._clock() - self._finished_at < END_EFFECT_S)
 
@@ -810,6 +824,8 @@ class GameController:
             self._log("live_board_invalid", reason=error)
         else:
             self.revision += 1
+        # Last: a gesture that plays says so over the board's own message.
+        self._hands_free_frame_unlocked(notes, width, height)
         return preview, error
 
     @staticmethod
@@ -859,6 +875,7 @@ class GameController:
             elif action == "projection_close":
                 self.projector_open = False
                 self.projection_mode = "live"
+                self._cancel_countdown_unlocked("projection_close")
                 if self.game and self.game.status == GameStatus.RUNNING:
                     self.paused = True
                 self._last_tick = None
@@ -871,6 +888,7 @@ class GameController:
                     self._log("touch_cancelled", reason="projection_close")
             elif action == "projection_black":
                 self._refuse_while_collecting_unlocked()
+                self._refuse_while_countdown_unlocked()
                 if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
                     raise RequestError("Terminá o pausá el intento antes de escanear.",
                                        HTTPStatus.CONFLICT)
@@ -878,6 +896,7 @@ class GameController:
                 self._changed("Proyección en negro. Ahora podés capturar la pared.")
             elif action == "projection_neutral":
                 self._refuse_while_collecting_unlocked()
+                self._refuse_while_countdown_unlocked()
                 if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
                     raise RequestError("Terminá o pausá el intento antes de escanear.",
                                        HTTPStatus.CONFLICT)
@@ -893,6 +912,7 @@ class GameController:
                     raise RequestError("Primero tiene que llegar imagen de la cámara.", HTTPStatus.CONFLICT)
                 if self.game and self.game.status == GameStatus.RUNNING and not self.paused:
                     raise RequestError("Terminá o pausá el intento antes de alinear.", HTTPStatus.CONFLICT)
+                self._refuse_while_countdown_unlocked()
                 self._drop_alignment_unlocked("collecting", "Alineando cámara y proyector…")
                 self._align_layout = alignment_layout(self.projector_width, self.projector_height)
                 self._align_camera = {"label": self.frame_camera, "width": self.frame_width,
@@ -966,33 +986,31 @@ class GameController:
                 self._solve_overlay_check_unlocked()
                 self._hold_until = None
             elif action == "launch":
+                # The ball drops now; the panel and the wall use `play` (3.1).
                 self._refuse_while_collecting_unlocked()
-                if (not self.projector_open or self.camera_board is None or
-                        self.board is None or self.game is None):
-                    raise RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.",
-                                       HTTPStatus.CONFLICT)
-                if self.game.status != GameStatus.READY:
-                    raise RequestError("Reiniciá el intento antes de volver a lanzar.",
-                                       HTTPStatus.CONFLICT)
-                gravity = min(self.board_width, self.board_height) * GRAVITY_SHARE
-                self.game = drop(self.board, gravity)
-                self._finished_at = None
-                self.attempts += 1
-                self.paused = False
-                self._last_tick = self._clock()
-                self._accumulator = 0.0
-                self.projection_mode = "live"
-                self._changed("Pelota soltada. La cámara no lee la pared hasta que termine el efecto.")
-                self._log("attempt_started", attempt=self.attempts, gravity_px_s2=round(gravity, 1))
+                self._refuse_while_countdown_unlocked()
+                self._require_launchable_unlocked()
+                self._drop_unlocked("launch")
+            elif action == "play":
+                source = payload.get("source", "panel")
+                if source not in ("panel", "button"):
+                    raise RequestError("Origen de jugada desconocido.")
+                self._play_unlocked(source)
+            elif action == "hands_free":
+                enabled = payload.get("enabled")
+                if not isinstance(enabled, bool):
+                    raise RequestError("hands_free necesita enabled: true o false.")
+                self.hands_free = enabled
+                self._cover = cover_begin()
+                self._changed("Soltar tapando el inicio: activado." if enabled
+                              else "Soltar tapando el inicio: desactivado.")
+                self._log("hands_free", enabled=enabled)
             elif action == "reset":
                 if self.camera_board is None or self._candidate is None:
                     raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",
                                        HTTPStatus.CONFLICT)
-                self._apply_candidate_unlocked()
-                self.paused = False
-                self._last_tick = None
-                self._accumulator = 0.0
-                self._live_mode_unlocked()
+                self._cancel_countdown_unlocked("reset")
+                self._reset_attempt_unlocked()
                 self._changed("Intento reiniciado con los post-its de la vista en vivo.")
                 self._log("attempt_reset")
             elif action == "pause":
@@ -1071,6 +1089,104 @@ class GameController:
             else:
                 raise RequestError(f"Acción desconocida: {action}")
             return self._snapshot_unlocked()
+
+    # ------------------------------------------------------------ play (contract 3.1)
+
+    def _refuse_while_countdown_unlocked(self) -> None:
+        if self._countdown_until is not None:
+            raise RequestError("La pelota está por salir: esperá la cuenta o reiniciá con R.", HTTPStatus.CONFLICT)
+
+    def _require_launchable_unlocked(self) -> None:
+        if (not self.projector_open or self.camera_board is None or
+                self.board is None or self.game is None):
+            raise RequestError("Abrí el proyector y mostrale a la cámara un inicio y una llegada.",
+                               HTTPStatus.CONFLICT)
+        if self.game.status != GameStatus.READY:
+            raise RequestError("Reiniciá el intento antes de volver a lanzar.",
+                               HTTPStatus.CONFLICT)
+
+    def _reset_attempt_unlocked(self) -> None:
+        self._apply_candidate_unlocked()
+        self.paused = False
+        self._last_tick = None
+        self._accumulator = 0.0
+        self._live_mode_unlocked()
+
+    def _play_unlocked(self, source: str) -> None:
+        """What comes next for whoever plays: a ready ball counts down and
+        drops; after an attempt the board is read again first. A running or
+        paused attempt is left alone (the panel resumes a paused one)."""
+        self._refuse_while_collecting_unlocked()
+        self._refuse_while_countdown_unlocked()
+        if self.game is not None and self.game.status == GameStatus.RUNNING:
+            raise RequestError("Hay un intento en marcha.", HTTPStatus.CONFLICT)
+        if self.game is not None and self.game.status in (GameStatus.WON, GameStatus.LOST):
+            if self.camera_board is None or self._candidate is None:
+                raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",
+                                   HTTPStatus.CONFLICT)
+            self._reset_attempt_unlocked()
+            self._log("attempt_reset", source=source)
+        self._require_launchable_unlocked()
+        self._countdown_until = self._clock() + COUNTDOWN_S
+        self._countdown_source = source
+        self._cover = cover_begin()
+        self.projection_mode = "live"
+        self._changed("Preparados: la pelota sale en 3, 2, 1.")
+        self._log("attempt_countdown", attempt=self.attempts + 1, source=source)
+
+    def _cancel_countdown_unlocked(self, reason: str) -> None:
+        if self._countdown_until is None:
+            return
+        self._countdown_until = None
+        self._countdown_source = None
+        self._log("attempt_countdown_cancelled", reason=reason)
+
+    def _advance_countdown_unlocked(self) -> None:
+        """The countdown's drop happens on the first tick or snapshot after it."""
+        if self._countdown_until is None:
+            return
+        if (self.game is None or self.board is None or self.game.status != GameStatus.READY
+                or not self.projector_open):
+            self._cancel_countdown_unlocked("board")
+            return
+        if self._clock() < self._countdown_until:
+            return
+        source = self._countdown_source or "panel"
+        self._countdown_until = None
+        self._countdown_source = None
+        self._drop_unlocked(source)
+
+    def _drop_unlocked(self, source: str) -> None:
+        gravity = min(self.board_width, self.board_height) * GRAVITY_SHARE
+        self.game = drop(self.board, gravity)
+        self._finished_at = None
+        self.attempts += 1
+        self.paused = False
+        self._last_tick = self._clock()
+        self._accumulator = 0.0
+        self.projection_mode = "live"
+        self._changed("Pelota soltada. La cámara no lee la pared hasta que termine el efecto.")
+        self._log("attempt_started", attempt=self.attempts, gravity_px_s2=round(gravity, 1), source=source)
+
+    def _hands_free_frame_unlocked(self, notes: dict[str, tuple[Polygon, ...]], width: int, height: int) -> None:
+        """One live frame for the cover gesture: only while nothing is in the
+        air, no run owns the wall and the projector shows the game."""
+        idle = (self.hands_free and self.projector_open and self._countdown_until is None
+                and self._align_status not in ("collecting", "touching")
+                and (self.game is None or self.game.status != GameStatus.RUNNING))
+        if not idle:
+            self._cover = cover_begin()
+            return
+        self._cover, event = cover_update(self._cover, start_note(notes), bool(notes.get("goal")),
+                                          self._clock(), (width, height))
+        if event == "armed":
+            self._changed("Sacá la mano del inicio: la pelota sale.")
+            self._log("hands_free_armed")
+        elif event == "fire":
+            try:
+                self._play_unlocked("gesture")
+            except RequestError as exc:
+                self._log("hands_free_refused", reason=str(exc))
 
     # ------------------------------------------------------------ alignment
 
@@ -1399,6 +1515,7 @@ class GameController:
             return self._snapshot_unlocked()
 
     def _tick_unlocked(self) -> None:
+        self._advance_countdown_unlocked()
         if (self.game is None or self.board is None or
                 self.game.status != GameStatus.RUNNING or self.paused or
                 not self.projector_open):

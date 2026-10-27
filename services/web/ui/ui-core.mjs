@@ -84,6 +84,7 @@ export function boardCounts(state) {
 const ATTEMPT_VIEWS = {
   none: { label: "Sin tablero", hint: "Mostrá un inicio y una llegada a la cámara para soltar la pelota." },
   ready: { label: "Listo", hint: "Soltá la pelota: cae desde abajo del post-it de inicio." },
+  countdown: { label: "3, 2, 1…", hint: "La pelota sale al terminar la cuenta. R la cancela." },
   running: { label: "En juego", hint: "La pelota está en movimiento." },
   paused: {
     label: "En pausa",
@@ -96,7 +97,44 @@ const ATTEMPT_VIEWS = {
 /** The backend keeps status "running" while paused; the panel treats it apart. */
 export function attemptPhase(game) {
   const status = game?.status ?? "none";
+  if (status === "ready" && game?.countdown_s > 0) return "countdown";   // contract 3.1
   return status === "running" && game?.paused ? "paused" : status;
+}
+
+/** The release button's words: what `play` does now (contract 3.1). */
+export function launchLabel(phase) {
+  if (phase === "won" || phase === "lost") return "Jugar otra vez";
+  if (phase === "countdown") return "Saliendo…";
+  return "Soltar pelota";
+}
+
+export const REMOTE_KEY = "postit-wall:remote-key";
+
+/** Keys a Bluetooth remote may not take: the panel's own shortcuts. */
+const RESERVED_CODES = new Set(["Space", "Escape", "Tab", "Enter", "KeyA", "KeyB", "KeyF", "KeyJ", "KeyR", "KeyS",
+  "KeyT"]);
+
+/** Whether a key (KeyboardEvent.code) can be the remote's button. */
+export function remoteKeyAllowed(code) {
+  return typeof code === "string" && code.length > 0 && !RESERVED_CODES.has(code);
+}
+
+/** What the remote's one button does in a phase: "resume", "play" or null. */
+export function remoteCommand(phase) {
+  if (phase === "paused") return "resume";
+  if (phase === "ready" || phase === "won" || phase === "lost") return "play";
+  return null;
+}
+
+/** The wall's hands-free line (contract 3.1), or null. */
+export function handsFreeLine(game) {
+  const phase = attemptPhase(game);
+  if (game?.hands_free?.enabled !== true) return null;
+  if (game.hands_free.armed) return "Sacá la mano: ¡la pelota sale!";
+  if (phase === "ready" || ((phase === "won" || phase === "lost") && game.camera_paused !== true)) {
+    return "Tapá el inicio con la mano un segundo y sacala para soltar";
+  }
+  return null;
 }
 
 export function attemptView(game) {
@@ -115,14 +153,17 @@ export function controlsFor(state, cameraReady, popupReady) {
   const endEffect = state?.game?.camera_paused === true && (phase === "won" || phase === "lost");
   // A touch run (contract 1.6) owns the wall: the backend refuses scans and drops.
   const touching = state?.alignment?.status === "touching";
+  // The countdown (contract 3.1) freezes the camera like a moving attempt.
+  const counting = phase === "countdown";
   return {
-    scan: live && !moving && !endEffect && !touching,
-    launch: live && detected && phase === "ready" && !touching,
+    scan: live && !moving && !endEffect && !touching && !counting,
+    // `play`: drop a ready ball, or read the board again after an attempt and drop.
+    launch: live && detected && ["ready", "won", "lost"].includes(phase) && !touching,
     reset: popup && detected && phase !== "none",
     resume: popup && phase === "paused",
     // Same rule as the backend's align_start: projector open, camera frames
     // seen, no attempt moving; and not while a run is collecting.
-    align: live && framed && !moving && state?.alignment?.status !== "collecting",
+    align: live && framed && !moving && !counting && state?.alignment?.status !== "collecting",
     // touch_start (contract 1.6) also needs the camera read now: live notes
     // and no attempt or end effect freezing the view.
     touch: live && framed && Boolean(state?.live_detection) && !moving && state?.game?.camera_paused !== true
@@ -138,7 +179,7 @@ const SETUP_GUIDES = {
   projector: "Siguiente: abrí la proyección con J (botón de arriba a la derecha) y llevá esa ventana al proyector.",
   align: "Alineá el proyector con A: proyecta unos puntos, la cámara los mira y corrige la imagen sola. Con luz en el cuarto o la cámara lejos del proyector, usá T: ponés un post-it en cada cruz. Ponelo antes en pantalla completa.",
   detect: "Mostrá 1 inicio y 1 llegada a la cámara. Los rebotes y las esquinas son opcionales; la detección se actualiza sola.",
-  play: "Los contornos del proyector siguen la detección en vivo. Soltá la pelota con Espacio: cae desde abajo del inicio.",
+  play: "Los contornos del proyector siguen la detección en vivo. Soltá la pelota con Espacio, con el botón remoto o tapando el inicio con la mano un segundo: cae desde abajo del inicio.",
 };
 const STAGE_OF = { camera: "camera", projector: "projector", align: "align", detect: "detect", play: "play" };
 

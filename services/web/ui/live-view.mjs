@@ -26,10 +26,21 @@ import {
   offsetConvexPolygon,
   PALETTE_ROLES,
   polygonArea,
+  handsFreeLine,
   projectorTheme,
   undistortPoint,
 } from "./ui-core.mjs";
-import { drawGoalEffect, drawLaunchEffect, drawLostEffect, drawTrail, PARTY_COLORS } from "./effects.mjs";
+import {
+  APPEAR_EFFECT_MS,
+  APPEAR_NEAR_SHARE,
+  drawCountdown,
+  drawGoalEffect,
+  drawHitEffect,
+  drawLaunchEffect,
+  drawLostEffect,
+  drawTrail,
+  PARTY_COLORS,
+} from "./effects.mjs";
 
 export const LIVE_MAX_AGE_MS = 1500;
 export const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
@@ -187,7 +198,10 @@ function projectedNotes(preview, mapper, width, height) {
     for (const shape of notes) {
       if (!validShape(shape)) continue;
       const points = shape.points.map(toProjector);
-      if (points.every(Boolean)) projected.push({ role, points });
+      // `center`: the note's vertex mean in camera px, to find it again (3.1 ripples).
+      const center = shape.points.reduce((sum, p) => ({ x: sum.x + p.x / shape.points.length,
+        y: sum.y + p.y / shape.points.length }), { x: 0, y: 0 });
+      if (points.every(Boolean)) projected.push({ role, points, center });
     }
   }
   return projected;
@@ -353,6 +367,16 @@ function drawEffects(ctx, { state, mapping, width, height, effects, projected, p
     const points = effects.trail.map(place).filter(Boolean).map((p) => p.center);
     drawTrail(ctx, { points, radius: ball?.radius ?? BALL_RADIUS_PX, from: hex("start"), to: hex("goal") });
   }
+  // A bounce: the bumper nearest the ball flashes and sparks in its color.
+  const gravity = Number(game.gravity_px_s2);
+  const reference = gravity > 0 && game.height > 0 ? Math.sqrt(gravity * game.height) : null;
+  for (const hit of effects.hits ?? []) {
+    const origin = place(hit.origin)?.center;
+    if (!origin) continue;
+    const bumper = nearestPaper(projected.filter((note) => note.role === "bumper"), origin);
+    drawHitEffect(ctx, { ageMs: hit.ageMs, origin, paper: bumper, color: hex("bumper"), scale,
+      intensity: reference ? hit.speed / reference : 0.5 });
+  }
   if (Number.isFinite(effects.launchAgeMs)) {
     drawLaunchEffect(ctx, { ageMs: effects.launchAgeMs, origin: place(effects.launchOrigin)?.center,
       startPaper: paper("start"), color: hex("start"), scale });
@@ -364,6 +388,97 @@ function drawEffects(ctx, { state, mapping, width, height, effects, projected, p
   if (game.status === "lost" && Number.isFinite(effects.endAgeMs)) {
     drawLostEffect(ctx, { ageMs: effects.endAgeMs, origin: place(effects.endOrigin)?.center, scale });
   }
+  ctx.globalAlpha = 1;
+}
+
+/** The countdown (3.1), only while the backend says the camera is not read. */
+function drawCountdownScene(ctx, { state, mapping, width, height, projected, palette, countdownS }) {
+  const game = state?.game;
+  if (!(countdownS > 0) || game?.camera_paused !== true || game.status !== "ready" || !validPoint(game.position)) return;
+  const ball = placeBall(game, state.camera, mapping, width, height);
+  if (!ball) return;
+  const hex = palette?.roles?.start?.hex;
+  drawCountdown(ctx, { remainingS: countdownS, totalS: game.countdown_total_s, origin: ball.center,
+    startPaper: projected.find((note) => note.role === "start")?.points ?? null,
+    color: HEX.test(hex ?? "") ? hex : FALLBACK_COLORS.start, scale: ball.radius / BALL_RADIUS_PX, font: TEXT_FONT });
+}
+
+function nearestPaper(notes, point) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const { points } of notes) {
+    const c = points.reduce((sum, p) => ({ x: sum.x + p.x / points.length, y: sum.y + p.y / points.length }),
+      { x: 0, y: 0 });
+    const d = Math.hypot(c.x - point.x, c.y - point.y);
+    if (d < bestDistance) {
+      best = points;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+/** Ring offset around a projected paper (projector px), or null. */
+function rippleOutline(points, distance) {
+  const hull = convexHull(points);
+  return hull && hull.length >= 3 ? offsetConvexPolygon(hull, distance) : null;
+}
+
+/**
+ * Contract 3.1: a neutral ripple around each post-it just stuck on the wall,
+ * from RIM_OFFSET_PX out, so it never lights the paper itself; every paper
+ * (its own too) is clipped out like the rims of 2.1. Neutral light, a few
+ * frames: the camera already copes with a white rim at that distance.
+ */
+function drawAppearRipples(ctx, appears, projected, color, cameraSize) {
+  if (!Array.isArray(appears) || !appears.length || !projected.length) return 0;
+  const near = APPEAR_NEAR_SHARE * Math.min(cameraSize.width || 0, cameraSize.height || 0);
+  let drawn = 0;
+  for (const appear of appears) {
+    const t = appear.ageMs / APPEAR_EFFECT_MS;
+    if (!(t >= 0 && t < 1)) continue;
+    const note = projected.find((n) => n.role === appear.role
+      && Math.hypot(n.center.x - appear.x, n.center.y - appear.y) <= near);
+    if (!note) continue;
+    ctx.save();
+    for (const other of projected) {
+      const region = offsetConvexPolygon(convexHull(other.points) ?? other.points, RIM_CLEAR_PX);
+      if (!region) continue;
+      ctx.beginPath();
+      ctx.rect(-1e5, -1e5, 2e5, 2e5);
+      region.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+      ctx.closePath();
+      ctx.clip("evenodd");
+    }
+    ctx.strokeStyle = color;
+    ctx.lineJoin = "round";
+    for (const [delay, width] of [[0, 4], [0.22, 2]]) {
+      const local = (t - delay) / (1 - delay);
+      if (local <= 0) continue;
+      const outline = rippleOutline(note.points, RIM_OFFSET_PX + 60 * (1 - (1 - local) ** 3));
+      if (!outline) continue;
+      ctx.globalAlpha = 0.85 * (1 - local);
+      ctx.lineWidth = width;
+      tracePolygon(ctx, outline);
+      ctx.stroke();
+    }
+    ctx.restore();
+    drawn += 1;
+  }
+  return drawn;
+}
+
+/** Contract 3.1: how to play without the keyboard, in neutral text at the bottom. */
+function drawHandsFreeHint(ctx, game, width, height, color) {
+  const line = handsFreeLine(game);
+  if (!line) return;
+  const armed = game.hands_free?.armed === true;
+  ctx.font = `${armed ? 700 : 500} ${armed ? 30 : HINT_FONT_PX + 2}px ${TEXT_FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.globalAlpha = armed ? 1 : 0.75;
+  ctx.fillStyle = color;
+  ctx.fillText(line, width / 2, height - HINT_MARGIN_PX);
   ctx.globalAlpha = 1;
 }
 
@@ -404,7 +519,7 @@ function drawHint(ctx, height, color) {
  */
 export function drawProjectorScene(ctx, {
   state = null, preview = state?.live_detection, palette = state?.palette, theme = "dark",
-  width, height, fresh = true, forceFill = false, effects = null,
+  width, height, fresh = true, forceFill = false, effects = null, appears = null, countdownS = null,
 } = {}) {
   if (!positive(width) || !positive(height)) return;
   const colors = neutralColors(theme);
@@ -429,9 +544,12 @@ export function drawProjectorScene(ctx, {
     }
   }
   if (matrix && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
+  if (!forceFill) drawAppearRipples(ctx, appears, projected, colors.rim, notes ?? {});
   drawEffects(ctx, { state, mapping, width, height, effects, projected, palette });
+  drawCountdownScene(ctx, { state, mapping, width, height, projected, palette, countdownS });
   drawGame(ctx, state, mapping, width, height, colors, effects);
   if (!matrix) drawHint(ctx, height, colors.rim);
+  if (!forceFill && !(countdownS > 0)) drawHandsFreeHint(ctx, state?.game, width, height, colors.rim);
   ctx.restore();
 }
 

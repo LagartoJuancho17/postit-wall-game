@@ -48,12 +48,12 @@ const GSTACK_PLAYWRIGHT = "/Users/tobiasarraiza/gstack/node_modules/playwright/i
 const playwrightModule = process.env.POSTIT_PLAYWRIGHT_MODULE || (existsSync(GSTACK_PLAYWRIGHT) ? GSTACK_PLAYWRIGHT : null);
 const playwright = playwrightModule ? await import(pathToFileURL(resolve(playwrightModule)).href) : await import("playwright");
 const runs = (process.argv.slice(2).length ? process.argv.slice(2)
-  : ["server", "static", "static:bright", "server:touch", "static:touch-slip"])
+  : ["server", "static", "static:bright", "server:touch", "static:touch-slip", "server:handsfree"])
   .map((arg) => {
     const remote = arg.match(/^(https?:\/\/[^\s]+?)(?::(normal|bright))?$/);
     if (remote) return { kind: "remote", url: remote[1].replace(/\/$/, ""), room: remote[2] ?? "normal" };
     const [kind, room = "normal"] = arg.split(":");
-    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch", "touch-slip"].includes(room)) throw new Error(`unknown run ${arg}`);
+    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch", "touch-slip", "handsfree"].includes(room)) throw new Error(`unknown run ${arg}`);
     return { kind, room };
   });
 
@@ -67,7 +67,8 @@ const WALL = [204, 204, 204];                  // reflectance 0.8
 const BLACK_LEVEL = 0.02;                       // light a black projector frame still emits
 /** Room light (projector full white = 1) and the fixed exposure that suits it. */
 const ROOMS = { normal: { ambient: 0.35, gain: 2.0 }, bright: { ambient: 1.0, gain: 0.75 },
-  touch: { ambient: 1.0, gain: 0.75 }, "touch-slip": { ambient: 1.0, gain: 0.75 } };
+  touch: { ambient: 1.0, gain: 0.75 }, "touch-slip": { ambient: 1.0, gain: 0.75 },
+  handsfree: { ambient: 0.35, gain: 2.0 } };
 /** The touch run's camera, far below the projector: the top edge of the projection is shorter. */
 const QUAD_BELOW = [[92, 34], [868, 30], [935, 700], [25, 695]];
 const COLORS = { start: "#e6e617", goal: "#e66a17", bumper: "#17e639", marker: "#e617b6" };
@@ -445,6 +446,76 @@ async function touchHand(state, panel, G, shoot = null, slipAt = null) {
   return { captured: captured + 1, retake };
 }
 
+// ------------------------------------------------------------------ hands-free play (contract 3.1)
+
+const HAND_COLOR = "#c8aa96";
+
+/**
+ * Package 1 on the closed loop: a post-it stuck mid-game ripples and is
+ * never doubled by its own light; a hand over the start for 1.5 s, lifted,
+ * counts down and drops the ball, with no key pressed.
+ */
+async function handsFree(report, { state, panel, projector, name }) {
+  const hold = (points, color) => panel.evaluate(([p, c]) => window.closedLoopCamera.hold(p, c), [points, color]);
+  const counts = async () => Object.fromEntries(Object.entries((await state())?.live_detection?.roles ?? {})
+    .map(([role, value]) => [role, value.count]));
+  const expected = (bumpers) => ({ start: 1, goal: 1, bumper: bumpers, marker: 4 });
+  await hold(rotated(600, 560, 56, 50, 8), HELD_COLOR);
+  await until("the new post-it is detected", async () => (await counts()).bumper === 3, 10000, 100);
+  await new Promise((done) => setTimeout(done, 200));
+  await projector.screenshot({ path: join(output, `${name}-ripple-projector.png`) });
+  const seen = [];
+  for (let k = 0; k < 8; k += 1) {
+    seen.push(await counts());
+    await new Promise((done) => setTimeout(done, 250));
+  }
+  assert.ok(seen.every((c) => JSON.stringify(c) === JSON.stringify(expected(3))),
+    `the ripple never reads as a note (${JSON.stringify(seen)})`);
+  report.checks.push("new post-it: detected, rippled, 8/8 samples with exactly its papers (no phantom from the ripple)");
+  await hold(null);
+  await until("the extra post-it is gone", async () => (await counts()).bumper === 2, 10000, 100);
+  await new Promise((done) => setTimeout(done, 1800));   // forgotten: it would ripple again
+
+  const start = PAPERS.find((paper) => paper.role === "start").points;
+  const xs = start.map(([x]) => x);
+  const ys = start.map(([, y]) => y);
+  const hand = [[Math.min(...xs) - 18, Math.min(...ys) - 18], [Math.max(...xs) + 18, Math.min(...ys) - 18],
+    [Math.max(...xs) + 18, Math.max(...ys) + 18], [Math.min(...xs) - 18, Math.max(...ys) + 18]];
+  const began = Date.now();
+  await hold(hand, HAND_COLOR);
+  const trace = [];   // what the camera made of the hand, frame by frame
+  await until("the cover arms", async () => {
+    const s = await state();
+    const start = s?.live_detection?.roles?.start;
+    trace.push([+((Date.now() - began) / 1000).toFixed(2), start?.count ?? null, s?.game?.hands_free?.armed]);
+    return s?.game?.hands_free?.armed === true;
+  }, 6000, 50);
+  const armedAfter = (Date.now() - began) / 1000;
+  // The backend's line (the wall draws its own: handsFreeLine).
+  const hint = await until("the backend says to lift the hand", async () => {
+    const text = (await state())?.message;
+    return text?.startsWith("Sacá la mano") ? text : null;
+  }, 3000, 50);
+  await new Promise((done) => setTimeout(done, 300));
+  await hold(null);
+  await until("the countdown starts", async () => (await state())?.phase === "countdown", 4000, 50);
+  await new Promise((done) => setTimeout(done, 700));
+  await projector.screenshot({ path: join(output, `${name}-countdown-projector.png`) });
+  const running = await until("the ball drops after the countdown", async () => {
+    const s = await state();
+    return ["running", "won", "lost"].includes(s?.game?.status) ? s : null;
+  }, 5000, 50);
+  const finished = await until("the hands-free attempt finishes", async () => {
+    const s = await state();
+    return ["won", "lost"].includes(s?.game?.status) ? s : null;
+  }, 30000);
+  report.handsFree = { armedAfterS: armedAfter, hint, attempts: running.game.attempts, result: finished.game.status,
+    trace: trace.filter((row, k) => !k || row[1] !== trace[k - 1][1] || row[2] !== trace[k - 1][2]) };
+  report.checks.push(`hand over the start: armed after ${armedAfter.toFixed(1)} s ("${hint.split(":")[0]}"), lifted, ` +
+    `3-2-1, dropped and ${finished.game.status}, no key pressed`);
+  await until("the end effect is over", async () => (await state())?.game?.camera_paused === false, 6000, 100);
+}
+
 // ------------------------------------------------------------------ one run
 
 async function run({ kind, room, url }) {
@@ -623,7 +694,9 @@ async function run({ kind, room, url }) {
     report.checks.push(`color on (overlay ${alignment.overlay.status}): every paper lit in its role color ` +
       `(min spread ${Math.min(...spreads).toFixed(2)})`);
 
-    // An attempt in projector px.
+    if (room === "handsfree") await handsFree(report, { state, panel, projector, name });
+
+    // An attempt in projector px (the button sends `play`: 3, 2, 1, then the drop).
     assert.equal(samples.at(-1).space, "projector");
     await until("launch enabled", () => panel.locator("#launch-button").isEnabled());
     await panel.locator("#launch-button").click();

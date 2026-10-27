@@ -198,6 +198,13 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; p
 .game-pill[data-tone="won"] { color: #257440; border-color: #aed9b3; background: #eff9ed; }
 .game-pill[data-tone="lost"] { color: #ad4539; border-color: #edb7ae; background: #fff2ed; }
 .drop-note { color: #4b5a51; font-size: 12px; margin: 22px 0 21px; }
+.hands-free { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.hands-free-toggle { display: flex; align-items: center; gap: 8px; color: #36584f; font-size: 13px; font-weight: 600; cursor: pointer; }
+.hands-free-toggle input { width: 16px; height: 16px; accent-color: #0b7169; }
+.remote-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.remote-key { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-right: auto; }
+#remote-assign[aria-pressed="true"] { color: #91601f; }
+.game-pill[data-tone="countdown"] { color: #91601f; border-color: #dec496; background: #fff7e8; }
 .game-stats { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); margin-top: 20px; padding-top: 16px; }
 .game-stats span { display: flex; flex-direction: column; gap: 5px; color: #647169; font-size: 11px; }
 .game-stats strong { color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 700; }

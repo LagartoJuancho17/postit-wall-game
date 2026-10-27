@@ -34,6 +34,8 @@ detection always runs with the projector lit (light theme floods the wall).
 | Ghosts die | sim eval: paper removed while projecting | gone within 3 frames |
 | Colors picked under play light | sim eval: pick under neutral, detect under live | role counts correct in both themes |
 | Real-world flips | `live_board_ready/invalid` count per minute in `runs/web-events.jsonl` | trending to 0 on a static wall |
+| Play without the keyboard (3.1) | `attempt_countdown {source}` in `runs/web-events.jsonl`: share of `gesture` and `button`; `evals/handsfree.py` | real covers play >= 97 % (98.5), 0 false plays an hour on an idle wall, walker, moved, removed |
+| Ripple never feeds back (3.1) | Chrome closed loop, room `handsfree`: a post-it stuck mid-game | 8/8 samples with exactly the papers on the wall |
 
 ## Coordinate systems
 
@@ -609,6 +611,12 @@ draws nothing on the wall around it. Unaligned it draws only neutral rims.
   nothing projected uses a role hue.
 - The panel's own overlay on the camera video (not projected) keeps colored
   halos; it is drawn by a separate function.
+- Exceptions of 3.1, both neutral or while the camera is paused: the ripple
+  around a post-it just stuck (neutral, from `RIM_OFFSET_PX` out, every
+  paper clipped out like the rims, 750 ms) and the hands-free hint at the
+  bottom (neutral text). The countdown, the bounce sparks and the flashes
+  of a hit bumper use color only while `game.camera_paused` is true, like
+  the drop and goal effects.
 
 ### 2.2 Sampling colors and exposure under the play light
 
@@ -959,6 +967,97 @@ Projector:
   screen. It reports `visibility` changes; the panel warns
   `La ventana de proyección está oculta: movela a su propia ventana en el proyector.`
 
+## 3.1 Hands-free play and wall feedback (package 1, 2026-10-27)
+
+Tobias: "feedback en la pared al pegar post-its, cuenta regresiva, juice de
+rebotes y soltar sin teclado". Whoever plays stands at the wall, not at the
+Mac. Python `services/web/backend/handsfree.py`, JS
+`services/browser/handsfree.mjs`, same operations (parity scripts
+`play_countdown`, `cover_gesture`).
+
+**`play {source?: "panel" | "button"}`** (the panel's button, Space and the
+remote's button; the gesture calls it with `gesture`): with the game ready,
+it starts a countdown of `COUNTDOWN_S = 2.4` s (3 beats); after a won or
+lost attempt it first reads the board again (as `reset`, logged
+`attempt_reset {source}`) and then counts down. Refused (409) while a run
+collects or touches, during a countdown (`La pelota está por salir: esperá
+la cuenta o reiniciá con R.`), with an attempt running or paused (`Hay un
+intento en marcha.`; the panel resumes a paused one), or without a playable
+board. Another source is 400. `launch` keeps dropping at once.
+
+**Countdown.** `phase = "countdown"`, `game.status` stays `ready`,
+`game.countdown_s` (seconds left, 3 decimals) and `game.countdown_total_s`.
+The camera is not read (`camera_paused` is true: the countdown lights the
+wall) and the board is the one at `play`. The first tick or snapshot at or
+after the end drops the ball (`attempt_started {attempt, gravity_px_s2,
+source}`). `reset` cancels it, so does closing the projector or losing the
+board (`attempt_countdown_cancelled {reason}`); `align_start`,
+`projection_black` and `projection_neutral` are refused during it.
+
+**Cover gesture** (on every stored live frame, while
+`game.hands_free.enabled`, the projector is open, no countdown, no run
+collecting or touching and no attempt running): `start_note(notes)` is the
+one start note's vertex mean and area. `cover_update` starts a cover when
+the start goes missing while seen before; it plays (`fire`) when the start
+comes back within `COVER_NEAR_SHARE = 0.05` of the camera's short side of
+where it was, after `COVER_MIN_S = 1.0` to `COVER_MAX_S = 4.0` s, unless the
+goal went missing `COVER_DARK_FRAMES = 2` frames in a row meanwhile
+(somebody in front of the wall). At `COVER_MIN_S` it is `armed`
+(`game.hands_free.armed`, message `Sacá la mano del inicio: la pelota sale.`,
+log `hands_free_armed`). A start under `COVER_SHRINK = 0.85` of its usual
+area (slow average while seen) counts as covered: the projector keeps
+lighting the start's place on the hand and the camera reads that ghost as
+the start until it shrinks away (1.9 s in the closed loop). A refused play
+is logged `hands_free_refused {reason}`. `hands_free {enabled: bool}` turns
+it on or off (on by default; log `hands_free`).
+
+`services/web/evals/handsfree.py` (4 frames a second, unevenly; 5 % missed
+notes; 2 px and 4 % outline wobble):
+
+| case | result | bound |
+|---|---|---|
+| hand 1.2-3 s, lifted: plays once | 98.5 % | >= 97 % |
+| hand 0.6-1 s (reported) | 43 % | |
+| idle wall, one hour of flicker | 0 plays | 0 |
+| walker, moved note, note away 5-30 s, swipe 0.1-0.3 s | 0 % each | 0 (swipe <= 50 %) |
+| ghost on the hand: hand to "armed", p95 | 1.80 s (3.73 without the shrink check) | <= 2.0 s |
+
+The first bounds were 0.4 s and a goal flicker resetting the cover: 30
+false plays an hour on an idle wall and 7 % on a note stuck back later.
+
+**Panel.** The release button and Space send `play` (`launchLabel`: `Soltar
+pelota`, `Jugar otra vez` after an attempt, `Saliendo…` during the
+countdown); during the countdown only `reset` is enabled. `Soltar tapando
+el inicio con la mano (un segundo)` toggles `hands_free`. A Bluetooth remote
+is a keyboard with one key: **Asignar botón** learns the next key's
+`KeyboardEvent.code` (not a panel shortcut: `remoteKeyAllowed`), kept in
+`localStorage` (`postit-wall:remote-key`); that key resumes a paused
+attempt or plays (`remoteCommand`).
+
+**Projector** (`effects.mjs`, `live-view.mjs`):
+
+- Ripple: `trackAppearances` keeps the notes seen (camera px) within
+  `APPEAR_FORGET_MS = 1500`; a note of a role with none of that role within
+  `APPEAR_NEAR_SHARE = 0.04` of the camera's short side is new and ripples
+  for `APPEAR_EFFECT_MS = 750`: two neutral outlines growing from
+  `RIM_OFFSET_PX` to +60 px out of its convex hull, every paper clipped out.
+  The first detection a window sees is what was already on the wall: no
+  ripples. Not tracked while the camera is paused.
+- Countdown (camera paused only): at the drop point, the beat's number in
+  the start color pops, a ring closes on the drop point, the start paper
+  flashes white on each beat (`countdownBeat`; 1.6 s of 2.4 is beat 2, not
+  3, despite 1.6 / 0.8 = 2.0000000000000004). Sound `tick` per beat, a step
+  higher each.
+- Bounce: `trackEffects` records a hit when `game.bounces` grows, at the
+  ball, with its speed over the last state interval; `drawHitEffect` flashes
+  the nearest bumper paper white and bursts a ring and 6-16 sparks in the
+  bumper color for `HIT_EFFECT_MS = 450`, bigger for harder hits (speed over
+  `sqrt(gravity * height)`); the bounce sound gets louder and higher with it.
+- Hint (`handsFreeLine`, neutral, bottom center): `Tapá el inicio con la mano
+  un segundo y sacala para soltar` when the game is ready or an attempt
+  ended and the camera reads again; `Sacá la mano: ¡la pelota sale!` when
+  armed.
+
 ## 4. Hot path fixes (both backends)
 
 - `frame_quality` no longer runs `detect_board`; it takes `ready` as an
@@ -1018,12 +1117,23 @@ A deterministic camera/projector/wall model for evals and tests:
   (drawing, texts, keys, retakes), the `touching` phase of the state
   matrix, and the `touch` parity cases (solves on 3 x 3 to 8 x 6 grids and
   the real run, the retake trace).
+- Hands-free play (3.1): `services/web/tests/test_handsfree.py` (cover
+  timing, flicker, walker, moved, ghost; play, countdown, refusals, gesture
+  in the backend), `services/web/evals/handsfree.py`,
+  `services/web/tests/handsfree-ui.test.mjs` (phase, labels, remote, hint,
+  ripple clipped off every paper, hits, countdown, sounds, wiring), the
+  `countdown` phase of the state matrix, parity scripts `play_countdown`
+  and `cover_gesture`.
 - Chrome closed loop (`tests/closed-loop-browser.mjs`, Playwright from
   `POSTIT_PLAYWRIGHT_MODULE`): fake camera composited from a wall image plus
   the projector canvas warped by a known `G`; runs against the static build
   (browser backend) and against `web.py` (Python backend). Rooms `touch`
   (a careful hand: no retake) and `touch-slip` (cross 7 lands 45 px off:
   the panel says `repetí el punto 7`, the hand retakes it, the run aligns).
+  Room `handsfree`: a post-it stuck mid-game ripples and is never doubled,
+  then a hand covers the start, is lifted, and the ball counts down and
+  drops with no key pressed (armed after 1.7 s). Every room's attempt goes
+  through `play`, so through the countdown.
 
 Names: nothing new may match `/calibr/i` (existing regression tests forbid
 the removed manual calibration); use `align*`.

@@ -10,8 +10,8 @@ import {
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
 import { drawAlignmentPattern, drawProjectorScene, drawTouchGrid, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
-import { effectAges, trackEffects } from "./effects.mjs";
-import { soundEvents } from "./sounds.mjs";
+import { appearAges, effectAges, trackAppearances, trackEffects } from "./effects.mjs";
+import { countdownBeatOf, soundEvents } from "./sounds.mjs";
 
 const api = createApi("projector");
 
@@ -37,6 +37,7 @@ let theme = storedTheme();
 let backdrop = readBackdrop(window.localStorage);   // the operator's own background, or null
 let tracked = null;   // effects.mjs trackEffects: timing of the attempt's effects
 let lastGame = null;  // the previous state's game, for sounds.mjs soundEvents
+let appearances = null;   // effects.mjs trackAppearances: post-its just stuck on the wall (3.1)
 
 function storedTheme() {
   try {
@@ -111,8 +112,16 @@ function applyState(next) {
   stateReceivedAt = performance.now();
   // When the attempt was dropped and ended, and the ball's trail (effects.mjs).
   tracked = trackEffects(tracked, next?.game, stateReceivedAt);
+  // A note read while the camera is paused is the frozen view, not a new one.
+  if (next?.game?.camera_paused !== true) appearances = trackAppearances(appearances, next?.live_detection, stateReceivedAt);
   // This window sees every state: it finds the sound events, the panel plays them (sounds.mjs).
-  for (const name of soundEvents(lastGame, next?.game)) channel.postMessage({ type: "sound", name });
+  for (const name of soundEvents(lastGame, next?.game)) {
+    const hit = name === "bounce" ? tracked.hits.at(-1) : null;
+    const game = next.game;
+    const reference = game.gravity_px_s2 > 0 && game.height > 0 ? Math.sqrt(game.gravity_px_s2 * game.height) : 0;
+    channel.postMessage({ type: "sound", name, beat: countdownBeatOf(game),
+      intensity: hit && reference ? Math.min(1, hit.speed / reference) : 1 });
+  }
   lastGame = next?.game ?? null;
   // A backend that forgot this window (web.py restarted, or the panel
   // reloaded and started a new in-browser backend) learns it again.
@@ -186,10 +195,14 @@ function draw() {
   if (scene.kind === "neutral") return; // the theme background only: colors are sampled under play light
   // A stale reply never reaches the renderer, and the renderer refuses stale notes too.
   const fresh = performance.now() - stateReceivedAt < LIVE_MAX_AGE_MS;
+  const now = performance.now();
+  // The countdown runs on between states: the backend's seconds left, minus the time since.
+  const left = Number(state?.game?.countdown_s) - (now - stateReceivedAt) / 1000;
   drawProjectorScene(ctx, {
     state, preview: fresh ? state?.live_detection : null, palette: state?.palette,
     theme, width: viewport.width, height: viewport.height, fresh, forceFill: scene.forceFill,
-    effects: effectAges(tracked, performance.now()),
+    effects: effectAges(tracked, now), appears: appearAges(appearances, now),
+    countdownS: Number(state?.game?.countdown_s) > 0 ? Math.max(0.001, left) : null,
   });
 }
 

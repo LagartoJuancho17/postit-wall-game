@@ -28,6 +28,10 @@ import {
   isProjectorShortcut,
   isThemeShortcut,
   isTypingTarget,
+  launchLabel,
+  REMOTE_KEY,
+  remoteCommand,
+  remoteKeyAllowed,
   noteColorHex,
   PALETTE_ROLES,
   patchOrigin,
@@ -125,6 +129,34 @@ let customBackdrop = readBackdrop(window.localStorage);
 let soundOn = readSoundOn(window.localStorage);
 let audio = null;
 let bounceVariant = 0;
+
+// Hands-free play (contract 3.1): a Bluetooth remote is a keyboard with one
+// key; the panel learns which (KeyboardEvent.code) and treats it as "play".
+let remoteCode = readRemoteCode();
+let assigningRemote = false;
+function readRemoteCode() {
+  try {
+    const code = localStorage.getItem(REMOTE_KEY);
+    return remoteKeyAllowed(code) ? code : null;
+  } catch {
+    return null;
+  }
+}
+function setRemoteCode(code) {
+  remoteCode = code;
+  try {
+    if (code) localStorage.setItem(REMOTE_KEY, code);
+    else localStorage.removeItem(REMOTE_KEY);
+  } catch {
+    // Not remembered across reloads; it works until then.
+  }
+}
+/** Space and the remote: resume a paused attempt, else play (drop, or play again). */
+function playOrResume(source) {
+  const command = remoteCommand(attemptPhase(state?.game));
+  if (command === "resume" && !$("resume-button").disabled) sendAction("resume");
+  else if (command === "play" && !$("launch-button").disabled) sendAction("play", { source });
+}
 function unlockAudio() {
   if (!audio && typeof AudioContext === "function") audio = new AudioContext();
   if (audio?.state === "suspended") audio.resume().catch(() => {});
@@ -1035,6 +1067,13 @@ function render() {
     || !state || !("camera_presets" in state) || attemptPhase(state?.game) === "running";
   $("camera-tune").textContent = state?.camera_presets?.[cameraLabel] ? "Buscar otra vez" : "Buscar ajuste fijo";
   $("launch-button").disabled = aligning || !controls.launch;
+  $("launch-label").textContent = launchLabel(attemptPhase(state?.game));
+  $("hands-free").checked = state?.game?.hands_free?.enabled !== false;
+  $("hands-free").disabled = !state;
+  $("remote-assign").textContent = assigningRemote ? "Apretá el botón del control…" : remoteCode ? "Cambiar botón" : "Asignar botón";
+  $("remote-assign").setAttribute("aria-pressed", String(assigningRemote));
+  $("remote-key").textContent = remoteCode ? `Botón: ${remoteCode}` : "Sin botón";
+  $("remote-clear").hidden = !remoteCode || assigningRemote;
   $("launch-button").hidden = controls.resume;
   $("resume-button").hidden = !controls.resume;
   $("resume-button").disabled = aligning || !controls.resume;
@@ -1117,7 +1156,9 @@ channel.onmessage = (event) => {
     customBackdrop = typeof data.hex === "string" && /^#[0-9a-f]{6}$/i.test(data.hex) ? data.hex.toLowerCase() : null;
     render();
   } else if (data.type === "sound") {
-    if (soundOn && audio) playSound(audio, data.name, data.name === "bounce" ? bounceVariant++ : 0);
+    if (soundOn && audio) {
+      playSound(audio, data.name, data.name === "bounce" ? bounceVariant++ : data.beat ?? 0, data.intensity ?? 1);
+    }
   } else if (data.type === "closed") {
     popupReady = false;
     render();
@@ -1139,7 +1180,16 @@ cameraSelect.addEventListener("change", () => {
   startCamera(cameraSelect.value, false);
 });
 $("scan-button").addEventListener("click", scanBoard);
-$("launch-button").addEventListener("click", () => sendAction("launch"));
+$("launch-button").addEventListener("click", () => sendAction("play", { source: "panel" }));
+$("hands-free").addEventListener("change", (event) => sendAction("hands_free", { enabled: event.target.checked }));
+$("remote-assign").addEventListener("click", () => {
+  assigningRemote = !assigningRemote;
+  render();
+});
+$("remote-clear").addEventListener("click", () => {
+  setRemoteCode(null);
+  render();
+});
 $("resume-button").addEventListener("click", () => sendAction("resume"));
 $("reset-button").addEventListener("click", () => sendAction("reset"));
 for (const role of PALETTE_ROLES) {
@@ -1188,8 +1238,28 @@ document.addEventListener("keydown", (event) => {
     render();
     return;
   }
+  if (assigningRemote && !event.repeat) {
+    // The next key is the remote's button (Escape gives up).
+    event.preventDefault();
+    assigningRemote = false;
+    if (event.key !== "Escape") {
+      if (remoteKeyAllowed(event.code)) {
+        setRemoteCode(event.code);
+        notice(`Botón remoto asignado (${event.code}). Apretalo para soltar la pelota.`, "info");
+      } else {
+        notice("Esa tecla ya es un atajo del panel. Probá con el botón del control.", "error");
+      }
+    }
+    render();
+    return;
+  }
   if (isTypingTarget(event.target) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
   if (aligning) return; // S, A, R and Space wait for the run to end
+  if (remoteCode && event.code === remoteCode) {
+    event.preventDefault();
+    playOrResume("button");
+    return;
+  }
   const key = event.key.toLowerCase();
   const command = touchCommand(state, event.key);
   if (command) {
@@ -1212,12 +1282,9 @@ document.addEventListener("keydown", (event) => {
   } else if (key === "r" && !$("reset-button").disabled) {
     event.preventDefault();
     sendAction("reset");
-  } else if (event.code === "Space" && !$("launch-button").disabled) {
+  } else if (event.code === "Space") {
     event.preventDefault();
-    sendAction("launch");
-  } else if (event.code === "Space" && !$("resume-button").disabled) {
-    event.preventDefault();
-    sendAction("resume");
+    playOrResume("panel");
   }
 });
 

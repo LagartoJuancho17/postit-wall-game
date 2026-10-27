@@ -53,6 +53,7 @@ class StateMatrixContractTests(unittest.TestCase):
             "partial_live": ("waiting_camera", "none", False, True),
             "no_markers": ("ready", "ready", False, True),
             "ready": ("ready", "ready", False, True),
+            "countdown": ("countdown", "ready", False, True),
             "aligned_ready": ("ready", "ready", False, True),
             "touching": ("ready", "ready", False, True),
             "ready_closed": ("ready", "ready", False, False),
@@ -113,7 +114,7 @@ class StateMatrixContractTests(unittest.TestCase):
                 twin.now += 5
                 twin.controller.tick()
             self.assertEqual(wall.controller.snapshot(), before, name)
-        self.assertEqual(len(PHASES), 13)
+        self.assertEqual(len(PHASES), 14)
 
     def test_shape_ignores_values_but_not_types_or_keys(self) -> None:
         self.assertEqual(shape({"a": 1.5, "b": [{"x": 1}]}), shape({"b": [{"x": 9}], "a": 2}))

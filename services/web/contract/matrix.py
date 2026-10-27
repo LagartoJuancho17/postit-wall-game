@@ -154,6 +154,11 @@ def _touching(w: _Wall) -> None:
     w.act("touch_start")   # the grid of crosses, waiting for the first post-it
 
 
+def _countdown(w: _Wall) -> None:
+    _ready(w)
+    w.act("play")   # 3, 2, 1 (contract 3.1): the camera is not read until the drop
+
+
 def _ready_closed(w: _Wall) -> None:
     _ready(w)
     w.act("projection_close")
@@ -165,6 +170,7 @@ PHASES: dict[str, Callable[[_Wall], None]] = {
     "partial_live": _partial_live,
     "no_markers": _no_markers,
     "ready": _ready,
+    "countdown": _countdown,
     "aligned_ready": _aligned_ready,
     "touching": _touching,
     "ready_closed": _ready_closed,
@@ -177,7 +183,9 @@ PHASES: dict[str, Callable[[_Wall], None]] = {
 
 _PROBES: dict[str, Callable[[_Wall], None]] = {
     "scan": _Wall.scan,
-    "launch": lambda w: w.act("launch"),
+    # The release button and Space send `play` (contract 3.1): drop a ready
+    # ball, or read the board again after an attempt and drop.
+    "launch": lambda w: w.act("play"),
     "reset": lambda w: w.act("reset"),
     "resume": lambda w: w.act("resume"),
     "align": lambda w: w.act("align_start"),

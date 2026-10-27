@@ -103,6 +103,16 @@ def build_frames() -> Frames:
     frames.add_jpeg("wall_430", _image(430))
     frames.add_jpeg("wall_540", _image(540))
     frames.add_jpeg("wall_drop", _image(430, goal=DROP_GOAL))   # goal under the start: a dropped ball wins
+    hand = _image(430, goal=DROP_GOAL)
+    hand[310:390, 140:220] = (150, 170, 200)   # a hand over the start note (contract 3.1)
+    frames.add_jpeg("hand_drop", hand)
+    walker = hand.copy()
+    walker[300:620, 120:260] = (60, 60, 70)    # somebody in front: start and goal hidden
+    frames.add_jpeg("walker_drop", walker)
+    moved = _image(430, goal=DROP_GOAL)
+    moved[315:386, 145:216] = 220
+    moved[320:380, 330:390] = _color(FRAME_HUES["start"])   # the start note stuck elsewhere
+    frames.add_jpeg("moved_start_drop", moved)
     frames.add_jpeg("recolored", _image(430, RECOLORED))
     no_start = _image(430)
     no_start[315:386, 145:216] = 220
@@ -121,7 +131,6 @@ def build_frames() -> Frames:
     frames.add_jpeg("empty_wall", flat)
     # Corners nearly in a line: four markers that cannot frame a field.
     squeezed = np.full((720, 960, 3), 220, np.uint8)
-    from services.web.backend.eval import _color, FRAME_HUES
     for x, y in ((90, 350), (330, 360), (600, 350), (870, 362)):
         cv2.rectangle(squeezed, (x - 22, y - 22), (x + 22, y + 22), _color(FRAME_HUES["marker"]), -1)
     cv2.rectangle(squeezed, (150, 100), (210, 160), _color(FRAME_HUES["start"]), -1)
@@ -811,6 +820,40 @@ def touch_scripts() -> dict[str, list[dict[str, Any]]]:
     }
 
 
+def handsfree_scripts() -> dict[str, list[dict[str, Any]]]:
+    """Contract 3.1: play, the countdown and the cover gesture, frame by frame."""
+    def act(name, **data):
+        return {"op": "action", "payload": {"action": name, **data}}
+    open_ = act("projection_open", width=1280, height=800)
+    label = "Cámara de iPhone de Tobias"
+
+    def frames(name, n=1):
+        return [step for _ in range(n) for step in ({"op": "tick", "advance": 0.25},
+                                                    {"op": "preview", "frame": name, "camera": label})]
+    wait = [{"op": "tick", "advance": 0.1} for _ in range(30)]
+    return {
+        "play_countdown": [*frames("wall_drop"), open_, act("play"), {"op": "state"},
+                           {"op": "tick", "advance": 1.0}, act("launch"), act("play"), act("align_start"),
+                           act("projection_black"), act("projection_neutral"), *frames("wall_drop"),
+                           {"op": "tick", "advance": 1.5}, *wait, {"op": "state"}, act("play"),
+                           {"op": "state"}, act("reset"), act("play", source="button"), act("projection_close"),
+                           {"op": "tick", "advance": 3.0}, {"op": "state"}, open_, act("play", source="wall"),
+                           {"op": "action", "payload": {"action": "play", "source": None}},
+                           act("hands_free"), act("hands_free", enabled="no"), act("hands_free", enabled=False),
+                           act("hands_free", enabled=True)],
+        "cover_gesture": [*frames("wall_drop", 2), open_, *frames("wall_drop"), *frames("hand_drop", 5),
+                          {"op": "state"}, *frames("wall_drop"), {"op": "state"},
+                          {"op": "tick", "advance": 2.5}, *wait, {"op": "tick", "advance": 3.0},
+                          *frames("wall_drop", 2), *frames("hand_drop", 5), *frames("wall_drop"), {"op": "state"},
+                          act("reset"), *frames("hand_drop"), *frames("wall_drop"), {"op": "state"},
+                          *frames("hand_drop", 5), *frames("moved_start_drop"), {"op": "state"},
+                          *frames("wall_drop"), *frames("walker_drop", 5), *frames("wall_drop"), {"op": "state"},
+                          *frames("hand_drop", 20), *frames("wall_drop"), {"op": "state"},
+                          act("hands_free", enabled=False), *frames("hand_drop", 5), *frames("wall_drop"),
+                          {"op": "state"}],
+    }
+
+
 def controller_scripts() -> dict[str, list[dict[str, Any]]]:
     def act(name, **data):
         return {"op": "action", "payload": {"action": name, **data}}
@@ -954,7 +997,7 @@ def export() -> dict[str, Any]:
     align_names = _alignment_jpegs(frames)
     _probe_hit_frame(frames, align_names)
     frames.write(GOLDEN / "frames")
-    scripts = {**controller_scripts(), **alignment_scripts(align_names), **touch_scripts()}
+    scripts = {**controller_scripts(), **alignment_scripts(align_names), **touch_scripts(), **handsfree_scripts()}
     golden = {
         "version": 2,
         "refine": refine,
