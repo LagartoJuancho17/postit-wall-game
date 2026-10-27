@@ -464,6 +464,17 @@ those colors (2.4 s); out of the field a short gray puff (0.9 s). With
 before. The simulated projector does not draw the effects: the camera is
 not read while they play.
 
+**Sounds** (2026-10-26, Tobias: "sonidos al lanzar, cuando rebota, y cuando
+llega y gana"). `services/web/ui/sounds.mjs`, Web Audio, no files. The
+projector window sees every state (~30/s) and turns consecutive `game`
+snapshots into events (`soundEvents`: `launch` on a new attempt, one
+`bounce` per new bounce up to 3 per state, `win` / `lost` once); it posts
+`{type: "sound", name}` on the BroadcastChannel and the panel plays it,
+because Chrome lets a page sound only after a gesture there (the panel's
+AudioContext starts on its first key or click). A window that just opened
+plays nothing it missed. The panel's **Sonido** button turns them off
+(localStorage `postit-wall:sound`).
+
 **Ball before the drop**: not drawn while `game.status == "ready"`; it
 appears when it is released.
 

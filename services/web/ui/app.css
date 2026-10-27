@@ -68,6 +68,8 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .backdrop-pick input:disabled { cursor: not-allowed; opacity: .43; }
 #backdrop-reset { min-height: 34px; padding: 6px 9px; }
 #backdrop-reset[hidden] { display: none; }
+.sound-toggle { min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: #36584f; font-size: 12px; font-weight: 700; cursor: pointer; }
+.sound-toggle[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
 .connection-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #c49d54; }
 .connection-pill[data-tone="ready"]::before { background: #278b5a; }
 .connection-pill[data-tone="error"]::before { background: #d95c50; }

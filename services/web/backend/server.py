@@ -1392,6 +1392,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
                     "/projector.js": "projector.js", "/ui-core.mjs": "ui-core.mjs",
                     "/api.mjs": "api.mjs", "/live-view.mjs": "live-view.mjs",
                     "/align-run.mjs": "align-run.mjs", "/effects.mjs": "effects.mjs",
+                    "/sounds.mjs": "sounds.mjs",
                 }
                 if path == "/favicon.ico":
                     self.send_response(HTTPStatus.NO_CONTENT)

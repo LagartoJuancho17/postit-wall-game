@@ -50,6 +50,7 @@ import {
   withTimeout,
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
+import { playSound, readSoundOn, SOUND_KEY } from "./sounds.mjs";
 import { autoAlignKey, runAlignment, shouldAutoAlign } from "./align-run.mjs";
 import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS } from "./live-view.mjs";
 
@@ -117,6 +118,29 @@ function storedProjectorTheme() {
 }
 
 let customBackdrop = readBackdrop(window.localStorage);
+
+// Sounds (sounds.mjs): the projector window finds the events, this page plays
+// them. The AudioContext starts on the first key or click here (Chrome's rule).
+let soundOn = readSoundOn(window.localStorage);
+let audio = null;
+let bounceVariant = 0;
+function unlockAudio() {
+  if (!audio && typeof AudioContext === "function") audio = new AudioContext();
+  if (audio?.state === "suspended") audio.resume().catch(() => {});
+}
+function setSoundOn(next) {
+  soundOn = next;
+  try {
+    localStorage.setItem(SOUND_KEY, next ? "on" : "off");
+  } catch {
+    // Not remembered across reloads.
+  }
+  if (next) unlockAudio();
+  $("sound-toggle").setAttribute("aria-pressed", String(next));
+  $("sound-toggle").textContent = next ? "Sonido" : "Sin sonido";
+}
+window.addEventListener("pointerdown", unlockAudio, { capture: true });
+window.addEventListener("keydown", unlockAudio, { capture: true });
 
 /**
  * The operator's own projector background (Tobias, 2026-10-26: "que yo pueda
@@ -1044,6 +1068,8 @@ channel.onmessage = (event) => {
   } else if (data.type === "backdrop") {
     customBackdrop = typeof data.hex === "string" && /^#[0-9a-f]{6}$/i.test(data.hex) ? data.hex.toLowerCase() : null;
     render();
+  } else if (data.type === "sound") {
+    if (soundOn && audio) playSound(audio, data.name, data.name === "bounce" ? bounceVariant++ : 0);
   } else if (data.type === "closed") {
     popupReady = false;
     render();
@@ -1077,6 +1103,8 @@ $("theme-dark").addEventListener("click", () => { setBackdrop(null); setProjecto
 $("theme-light").addEventListener("click", () => { setBackdrop(null); setProjectorTheme("light"); });
 $("backdrop-color").addEventListener("input", (event) => setBackdrop(event.target.value));
 $("backdrop-reset").addEventListener("click", () => setBackdrop(null));
+$("sound-toggle").addEventListener("click", () => setSoundOn(!soundOn));
+setSoundOn(soundOn);
 $("palette-reset").addEventListener("click", () => {
   paletteError = null;
   preview = null;

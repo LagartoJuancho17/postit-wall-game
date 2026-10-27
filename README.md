@@ -198,6 +198,12 @@ después de que termina, la cámara no lee la pared: los efectos pueden tener
 cualquier color sin que se confundan con post-its. Después de eso (o con
 `R`) vuelve a leer, y ahí podés mover los post-its.
 
+Hay sonidos: un "whoosh" al soltar, un golpe en cada rebote, una fanfarria al
+llegar y un tono que baja si sale del campo. Suenan en la computadora del
+panel (Chrome solo deja sonar después de tocar algo en esa ventana, así que
+alcanza con apretar Espacio o hacer clic). El botón **Sonido** arriba los
+apaga o prende, y se recuerda.
+
 Alineado, cada post-it brilla en su color con el borde del papel en blanco
 (antes ese borde quedaba oscuro). Con la sala a oscuras ese blanco confunde
 a la cámara: dejá alguna luz encendida.

@@ -11,6 +11,7 @@ import {
 import { createApi } from "./api.mjs";
 import { drawAlignmentPattern, drawProjectorScene, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
 import { effectAges, trackEffects } from "./effects.mjs";
+import { soundEvents } from "./sounds.mjs";
 
 const api = createApi("projector");
 
@@ -35,6 +36,7 @@ let viewport = projectionSize(window);
 let theme = storedTheme();
 let backdrop = readBackdrop(window.localStorage);   // the operator's own background, or null
 let tracked = null;   // effects.mjs trackEffects: timing of the attempt's effects
+let lastGame = null;  // the previous state's game, for sounds.mjs soundEvents
 
 function storedTheme() {
   try {
@@ -109,6 +111,9 @@ function applyState(next) {
   stateReceivedAt = performance.now();
   // When the attempt was dropped and ended, and the ball's trail (effects.mjs).
   tracked = trackEffects(tracked, next?.game, stateReceivedAt);
+  // This window sees every state: it finds the sound events, the panel plays them (sounds.mjs).
+  for (const name of soundEvents(lastGame, next?.game)) channel.postMessage({ type: "sound", name });
+  lastGame = next?.game ?? null;
   // A backend that forgot this window (web.py restarted, or the panel
   // reloaded and started a new in-browser backend) learns it again.
   if (next?.projection?.open === false && performance.now() - lastRegister > 1000) {
