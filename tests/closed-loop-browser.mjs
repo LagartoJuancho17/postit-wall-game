@@ -468,6 +468,8 @@ async function run({ kind, room, url }) {
         wall: await panel.evaluate((capsules) => window.closedLoopCamera.wall(capsules), exclude) });
       await new Promise((done) => setTimeout(done, 300));
     }
+    // What every sample saw, kept in the report so a failure says what flipped.
+    report.samples = samples.map((sample) => ({ ready: sample.ready, counts: sample.counts }));
     const flips = samples.filter((sample, k) => k && sample.ready !== samples[k - 1].ready).length;
     assert.equal(flips, 0, "detection never flips while the projector lights the wall");
     assert.ok(samples.every((sample) => sample.ready), "the board stays playable");

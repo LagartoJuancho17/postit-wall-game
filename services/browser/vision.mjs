@@ -433,7 +433,28 @@ function candidatesByRole(cv, hsv, palette, bridge = null) {
     throw new Error("bridge debe ser una máscara uint8 del tamaño del cuadro");
   }
   const feature = saturationFeature(hsv);
-  return Object.fromEntries(ROLES.map((role) => [role, findCandidates(cv, hsv, palette[role], feature, bridge)]));
+  const found = Object.fromEntries(ROLES.map((role) => [role, findCandidates(cv, hsv, palette[role], feature, bridge)]));
+  return dropEnclosing(found);
+}
+
+/** detector.py `_inside`: the point inside the convex polygon (either winding), boundary included. */
+function inside(polygon, point) {
+  const signs = new Set();
+  polygon.forEach((a, index) => {
+    const b = polygon[(index + 1) % polygon.length];
+    const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+    if (cross !== 0) signs.add(cross > 0);
+  });
+  return signs.size <= 1;
+}
+
+/**
+ * detector.py `_drop_enclosing`: a note that encloses a smaller note of
+ * another role is the projector's light on that note's edge, not a paper.
+ */
+function dropEnclosing(found) {
+  return Object.fromEntries(ROLES.map((role) => [role, found[role].filter((candidate) => !ROLES.some((otherRole) =>
+    otherRole !== role && found[otherRole].some((other) => other.area < candidate.area && inside(candidate.polygon, other.center))))]));
 }
 
 /** Live web boards use camera pixels; corner colors are optional. */

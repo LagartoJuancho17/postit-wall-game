@@ -191,7 +191,12 @@ proyector y queda guardado en el navegador.
   post-it.
 
 La pelota no se ve hasta que la soltás (`Espacio`): aparece debajo del
-inicio en el momento en que empieza a caer.
+inicio en el momento en que empieza a caer, con un destello y una onda del
+color del inicio, y deja una estela al caer. Si toca la llegada, la llegada
+explota en luces de colores. Mientras la pelota está en el aire y hasta 2,5 s
+después de que termina, la cámara no lee la pared: los efectos pueden tener
+cualquier color sin que se confundan con post-its. Después de eso (o con
+`R`) vuelve a leer, y ahí podés mover los post-its.
 
 Alineado, cada post-it brilla en su color con el borde del papel en blanco
 (antes ese borde quedaba oscuro). Con la sala a oscuras ese blanco confunde

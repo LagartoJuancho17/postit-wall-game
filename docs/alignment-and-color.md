@@ -444,6 +444,26 @@ strength (wrong-ready frames, corners 40-110 px, color 2-4 px on the wall):
 those four scenarios are reported as `known_limits`, not scored. Keep some
 room light.
 
+**Camera paused during an attempt; effects** (2026-10-26, Tobias: "cuando
+se lance la pelota, que la cámara deje de leer los cuadrados, porque quiero
+agregar efectos con colores"). From `launch` until `END_EFFECT_S = 2.5` s
+after the attempt ends (won or lost), the backend does not read camera
+frames: `preview_jpeg` returns the view frozen at the drop without
+detecting, the frozen view never expires, and `game.camera_paused` is
+true. A frame from another camera label or size is still read (and still
+ends the attempt). `reset` reads the camera again at once; a scan during
+the end effect is refused (409 `Esperá a que termine el efecto antes de
+escanear.`). While `camera_paused` is true the projector may light the
+wall in any color (`services/web/ui/effects.mjs`): on the drop a white
+flash over the start paper, two rings and twelve sparks in the start
+color (0.7 s); a trail from the start color to the goal color while it
+falls; on the goal a pulsing flash over the goal paper, three rings and 96
+falling sparks in the role and party colors, and the result text cycling
+those colors (2.4 s); out of the field a short gray puff (0.9 s). With
+`camera_paused` false nothing colored is drawn outside a paper, as
+before. The simulated projector does not draw the effects: the camera is
+not read while they play.
+
 **Ball before the drop**: not drawn while `game.status == "ready"`; it
 appears when it is released.
 

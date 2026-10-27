@@ -185,7 +185,8 @@ def run() -> dict[str, object]:
         game.preview_jpeg(moved_frame)
         live = game.snapshot()
         assert game.board == frozen_board and game.game.position == frozen_position
-        assert live["camera_board"]["bumpers"] != live["board"]["bumpers"]
+        # The camera is not read while the ball is in the air (2026-10-26).
+        assert live["game"]["camera_paused"] and live["camera_board"]["bumpers"] == live["board"]["bumpers"]
         resized = game.action({"action": "projection_open", "width": 1920, "height": 1080})
         assert resized["board"] == launched["board"]
         assert resized["game"] == launched["game"]
@@ -198,10 +199,11 @@ def run() -> dict[str, object]:
         assert current["game"]["status"] == "won", current["game"]
         elapsed_s = current["game"]["elapsed_s"]
         assert 0.3 < elapsed_s < 1.0, elapsed_s   # dropped 128 px onto the goal: ~0.47 s
-        reset = game.action({"action": "reset"})
-        # The latest detection of the same wall: equal up to sub-pixel noise
-        # (later frames also discount the projector's own rims, contract 2.5).
-        assert _boards_close(reset["board"], live["camera_board"], 0.25), (reset["board"], live["camera_board"])
+        assert current["game"]["camera_paused"], "the end effect still plays"
+        game.action({"action": "reset"})
+        game.preview_jpeg(moved_frame)   # reset reads the camera again
+        reset = game.snapshot()
+        assert not reset["game"]["camera_paused"]
         assert reset["game"]["attempts"] == 1
         shift_px = (quadrilateral_center(game.board.bumpers[0]).x
                     - quadrilateral_center(frozen_board.bumpers[0]).x)

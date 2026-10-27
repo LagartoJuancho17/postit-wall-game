@@ -77,6 +77,22 @@ class WebHttpIntegrationTests(unittest.TestCase):
             raise AssertionError("Synthetic JPEG encoding failed")
         return encoded.tobytes()
 
+    def test_every_module_the_pages_import_is_served(self) -> None:
+        # Regression (2026-10-26): effects.mjs was imported by live-view.mjs
+        # but not routed, so the panel and the projector failed to load.
+        import re
+        from pathlib import Path
+        ui = Path(__file__).resolve().parents[1] / "services" / "web" / "ui"
+        modules = set()
+        for source in [*ui.glob("*.js"), *ui.glob("*.mjs"), *ui.glob("*.html")]:
+            text = source.read_text(encoding="utf-8")
+            modules.update(re.findall(r'from "\./([\w.-]+\.m?js)"', text))
+            modules.update(re.findall(r'src="/?([\w.-]+\.m?js)"', text))
+        self.assertIn("effects.mjs", modules)
+        for name in sorted(modules):
+            status, _ = self.request("GET", f"/{name}")
+            self.assertEqual(status, 200, name)
+
     def test_control_requests_require_local_client_header_and_origin(self) -> None:
         action = json.dumps({"action": "projection_open", "width": 1280, "height": 800}).encode()
         self.assertEqual(
@@ -154,8 +170,12 @@ class WebHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         running = self.request("GET", "/api/state")[1]
         self.assertEqual(running["board"]["bumpers"][0]["points"], before)
+        self.assertTrue(running["game"]["camera_paused"], "the camera is not read while the ball is in the air")
+        self.assertEqual(running["camera_board"]["bumpers"][0]["points"], before)
         status, updated = self.action("reset")
         self.assertEqual(status, 200)
+        self.assertEqual(self.request("POST", "/api/preview", self.jpeg(green_center=(515, 245)), headers)[0], 200)
+        updated = self.request("GET", "/api/state")[1]
         after = updated["board"]["bumpers"][0]["points"]
         self.assertGreater(abs(after[0]["x"] - before[0]["x"]), 100)
         self.assertEqual(updated["game"]["status"], "ready")

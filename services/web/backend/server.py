@@ -47,6 +47,10 @@ LIVE_DETECTION_MAX_AGE_S = 1.5
 # off the papers and the overlay frame fills them (contract 2.3). Every frame
 # of the run renews the hold; a run that stops sending frames is cancelled.
 ALIGN_HOLD_S = 20.0
+# From the drop until END_EFFECT_S after the attempt ends, the camera's frames
+# are not read (Tobias, 2026-10-26): the projector plays colored effects then,
+# which the camera would take for post-its. The view frozen at the drop stays.
+END_EFFECT_S = 2.5
 ALIGN_STALL_S = 20.0
 LIVE_EXPECTED_NOTES = {"start": 1, "goal": 1, "bumper": None, "marker": None}
 
@@ -403,6 +407,7 @@ class GameController:
         self._overlay: dict[str, Any] = self._overlay_state("unchecked", [])
         self._check_frames: dict[str, np.ndarray] = {}
         self._hold_until: float | None = None       # live detection kept until then (run in progress)
+        self._finished_at: float | None = None      # clock when the current attempt ended
         self._align_activity: float | None = None   # last frame of a collecting run
         self._camera_epoch = 0                      # camera_changed count: a late frame of the old camera is dropped
         self.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J."
@@ -509,6 +514,7 @@ class GameController:
                 "gravity_px_s2": round(min(self.board_width, self.board_height) * GRAVITY_SHARE, 3),
                 "attempts": self.attempts,
                 "paused": self.paused,
+                "camera_paused": self._camera_paused_unlocked(),
             },
             "projection": {
                 "open": self.projector_open,
@@ -623,6 +629,17 @@ class GameController:
         if self.game is None or self.game.status == GameStatus.READY:
             self._apply_candidate_unlocked()
 
+    def _camera_paused_unlocked(self) -> bool:
+        """The camera is not read: an attempt is in the air (paused too), or its
+        end effect is still playing. Nothing to freeze without a live view."""
+        game = self.game
+        if game is None or self.live_detection is None:
+            return False
+        if game.status == GameStatus.RUNNING:
+            return True
+        return (game.status in (GameStatus.WON, GameStatus.LOST) and self._finished_at is not None
+                and self._clock() - self._finished_at < END_EFFECT_S)
+
     def _hold_detection_unlocked(self) -> None:
         self._hold_until = self._clock() + ALIGN_HOLD_S
 
@@ -642,6 +659,8 @@ class GameController:
             if now < self._hold_until:
                 return
             self._hold_until = None
+        if self._camera_paused_unlocked():
+            return   # the view frozen at the drop does not expire
         if (self._last_detection is not None and
                 now - self._last_detection > LIVE_DETECTION_MAX_AGE_S):
             self._clear_detection_unlocked()
@@ -882,12 +901,13 @@ class GameController:
                                        HTTPStatus.CONFLICT)
                 gravity = min(self.board_width, self.board_height) * GRAVITY_SHARE
                 self.game = drop(self.board, gravity)
+                self._finished_at = None
                 self.attempts += 1
                 self.paused = False
                 self._last_tick = self._clock()
                 self._accumulator = 0.0
                 self.projection_mode = "live"
-                self._changed("Pelota soltada.")
+                self._changed("Pelota soltada. La cámara no lee la pared hasta que termine el efecto.")
                 self._log("attempt_started", attempt=self.attempts, gravity_px_s2=round(gravity, 1))
             elif action == "reset":
                 if self.camera_board is None or self._candidate is None:
@@ -1175,8 +1195,15 @@ class GameController:
         """
         label = self._frame_label(camera)
         frame = _decode_jpeg(data)
-        notes, quality, palette, epoch = self._measure_or_refuse(frame)
         height, width = frame.shape[:2]
+        with self._lock:
+            # During an attempt the frame is not read, unless it comes from
+            # another camera or size (that still ends the attempt below).
+            if (self._camera_paused_unlocked() and (label is None or label == self.frame_camera)
+                    and (width, height) == (self.frame_width, self.frame_height)):
+                self._last_detection = self._clock()
+                return copy.deepcopy(self.live_detection)
+        notes, quality, palette, epoch = self._measure_or_refuse(frame)
         with self._lock:
             if self.palette is not palette or self._camera_epoch != epoch:
                 # The colors or the camera changed while detecting: these notes
@@ -1208,6 +1235,8 @@ class GameController:
             if self.game is not None and self.game.status == GameStatus.RUNNING and not self.paused:
                 raise RequestError("Terminá o pausá el intento antes de escanear.",
                                    HTTPStatus.CONFLICT)
+            if self._camera_paused_unlocked() and self.game.status != GameStatus.RUNNING:
+                raise RequestError("Esperá a que termine el efecto antes de escanear.", HTTPStatus.CONFLICT)
         notes, quality, palette, epoch = self._measure_or_refuse(frame)
         height, width = frame.shape[:2]
         with self._lock:
@@ -1255,6 +1284,7 @@ class GameController:
             self.game = step(self.board, self.game, 1 / 120)
             self._accumulator -= 1 / 120
         if self.game.status != old_status:
+            self._finished_at = now
             self._changed("¡Llegaste!" if self.game.status == GameStatus.WON else
                           "La pelota salió del campo.")
             self._log("attempt_finished", result=self.game.status.value,
@@ -1361,7 +1391,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
                     "/app.css": "app.css", "/app.js": "app.js",
                     "/projector.js": "projector.js", "/ui-core.mjs": "ui-core.mjs",
                     "/api.mjs": "api.mjs", "/live-view.mjs": "live-view.mjs",
-                    "/align-run.mjs": "align-run.mjs",
+                    "/align-run.mjs": "align-run.mjs", "/effects.mjs": "effects.mjs",
                 }
                 if path == "/favicon.ico":
                     self.send_response(HTTPStatus.NO_CONTENT)

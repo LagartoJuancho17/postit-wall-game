@@ -66,29 +66,30 @@ test("invalid live detections invalidate a ready board and cannot launch stale g
   } finally { env.close(); }
 });
 
-test("running and paused attempts retain their collision board while overlays move live", () => {
+test("running and paused attempts keep their board and the camera paused; reset reads it again", () => {
   const env = setup();
   try {
     env.game.preview(env.frame("wall_430"));
     act(env.game, "projection_open", { width: 1280, height: 800 });
     act(env.game, "launch");
     const launchBoard = env.game.snapshot().board;
+    const frozen = env.game.snapshot().live_detection;
     const ball = env.game.snapshot().game.position;
-    env.game.preview(env.frame("wall_540"));
+    // The camera is not read while the ball is in the air (2026-10-26).
+    assert.deepEqual(env.game.preview(env.frame("wall_540")), frozen);
     let state = env.game.snapshot();
     assert.deepEqual(state.board, launchBoard);
     assert.deepEqual(state.game.position, ball);
-    assert.notDeepEqual(state.camera_board.bumpers, launchBoard.bumpers);
-    assert.deepEqual(state.live_detection.roles.bumper.notes, state.camera_board.bumpers);
+    assert.deepEqual(state.camera_board.bumpers, launchBoard.bumpers);
     act(env.game, "pause");
     env.game.preview(env.frame("missing_start"));
     state = env.game.snapshot();
     assert.equal(state.phase, "paused");
     assert.deepEqual(state.board, launchBoard);
-    assert.equal(state.camera_board, null);
-    assert.throws(() => act(env.game, "reset"), /inicio y una llegada/);
-    env.game.preview(env.frame("wall_540"));
+    assert.deepEqual(state.live_detection, frozen, "paused: still not read");
     state = act(env.game, "reset");
+    env.game.preview(env.frame("wall_540"));
+    state = env.game.snapshot();
     assert.equal(state.phase, "ready");
     assert.notDeepEqual(state.board.bumpers, launchBoard.bumpers);
   } finally { env.close(); }
@@ -112,7 +113,7 @@ test("projector resize preserves attempt and camera geometry; gravity uses camer
   } finally { env.close(); }
 });
 
-test("detections expire after 1500 ms while an active attempt remains frozen", () => {
+test("detections expire after 1500 ms, except the view frozen during an attempt", () => {
   const env = setup();
   try {
     env.game.preview(env.frame("wall_430"));
@@ -129,13 +130,13 @@ test("detections expire after 1500 ms while an active attempt remains frozen", (
     act(env.game, "launch");
     act(env.game, "pause");
     const before = env.game.snapshot();
-    env.now.value += 1.501;
+    env.now.value += 5;
     state = env.game.snapshot();
-    assert.equal(state.live_detection, null);
-    assert.equal(state.camera_board, null);
+    assert.deepEqual(state.live_detection, before.live_detection, "frozen at the drop: it does not expire");
+    assert.deepEqual(state.camera_board, before.camera_board);
     assert.deepEqual(state.board, before.board);
     assert.deepEqual(state.game, before.game);
-    assert.throws(() => act(env.game, "reset"), /inicio y una llegada/);
+    assert.equal(state.game.camera_paused, true);
   } finally { env.close(); }
 });
 

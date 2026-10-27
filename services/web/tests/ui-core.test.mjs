@@ -37,8 +37,9 @@ const EXPECTED = {
   running: ["reset"],
   paused_open: ["scan", "reset", "resume", "align"],
   paused_closed: [],
-  won: ["scan", "reset", "align"],
-  lost: ["scan", "reset", "align"],
+  // Captured as the attempt ends: the end effect plays, the camera is paused, no scan.
+  won: ["reset", "align"],
+  lost: ["reset", "align"],
 };
 
 function enabled(controls) {

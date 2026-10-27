@@ -441,8 +441,7 @@ class HotPathTests(unittest.TestCase):
     def test_a_tick_never_waits_for_a_detection(self):
         rig = Rig(self)
         rig.open()
-        rig.preview()
-        rig.act("launch")
+        rig.preview()   # ready, not launched: during an attempt frames are not read at all
         original = server.find_notes
         detected = threading.Event()
         outcome = []

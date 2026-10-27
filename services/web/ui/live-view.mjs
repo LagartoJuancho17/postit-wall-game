@@ -28,6 +28,7 @@ import {
   projectorTheme,
   undistortPoint,
 } from "./ui-core.mjs";
+import { drawGoalEffect, drawLaunchEffect, drawLostEffect, drawTrail, PARTY_COLORS } from "./effects.mjs";
 
 export const LIVE_MAX_AGE_MS = 1500;
 export const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
@@ -334,7 +335,38 @@ export function drawBall(ctx, center, radius, colors) {
   ctx.fill();
 }
 
-function drawGame(ctx, state, mapping, width, height, colors) {
+/**
+ * The colored effects of an attempt (effects.mjs), only while the backend
+ * says the camera is not read: they light the wall in any color.
+ */
+function drawEffects(ctx, { state, mapping, width, height, effects, projected, palette }) {
+  const game = state?.game;
+  // Paused, the wall may be scanned: no colored light then either.
+  if (!effects || game?.camera_paused !== true || game.paused === true) return;
+  const place = (point) => point && placeBall({ ...game, position: point }, state.camera, mapping, width, height);
+  const hex = (role) => palette?.roles?.[role]?.hex ?? FALLBACK_COLORS[role];
+  const paper = (role) => projected.find((note) => note.role === role)?.points ?? null;
+  const ball = place(game.position);
+  const scale = ball ? ball.radius / BALL_RADIUS_PX : 1;
+  if (game.status === "running" && effects.trail?.length > 1) {
+    const points = effects.trail.map(place).filter(Boolean).map((p) => p.center);
+    drawTrail(ctx, { points, radius: ball?.radius ?? BALL_RADIUS_PX, from: hex("start"), to: hex("goal") });
+  }
+  if (Number.isFinite(effects.launchAgeMs)) {
+    drawLaunchEffect(ctx, { ageMs: effects.launchAgeMs, origin: place(effects.launchOrigin)?.center,
+      startPaper: paper("start"), color: hex("start"), scale });
+  }
+  if (game.status === "won" && Number.isFinite(effects.endAgeMs)) {
+    drawGoalEffect(ctx, { ageMs: effects.endAgeMs, goalPaper: paper("goal"),
+      colors: ["start", "goal", "bumper"].map(hex), scale });
+  }
+  if (game.status === "lost" && Number.isFinite(effects.endAgeMs)) {
+    drawLostEffect(ctx, { ageMs: effects.endAgeMs, origin: place(effects.endOrigin)?.center, scale });
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawGame(ctx, state, mapping, width, height, colors, effects = null) {
   const game = state?.game;
   if (!game) return;
   // The ball appears when it is released (Tobias, 2026-10-26): not while ready.
@@ -346,6 +378,9 @@ function drawGame(ctx, state, mapping, width, height, colors) {
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = colors.ball;
+    // Won, while the camera is paused: the text cycles through party colors.
+    const party = game.status === "won" && game.camera_paused === true && Number.isFinite(effects?.endAgeMs);
+    if (party) ctx.fillStyle = PARTY_COLORS[Math.floor(effects.endAgeMs / 120) % PARTY_COLORS.length];
     ctx.fillText(RESULT_TEXTS[game.status], width / 2, 75);
   }
 }
@@ -368,7 +403,7 @@ function drawHint(ctx, height, color) {
  */
 export function drawProjectorScene(ctx, {
   state = null, preview = state?.live_detection, palette = state?.palette, theme = "dark",
-  width, height, fresh = true, forceFill = false,
+  width, height, fresh = true, forceFill = false, effects = null,
 } = {}) {
   if (!positive(width) || !positive(height)) return;
   const colors = neutralColors(theme);
@@ -393,7 +428,8 @@ export function drawProjectorScene(ctx, {
     }
   }
   if (matrix && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
-  drawGame(ctx, state, mapping, width, height, colors);
+  drawEffects(ctx, { state, mapping, width, height, effects, projected, palette });
+  drawGame(ctx, state, mapping, width, height, colors, effects);
   if (!matrix) drawHint(ctx, height, colors.rim);
   ctx.restore();
 }

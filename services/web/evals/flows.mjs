@@ -50,8 +50,7 @@ const JOURNEY = [
   ["no_markers", "launch"],
   ["ready", "launch"],
   ["running", "reset"],
-  ["won", "reset"],
-  ["won", "scan"],
+  ["won", "reset"],   // scan waits for the end effect (camera paused), reset does not
   ["lost", "reset"],
   ["paused_open", "resume"],
   ["paused_open", "scan"],

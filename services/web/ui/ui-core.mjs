@@ -111,8 +111,10 @@ export function controlsFor(state, cameraReady, popupReady) {
   const live = Boolean(cameraReady) && popup;
   const detected = Boolean(state?.camera_board && state?.live_detection);
   const framed = state?.camera?.width > 0;
+  // During the end effect the backend refuses a scan (it would read the effects).
+  const endEffect = state?.game?.camera_paused === true && (phase === "won" || phase === "lost");
   return {
-    scan: live && !moving,
+    scan: live && !moving && !endEffect,
     launch: live && detected && phase === "ready",
     reset: popup && detected && phase !== "none",
     resume: popup && phase === "paused",

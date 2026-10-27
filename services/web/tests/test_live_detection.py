@@ -8,6 +8,7 @@ import cv2
 
 from services.physics import GRAVITY_SHARE
 from services.web.backend.eval import FRAME_HUES, _color, _image
+from services.web.backend import server
 from services.web.backend.server import GameController, RequestError
 
 
@@ -82,40 +83,58 @@ class LiveDetectionTests(unittest.TestCase):
         self.game.preview_jpeg(jpeg())
         self.assertEqual(self.game.action({'action': 'launch'})['phase'], 'running')
 
-    def test_live_updates_never_move_ball_or_collision_geometry_mid_attempt(self) -> None:
+    def test_the_camera_is_not_read_from_the_drop_until_the_end_effect_is_over(self) -> None:
+        # Tobias, 2026-10-26: the projector plays colored effects while the
+        # ball is in the air and when it ends; the camera must not read them.
         running = self.launch()
+        self.assertTrue(running['game']['camera_paused'])
+        frozen = running['live_detection']
         self.now += 0.1
-        before = self.game.tick()
-        preview = self.game.preview_jpeg(jpeg(green_x=540))
+        self.game.tick()
+        preview = self.game.preview_jpeg(jpeg(green_x=540))   # a note moved: not read
         after = self.game.snapshot()
+        self.assertEqual(preview, frozen)
+        self.assertEqual(after['live_detection'], frozen)
+        self.assertEqual(after['camera_board']['bumpers'], running['board']['bumpers'])
         self.assertEqual(after['board'], running['board'])
-        self.assertEqual(after['game'], before['game'])
-        self.assertNotEqual(after['camera_board']['bumpers'], after['board']['bumpers'])
-        self.assertEqual(after['live_detection'], preview)
+        # Play it out: the end effect keeps the camera paused for END_EFFECT_S.
+        while self.game.snapshot()['game']['status'] == 'running':
+            self.now += 0.05
+            self.game.tick()
+        ended = self.now
+        self.assertTrue(self.game.snapshot()['game']['camera_paused'])
+        self.assertEqual(self.game.preview_jpeg(jpeg(green_x=540)), frozen)
+        self.now = ended + server.END_EFFECT_S + 0.01
+        self.assertFalse(self.game.snapshot()['game']['camera_paused'])
+        moved = self.game.preview_jpeg(jpeg(green_x=540))   # read again
+        self.assertNotEqual(moved['roles']['bumper']['notes'], frozen['roles']['bumper']['notes'])
         reset = self.game.action({'action': 'reset'})
-        self.assertEqual(reset['board'], after['camera_board'])
+        self.assertEqual(reset['board'], self.game.snapshot()['camera_board'])
         self.assertEqual(reset['phase'], 'ready')
-        self.assertEqual(reset['game']['attempts'], 1)
+        self.assertFalse(reset['game']['camera_paused'])
 
-    def test_invalid_preview_preserves_attempt_but_refuses_reset(self) -> None:
+    def test_a_frame_during_the_attempt_never_breaks_the_board(self) -> None:
+        # A hand over the start, or the effects, while the ball flies: not read.
         running = self.launch()
         self.game.preview_jpeg(jpeg(start=False))
         state = self.game.snapshot()
         self.assertEqual(state['board'], running['board'])
         self.assertEqual(state['phase'], 'running')
-        self.assertIsNone(state['camera_board'])
-        with self.assertRaises(RequestError):
-            self.game.action({'action': 'reset'})
+        self.assertEqual(state['camera_board'], running['camera_board'])
         self.assertEqual(self.game.snapshot()['game'], running['game'])
 
-    def test_paused_attempt_keeps_collision_geometry_until_reset(self) -> None:
+    def test_paused_attempt_keeps_the_camera_paused_and_reset_reads_it_again(self) -> None:
         self.launch()
         before = self.game.action({'action': 'pause'})
+        self.assertTrue(before['game']['camera_paused'])
         self.game.preview_jpeg(jpeg(green_x=540))
         state = self.game.snapshot()
         self.assertEqual(state['board'], before['board'])
         self.assertEqual(state['game'], before['game'])
-        self.assertNotEqual(state['camera_board']['bumpers'], state['board']['bumpers'])
+        self.assertEqual(state['camera_board']['bumpers'], state['board']['bumpers'])
+        self.game.action({'action': 'reset'})
+        moved = self.game.preview_jpeg(jpeg(green_x=540))
+        self.assertEqual(self.game.snapshot()['board']['bumpers'], moved['roles']['bumper']['notes'])
 
     def test_projection_resize_preserves_camera_coordinates_attempt_and_gravity(self) -> None:
         running = self.launch()
@@ -140,15 +159,13 @@ class LiveDetectionTests(unittest.TestCase):
         with self.assertRaises(RequestError):
             self.game.action({'action': 'launch'})
 
-    def test_expiration_does_not_end_an_active_attempt(self) -> None:
+    def test_the_frozen_view_does_not_expire_during_the_attempt(self) -> None:
         before = self.launch()
-        self.now = 1.501
-        expired = self.game.snapshot()
-        self.assertIsNone(expired['live_detection'])
-        self.assertEqual(expired['board'], before['board'])
-        self.assertEqual(expired['game'], before['game'])
-        with self.assertRaises(RequestError):
-            self.game.action({'action': 'reset'})
+        self.now = 5.0   # no frames for 5 s while the ball flies (projector ticks paused)
+        state = self.game.snapshot()
+        self.assertEqual(state['live_detection'], before['live_detection'])
+        self.assertEqual(state['board'], before['board'])
+        self.assertEqual(state['game'], before['game'])
 
     def test_changed_frame_size_keeps_attempt_coordinates_until_reset(self) -> None:
         running = self.launch()
@@ -171,7 +188,9 @@ class LiveDetectionTests(unittest.TestCase):
         self.assertIsNone(changed['live_detection'])
         self.assertIsNone(changed['camera_board'])
         self.assertEqual(changed['board'], running['board'])
-        self.assertEqual(changed['game'], running['game'])
+        # Nothing frozen is left to show: the camera is read again.
+        self.assertEqual({**changed['game'], 'camera_paused': True}, running['game'])
+        self.assertFalse(changed['game']['camera_paused'])
         with self.assertRaises(RequestError):
             self.game.action({'action': 'reset'})
 

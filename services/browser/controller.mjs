@@ -24,6 +24,9 @@ const LIVE_DETECTION_MAX_AGE_S = 1.5;
 // A run and its overlay check hold the last detection (previews are paused);
 // a run that stops sending frames is cancelled (server.py, same values).
 const ALIGN_HOLD_S = 20.0;
+// From the drop until END_EFFECT_S after the attempt ends the camera is not
+// read: the projector plays colored effects (server.py END_EFFECT_S).
+export const END_EFFECT_S = 2.5;
 const ALIGN_STALL_S = 20.0;
 
 // Camera <-> projector alignment and the overlay check
@@ -367,6 +370,7 @@ export class GameController {
     this.overlay = overlayState("unchecked", []);
     this.checkFrames = new Map();
     this.holdUntil = null;
+    this.finishedAt = null; // clock when the current attempt ended
     this.alignActivity = null;
     this.cameraEpoch = 0;
     this.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J.";
@@ -474,6 +478,7 @@ export class GameController {
         gravity_px_s2: pyRound(Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE, 3),
         attempts: this.attempts,
         paused: this.paused,
+        camera_paused: this.cameraPaused(),
       },
       projection: {
         open: this.projectorOpen,
@@ -482,6 +487,15 @@ export class GameController {
         height: this.projectorHeight,
       },
     };
+  }
+
+  /** The camera is not read: an attempt is in the air (paused too), or its end effect still plays. */
+  cameraPaused() {
+    const game = this.game;
+    if (game === null || this.liveDetection === null) return false;
+    if (game.status === GameStatus.RUNNING) return true;
+    return (game.status === GameStatus.WON || game.status === GameStatus.LOST) && this.finishedAt !== null
+      && this.clock() - this.finishedAt < END_EFFECT_S;
   }
 
   holdDetection() {
@@ -513,6 +527,7 @@ export class GameController {
       if (now < this.holdUntil) return;
       this.holdUntil = null;
     }
+    if (this.cameraPaused()) return; // the view frozen at the drop does not expire
     if (this.liveDetectionAt !== null && now - this.liveDetectionAt > LIVE_DETECTION_MAX_AGE_S) {
       this.clearDetection();
       this.changed("Esperando detección en vivo de la cámara.");
@@ -740,12 +755,13 @@ export class GameController {
       }
       const gravity = Math.min(this.boardWidth, this.boardHeight) * GRAVITY_SHARE;
       this.game = drop(this.board, gravity);
+      this.finishedAt = null;
       this.attempts += 1;
       this.paused = false;
       this.lastTick = this.clock();
       this.accumulator = 0.0;
       this.projectionMode = "live";
-      this.changed("Pelota soltada.");
+      this.changed("Pelota soltada. La cámara no lee la pared hasta que termine el efecto.");
       this.log("attempt_started", { attempt: this.attempts, gravity_px_s2: pyRound(gravity, 1) });
     } else if (name === "reset") {
       if (this.cameraBoard === null || this.candidate === null) {
@@ -998,6 +1014,13 @@ export class GameController {
   /** Publish every visible note and update the next playable board. */
   preview(frame, camera = null, ticket = null) {
     const label = this.scanLabel(camera);
+    // During an attempt the frame is not read, unless it comes from another
+    // camera or size (that still ends the attempt).
+    if (this.cameraPaused() && (label === null || label === this.frameCamera)
+        && frame.cols === this.frameWidth && frame.rows === this.frameHeight) {
+      this.liveDetectionAt = this.clock();
+      return JSON.parse(JSON.stringify(this.liveDetection));
+    }
     const { notes, quality } = this.measureOrRefuse(frame);
     if (ticket && (ticket.epoch !== this.cameraEpoch || ticket.palette !== this.palette)) {
       // The camera or the colors changed while this frame was decoded: its
@@ -1027,6 +1050,9 @@ export class GameController {
     const label = this.scanLabel(camera);
     const running = () => this.game !== null && this.game.status === GameStatus.RUNNING && !this.paused;
     if (running()) throw new RequestError("Terminá o pausá el intento antes de escanear.", HTTP.CONFLICT);
+    if (this.cameraPaused() && this.game.status !== GameStatus.RUNNING) {
+      throw new RequestError("Esperá a que termine el efecto antes de escanear.", HTTP.CONFLICT);
+    }
     const { notes, quality } = this.measureOrRefuse(frame);
     if (ticket && ticket.palette !== this.palette) {
       throw new RequestError("Los colores cambiaron durante la lectura. Volvé a escanear.", HTTP.CONFLICT);
@@ -1232,6 +1258,7 @@ export class GameController {
       this.accumulator -= 1 / 120;
     }
     if (this.game.status !== oldStatus) {
+      this.finishedAt = now;
       this.changed(this.game.status === GameStatus.WON ? "¡Llegaste!" : "La pelota salió del campo.");
       this.log("attempt_finished", { result: this.game.status, elapsed_s: pyRound(this.game.elapsed_s, 3),
         bounces: this.game.bounce_count });

@@ -488,6 +488,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1280.0,
      "height": 800,
@@ -732,7 +733,7 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": false
    },
    "state": {
     "alignment": {
@@ -1096,6 +1097,7 @@
     "game": {
      "attempts": 1,
      "bounces": 0,
+     "camera_paused": true,
      "elapsed_s": 0.742,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -1331,7 +1333,7 @@
      "open": true,
      "width": 1280
     },
-    "revision": 5
+    "revision": 4
    }
   },
   "no_markers": {
@@ -1542,6 +1544,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -1739,6 +1742,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 0.0,
      "height": 0,
@@ -2323,6 +2327,7 @@
     "game": {
      "attempts": 1,
      "bounces": 0,
+     "camera_paused": true,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -2931,6 +2936,7 @@
     "game": {
      "attempts": 1,
      "bounces": 0,
+     "camera_paused": true,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -3209,6 +3215,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 0.0,
      "height": 0,
@@ -3637,6 +3644,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -4245,6 +4253,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -4853,6 +4862,7 @@
     "game": {
      "attempts": 1,
      "bounces": 0,
+     "camera_paused": true,
      "elapsed_s": 0.0,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -5043,7 +5053,7 @@
      },
      "width": 960
     },
-    "message": "Pelota soltada.",
+    "message": "Pelota soltada. La cámara no lee la pared hasta que termine el efecto.",
     "palette": {
      "custom": false,
      "roles": {
@@ -5131,6 +5141,7 @@
     "game": {
      "attempts": 0,
      "bounces": 0,
+     "camera_paused": false,
      "elapsed_s": 0.0,
      "gravity_px_s2": 0.0,
      "height": 0,
@@ -5195,7 +5206,7 @@
     "launch": false,
     "reset": true,
     "resume": false,
-    "scan": true
+    "scan": false
    },
    "state": {
     "alignment": {
@@ -5559,6 +5570,7 @@
     "game": {
      "attempts": 1,
      "bounces": 0,
+     "camera_paused": true,
      "elapsed_s": 0.469,
      "gravity_px_s2": 1152.0,
      "height": 720,
@@ -5794,7 +5806,7 @@
      "open": true,
      "width": 1280
     },
-    "revision": 5
+    "revision": 4
    }
   }
  },

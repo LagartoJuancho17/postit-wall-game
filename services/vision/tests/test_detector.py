@@ -115,3 +115,39 @@ class DetectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnclosingArtifactTests(unittest.TestCase):
+    """Regression (2026-10-26): the projector's white edge on an orange goal
+    read as a yellow ring around it, a second "start" that made the board
+    ambiguous, and the projector then lit that phantom."""
+
+    def frame(self, ring: bool) -> np.ndarray:
+        from services.vision.tests.scene import bgr
+        image = np.full((480, 640, 3), 150, np.uint8)
+        cv2.rectangle(image, (80, 200), (140, 260), bgr(30), -1)           # the real start
+        if ring:
+            cv2.rectangle(image, (392, 192), (468, 268), bgr(28), -1)       # yellowish light around the goal
+        cv2.rectangle(image, (400, 200), (460, 260), bgr(12), -1)           # the real goal
+        return image
+
+    def test_a_note_enclosing_a_smaller_note_of_another_role_is_dropped(self) -> None:
+        from services.vision import find_notes
+        notes = find_notes(self.frame(ring=True))
+        self.assertEqual(len(notes["goal"]), 1)
+        self.assertEqual(len(notes["start"]), 1, "only the real start, not the ring around the goal")
+        start = notes["start"][0]
+        self.assertLess(max(p.x for p in start.points), 200, "the kept start is the real one, on the left")
+
+    def test_without_the_ring_nothing_changes(self) -> None:
+        from services.vision import find_notes
+        notes = find_notes(self.frame(ring=False))
+        self.assertEqual((len(notes["start"]), len(notes["goal"])), (1, 1))
+
+    def test_the_rule_without_the_filter_would_see_two_starts(self) -> None:
+        from services.vision import detector
+        image = self.frame(ring=True)
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        from services.vision.palette import DEFAULT_PALETTE
+        raw = detector._find_candidates(hsv, DEFAULT_PALETTE.rule("start"), None)
+        self.assertEqual(len(raw), 2, "the ring is really detected as a start before the filter")

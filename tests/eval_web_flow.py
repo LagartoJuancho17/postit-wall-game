@@ -74,7 +74,11 @@ def _case(name: str, **frame_options: object) -> dict[str, object]:
     controller.preview_jpeg(_jpeg(green_center=(515, 245), **frame_options))
     if controller.snapshot()["board"] != board:
         raise AssertionError("Live post-it movement changed an active attempt")
-    rescanned = controller.action({"action": "reset"})
+    if not controller.snapshot()["game"]["camera_paused"]:
+        raise AssertionError("The camera must not be read while the ball is in the air")
+    controller.action({"action": "reset"})
+    controller.preview_jpeg(_jpeg(green_center=(515, 245), **frame_options))   # read again after reset
+    rescanned = controller.snapshot()
     new_green = _center(rescanned["board"]["bumpers"][0])
     old_green = actual[2]
     moved_distance = _error(old_green, new_green)

@@ -402,7 +402,35 @@ def _candidates_by_role(frame_bgr: np.ndarray, palette: Palette,
     if bridge is not None and (bridge.shape != frame_bgr.shape[:2] or bridge.dtype != np.uint8):
         raise ValueError("bridge debe ser una máscara uint8 del tamaño del cuadro")
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-    return {role: _find_candidates(hsv, palette.rule(role), bridge) for role in ROLES}
+    found = {role: _find_candidates(hsv, palette.rule(role), bridge) for role in ROLES}
+    return _drop_enclosing(found)
+
+
+def _inside(polygon: Polygon, point: Point) -> bool:
+    """`point` inside the convex `polygon` (either winding), boundary included."""
+    signs = set()
+    points = polygon.points
+    for index, a in enumerate(points):
+        b = points[(index + 1) % len(points)]
+        cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x)
+        if cross != 0:
+            signs.add(cross > 0)
+    return len(signs) <= 1
+
+
+def _drop_enclosing(found: dict[str, list[_Candidate]]) -> dict[str, list[_Candidate]]:
+    """Drop a note that encloses a smaller note of another role.
+
+    Paper notes never lie on top of each other. A ring around a note is the
+    projector's own light on its edge read in another color (2026-10-26: the
+    white edge on an orange goal read as a yellow start around it, and the
+    projector then lit that phantom). The smaller, inner note is the paper.
+    """
+    return {role: [candidate for candidate in found[role]
+                   if not any(other_role != role and other.area < candidate.area
+                              and _inside(candidate.polygon, other.center)
+                              for other_role in ROLES for other in found[other_role])]
+            for role in ROLES}
 
 
 def find_notes(frame_bgr: np.ndarray, palette: Palette = DEFAULT_PALETTE,

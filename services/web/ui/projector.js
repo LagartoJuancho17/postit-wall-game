@@ -10,6 +10,7 @@ import {
 } from "./ui-core.mjs";
 import { createApi } from "./api.mjs";
 import { drawAlignmentPattern, drawProjectorScene, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
+import { effectAges, trackEffects } from "./effects.mjs";
 
 const api = createApi("projector");
 
@@ -33,6 +34,7 @@ let resizeTimer = null;
 let viewport = projectionSize(window);
 let theme = storedTheme();
 let backdrop = readBackdrop(window.localStorage);   // the operator's own background, or null
+let tracked = null;   // effects.mjs trackEffects: timing of the attempt's effects
 
 function storedTheme() {
   try {
@@ -105,6 +107,8 @@ let lastRegister = 0;
 function applyState(next) {
   state = next;
   stateReceivedAt = performance.now();
+  // When the attempt was dropped and ended, and the ball's trail (effects.mjs).
+  tracked = trackEffects(tracked, next?.game, stateReceivedAt);
   // A backend that forgot this window (web.py restarted, or the panel
   // reloaded and started a new in-browser backend) learns it again.
   if (next?.projection?.open === false && performance.now() - lastRegister > 1000) {
@@ -174,6 +178,7 @@ function draw() {
   drawProjectorScene(ctx, {
     state, preview: fresh ? state?.live_detection : null, palette: state?.palette,
     theme, width: viewport.width, height: viewport.height, fresh, forceFill: scene.forceFill,
+    effects: effectAges(tracked, performance.now()),
   });
 }
 
