@@ -12,7 +12,8 @@ export const LAUNCH_EFFECT_MS = 700;
 export const GOAL_EFFECT_MS = 2400;   // shorter than the backend's END_EFFECT_S (2.5 s)
 export const LOST_EFFECT_MS = 900;
 export const TRAIL_LENGTH = 16;       // ball positions kept for the trail
-export const GOAL_PARTICLES = 96;
+export const GOAL_PARTICLES = 160;
+export const GOAL_RAYS = 14;
 export const PARTY_COLORS = ["#ffd166", "#06d6a0", "#4cc9f0", "#ef476f", "#f72585", "#b8f2e6", "#ffffff"];
 
 const TAU = Math.PI * 2;
@@ -110,13 +111,14 @@ export function drawLaunchEffect(ctx, { ageMs, origin, startPaper = null, color 
     fillPolygonPath(ctx, startPaper);
     ctx.fill();
   }
-  ring(ctx, origin, scale * (12 + 70 * easeOut(t)), 4 * scale, color, 0.9 * (1 - t));
-  ring(ctx, origin, scale * (8 + 45 * easeOut(Math.max(0, t - 0.15) / 0.85)), 2 * scale, "#ffffff", 0.7 * (1 - t));
-  for (let i = 0; i < 12; i += 1) {
-    const angle = TAU * (i / 12) + noise(i, 1) * 0.4;
-    const reach = scale * (18 + 55 * easeOut(t) * (0.7 + 0.6 * noise(i, 2)));
+  dot(ctx, origin, scale * 26 * (1 - t), "#ffffff", 0.55 * (1 - t));   // the pop of light at the ball
+  ring(ctx, origin, scale * (14 + 120 * easeOut(t)), 9 * scale * (1 - t) + 2, color, 0.95 * (1 - t));
+  ring(ctx, origin, scale * (10 + 80 * easeOut(Math.max(0, t - 0.12) / 0.88)), 4 * scale, "#ffffff", 0.8 * (1 - t));
+  for (let i = 0; i < 18; i += 1) {
+    const angle = TAU * (i / 18) + noise(i, 1) * 0.35;
+    const reach = scale * (22 + 105 * easeOut(t) * (0.7 + 0.6 * noise(i, 2)));
     const spark = { x: origin.x + Math.cos(angle) * reach, y: origin.y + Math.sin(angle) * reach };
-    dot(ctx, spark, scale * 3 * (1 - t), i % 3 === 0 ? "#ffffff" : color, 1 - t);
+    dot(ctx, spark, scale * 6 * (1 - t) + 1, i % 3 === 0 ? "#ffffff" : color, 1 - t);
   }
   ctx.globalAlpha = 1;
 }
@@ -127,7 +129,7 @@ export function drawTrail(ctx, { points, radius, from = "#ffd166", to = "#ef476f
   const n = points.length;
   for (let i = 0; i < n - 1; i += 1) {
     const k = (i + 1) / n;   // 0 oldest .. 1 newest
-    dot(ctx, points[i], radius * (0.25 + 0.6 * k), k < 0.5 ? from : to, 0.08 + 0.42 * k);
+    dot(ctx, points[i], radius * (0.45 + 0.75 * k), k < 0.5 ? from : to, 0.12 + 0.5 * k);
   }
   ctx.globalAlpha = 1;
 }
@@ -148,17 +150,32 @@ export function drawGoalEffect(ctx, { ageMs, goalPaper, colors = [], scale = 1 }
   ctx.fillStyle = "#ffffff";
   fillPolygonPath(ctx, goalPaper);
   ctx.fill();
-  for (let k = 0; k < 3; k += 1) {
-    const local = (seconds - 0.18 * k) / 1.1;
-    if (local <= 0 || local >= 1) continue;
-    ring(ctx, center, size * (0.5 + 3.2 * easeOut(local)), 6 * scale * (1 - local) + 1, palette[k % palette.length],
-      0.9 * (1 - local));
+  // Rays of light from the goal, turning slowly, for the first second.
+  if (seconds < 1.2) {
+    const fade = 1 - seconds / 1.2;
+    const length = size * (1.2 + 5 * easeOut(Math.min(1, seconds / 0.5)));
+    for (let k = 0; k < GOAL_RAYS; k += 1) {
+      const angle = TAU * (k / GOAL_RAYS) + seconds * 0.8;
+      ctx.globalAlpha = 0.55 * fade;
+      ctx.strokeStyle = palette[k % palette.length];
+      ctx.lineWidth = scale * (10 * fade + 2);
+      ctx.beginPath();
+      ctx.moveTo(center.x + Math.cos(angle) * size * 0.6, center.y + Math.sin(angle) * size * 0.6);
+      ctx.lineTo(center.x + Math.cos(angle) * length, center.y + Math.sin(angle) * length);
+      ctx.stroke();
+    }
   }
-  const gravity = 900 * scale;
+  for (let k = 0; k < 4; k += 1) {
+    const local = (seconds - 0.2 * k) / 1.3;
+    if (local <= 0 || local >= 1) continue;
+    ring(ctx, center, size * (0.6 + 5 * easeOut(local)), 14 * scale * (1 - local) + 2, palette[k % palette.length],
+      0.95 * (1 - local));
+  }
+  const gravity = 700 * scale;
   for (let i = 0; i < GOAL_PARTICLES; i += 1) {
     const angle = TAU * noise(i, 3);
-    const speed = scale * (220 + 520 * noise(i, 4));
-    const life = 0.9 + 1.4 * noise(i, 5);
+    const speed = scale * (260 + 760 * noise(i, 4));
+    const life = 1.0 + 1.35 * noise(i, 5);
     if (seconds >= life) continue;
     const drag = 1 - Math.min(0.6, seconds * 0.35);
     const p = {
@@ -166,7 +183,7 @@ export function drawGoalEffect(ctx, { ageMs, goalPaper, colors = [], scale = 1 }
       y: center.y + Math.sin(angle) * speed * seconds * drag + 0.5 * gravity * seconds * seconds,
     };
     const fade = 1 - seconds / life;
-    dot(ctx, p, scale * (2 + 4 * noise(i, 6)) * (0.4 + 0.6 * fade), palette[i % palette.length], fade);
+    dot(ctx, p, scale * (4 + 7 * noise(i, 6)) * (0.45 + 0.55 * fade), palette[i % palette.length], fade);
   }
   ctx.globalAlpha = 1;
 }
@@ -175,7 +192,7 @@ export function drawGoalEffect(ctx, { ageMs, goalPaper, colors = [], scale = 1 }
 export function drawLostEffect(ctx, { ageMs, origin, color = "#9aa6aa", scale = 1 }) {
   if (!(ageMs >= 0 && ageMs < LOST_EFFECT_MS) || !origin) return;
   const t = ageMs / LOST_EFFECT_MS;
-  ring(ctx, origin, scale * (10 + 40 * easeOut(t)), 3 * scale, color, 0.6 * (1 - t));
+  ring(ctx, origin, scale * (12 + 60 * easeOut(t)), 5 * scale, color, 0.6 * (1 - t));
   for (let i = 0; i < 8; i += 1) {
     const angle = TAU * (i / 8) + 0.3;
     const reach = scale * 30 * easeOut(t);

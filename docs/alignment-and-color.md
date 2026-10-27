@@ -457,8 +457,8 @@ escanear.`). While `camera_paused` is true the projector may light the
 wall in any color (`services/web/ui/effects.mjs`): on the drop a white
 flash over the start paper, two rings and twelve sparks in the start
 color (0.7 s); a trail from the start color to the goal color while it
-falls; on the goal a pulsing flash over the goal paper, three rings and 96
-falling sparks in the role and party colors, and the result text cycling
+falls; on the goal a pulsing flash over the goal paper, rings, rays and
+falling sparks in the role and party colors (160 sparks, 14 turning rays, four rings), and the result text cycling
 those colors (2.4 s); out of the field a short gray puff (0.9 s). With
 `camera_paused` false nothing colored is drawn outside a paper, as
 before. The simulated projector does not draw the effects: the camera is
