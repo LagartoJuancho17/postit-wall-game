@@ -2,9 +2,9 @@
 
 import math
 import unittest
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
-from contracts.model import Board, Point, Polygon
+from contracts.model import Board, Point, Polygon, Portal
 from services.physics import BALL_RADIUS_PX, DROP_GAP_PX, GameStatus, drop, drop_point, drop_ready_state, launch, ready_state, step
 from services.physics.engine import STALL_S, STILL_SPEED_PX_S
 
@@ -287,3 +287,85 @@ class DropTests(unittest.TestCase):
         state = step(game, state, 1 / 120)
         self.assertGreater(self.G / 120, STILL_SPEED_PX_S * 0)   # moving from the first step on
         self.assertEqual(state.still_s, 0.0 if self.G / 120 >= STILL_SPEED_PX_S else 1 / 120)
+
+
+class LevelObstacleTests(unittest.TestCase):
+    """Contract 3.2: a level's walls bounce, spikes lose, portals move the ball."""
+
+    G = 480.0
+
+    def field(self, **obstacles):
+        return replace(board(start=rectangle(40, 20, 60, 40), goal=rectangle(400, 260, 420, 280)), **obstacles)
+
+    def run_drop(self, game, seconds=6.0):
+        state = drop(game, self.G)
+        for _ in range(int(seconds * 120)):
+            state = step(game, state, 1 / 120)
+            if state.status != GameStatus.RUNNING:
+                break
+        return state
+
+    def test_a_wall_bounces_like_a_bumper_and_counts_as_a_bounce(self):
+        game = self.field(walls=(rectangle(20, 150, 80, 160),))
+        state = drop(game, self.G)
+        for _ in range(120 * 3):
+            state = step(game, state, 1 / 120)
+            if state.bounce_count:
+                break
+        self.assertEqual(state.bounce_count, 1)
+        self.assertLess(state.velocity.y, 0, "it goes back up after the wall")
+        self.assertLessEqual(state.position.y, 150 - BALL_RADIUS_PX + 1e-6)
+
+    def test_touching_spikes_loses_at_the_touch_with_its_reason(self):
+        state = self.run_drop(self.field(spikes=(rectangle(20, 150, 80, 160),)))
+        self.assertEqual((state.status, state.ended_by), (GameStatus.LOST, "spikes"))
+        self.assertAlmostEqual(state.position.y, 150 - BALL_RADIUS_PX, places=6)
+
+    def test_every_end_names_why(self):
+        self.assertEqual(self.run_drop(board(start=rectangle(40, 20, 60, 40))).ended_by, "exit")
+        won = self.run_drop(board(start=rectangle(390, 20, 410, 40), goal=rectangle(390, 200, 420, 230)))
+        self.assertEqual((won.status, won.ended_by), (GameStatus.WON, "goal"))
+        flat = self.run_drop(self.field(walls=(rectangle(0, 150, 500, 160),)), seconds=30)
+        self.assertEqual((flat.status, flat.ended_by), (GameStatus.LOST, "stall"))
+        self.assertEqual(drop(board(), self.G).ended_by, "")
+
+    def test_a_portal_moves_the_ball_to_its_exit_with_the_same_velocity(self):
+        portal = Portal(rectangle(20, 150, 80, 160), Point(410, 120))
+        game = self.field(portals=(portal,))
+        state = drop(game, self.G)
+        before = None
+        while state.status == GameStatus.RUNNING and state.position.x < 100:
+            before = state
+            state = step(game, state, 1 / 120)
+        self.assertEqual(state.status, GameStatus.RUNNING)
+        self.assertAlmostEqual(state.position.x, 410)
+        self.assertGreater(state.position.y, 120)
+        self.assertAlmostEqual(state.velocity.y, before.velocity.y + self.G / 120, places=6)
+        final = self.run_drop(game)
+        self.assertEqual((final.status, final.ended_by), (GameStatus.WON, "goal"))
+
+    def test_the_ball_at_rest_may_not_touch_a_level_obstacle(self):
+        start = rectangle(40, 20, 60, 40)
+        under = rectangle(30, 45, 70, 60)
+        for field, reason in ((dict(walls=(under,)), "start overlaps a wall"),
+                              (dict(spikes=(under,)), "start overlaps spikes"),
+                              (dict(portals=(Portal(under, Point(400, 100)),)), "start overlaps a portal")):
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
+                drop_ready_state(replace(board(start=start), **field))
+
+    def test_obstacles_are_validated_like_notes(self):
+        bent = Polygon((Point(100, 100), Point(200, 100), Point(150, 120), Point(150, 200)))
+        for field, label in ((dict(walls=(bent,)), "wall 0"), (dict(spikes=(bent,)), "spikes 0"),
+                             (dict(portals=(Portal(bent, Point(1, 1)),)), "portal 0"),
+                             (dict(portals=(Portal(rectangle(100, 100, 120, 120), Point(math.nan, 1)),)),
+                              "portal 0 must have a finite exit")):
+            with self.subTest(label=label), self.assertRaisesRegex(ValueError, label):
+                drop_ready_state(replace(board(), **field))
+
+    def test_a_board_without_obstacles_moves_bit_for_bit_as_before(self):
+        plain = board(start=rectangle(40, 20, 60, 40), bumpers=(rectangle(20, 150, 80, 160),))
+        empty = replace(plain, walls=(), spikes=(), portals=())
+        a, b = drop(plain, self.G), drop(empty, self.G)
+        for _ in range(600):
+            a, b = step(plain, a, 1 / 120), step(empty, b, 1 / 120)
+        self.assertEqual(a, b)

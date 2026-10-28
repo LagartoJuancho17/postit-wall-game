@@ -58,6 +58,9 @@ class GameState:
     status: GameStatus
     gravity_px_s2: float = 0.0   # pulls toward +y (down the wall)
     still_s: float = 0.0         # how long the ball has been slower than STILL_SPEED_PX_S
+    # Why an attempt ended: "goal", "exit" (left the playfield), "spikes",
+    # "stall" (stopped) or "timeout"; "" while ready or running.
+    ended_by: str = ""
 
 
 @dataclass(frozen=True)
@@ -113,8 +116,28 @@ def _validate_board(board: Board) -> None:
         ("start", board.start),
         ("goal", board.goal),
         *((f"bumper {i}", polygon) for i, polygon in enumerate(board.bumpers)),
+        *((f"wall {i}", polygon) for i, polygon in enumerate(board.walls)),
+        *((f"spikes {i}", polygon) for i, polygon in enumerate(board.spikes)),
+        *((f"portal {i}", portal.entry) for i, portal in enumerate(board.portals)),
     ):
         _validate_polygon(polygon, label)
+    for i, portal in enumerate(board.portals):
+        if not math.isfinite(portal.exit.x) or not math.isfinite(portal.exit.y):
+            raise ValueError(f"portal {i} must have a finite exit")
+
+
+def _check_start(position: Point, board: Board) -> None:
+    """What may not touch the ball at rest, in the order an operator fixes it."""
+    if _overlaps_polygon(position, board.goal):
+        raise ValueError("start overlaps goal")
+    if any(_overlaps_polygon(position, obstacle) for obstacle in board.bumpers):
+        raise ValueError("start overlaps a bumper")
+    if any(_overlaps_polygon(position, wall) for wall in board.walls):
+        raise ValueError("start overlaps a wall")
+    if any(_overlaps_polygon(position, spikes) for spikes in board.spikes):
+        raise ValueError("start overlaps spikes")
+    if any(_overlaps_polygon(position, portal.entry) for portal in board.portals):
+        raise ValueError("start overlaps a portal")
 
 
 def _centroid(polygon: Polygon) -> Point:
@@ -160,10 +183,7 @@ def ready_state(board: Board) -> GameState:
     position = _centroid(board.start)
     if not _fits_playfield(position, board.playfield):
         raise ValueError("start centroid must fit inside playfield with ball radius")
-    if _overlaps_polygon(position, board.goal):
-        raise ValueError("start overlaps goal")
-    if any(_overlaps_polygon(position, obstacle) for obstacle in board.bumpers):
-        raise ValueError("start overlaps a bumper")
+    _check_start(position, board)
     return GameState(position, Point(0.0, 0.0), 0.0, 0, GameStatus.READY)
 
 
@@ -198,10 +218,7 @@ def drop_ready_state(board: Board) -> GameState:
     position = drop_point(board)
     if not _fits_playfield(position, board.playfield):
         raise ValueError("the ball must fit inside the playfield under the start note")
-    if _overlaps_polygon(position, board.goal):
-        raise ValueError("start overlaps goal")
-    if any(_overlaps_polygon(position, obstacle) for obstacle in board.bumpers):
-        raise ValueError("start overlaps a bumper")
+    _check_start(position, board)
     return GameState(position, Point(0.0, 0.0), 0.0, 0, GameStatus.READY)
 
 
@@ -311,21 +328,27 @@ def step(board: Board, state: GameState, dt_s: float) -> GameState:
     """Advance a fixed board by ``dt_s``; terminal states remain unchanged.
 
     Outcomes happen at the exact collision time inside the frame. Goal overlap
-    wins; crossing the playable inset loses. Contact with a green note reflects
-    velocity using the impact normal and increments ``bounce_count``.
+    wins; crossing the playable inset or touching spikes loses. Contact with a
+    green note or a wall reflects velocity using the impact normal and
+    increments ``bounce_count``; touching a portal's entry moves the ball to
+    its exit with the same velocity (contract 3.2).
     """
     if not math.isfinite(dt_s) or dt_s < 0:
         raise ValueError("dt_s must be nonnegative and finite")
     if state.status != GameStatus.RUNNING or dt_s == 0:
         return state
     if not _fits_playfield(state.position, board.playfield):
-        return replace(state, status=GameStatus.LOST)
+        return replace(state, status=GameStatus.LOST, ended_by="exit")
     if _overlaps_polygon(state.position, board.goal):
-        return replace(state, status=GameStatus.WON)
+        return replace(state, status=GameStatus.WON, ended_by="goal")
+    if any(_overlaps_polygon(state.position, spikes) for spikes in board.spikes):
+        return replace(state, status=GameStatus.LOST, ended_by="spikes")
 
     gravity = state.gravity_px_s2
-    if gravity > 0 and (state.elapsed_s >= MAX_ATTEMPT_S or state.still_s >= STALL_S):
-        return replace(state, status=GameStatus.LOST)
+    if gravity > 0 and state.elapsed_s >= MAX_ATTEMPT_S:
+        return replace(state, status=GameStatus.LOST, ended_by="timeout")
+    if gravity > 0 and state.still_s >= STALL_S:
+        return replace(state, status=GameStatus.LOST, ended_by="stall")
     position, velocity = state.position, state.velocity
     elapsed, bounce_count, remaining = state.elapsed_s, state.bounce_count, dt_s
     supports: list[Point] = []   # surfaces the ball rests on for the rest of this step (at most 2)
@@ -370,18 +393,30 @@ def step(board: Board, state: GameState, dt_s: float) -> GameState:
         goal = _swept_polygon_hit(position, chord, board.goal)
         if goal is not None:
             events.append(replace(goal, kind="goal"))
-        for obstacle in board.bumpers:
+        for obstacle in (*board.bumpers, *board.walls):   # a wall bounces like a bumper
             hit = _swept_polygon_hit(position, chord, obstacle)
             if hit is not None:
                 events.append(replace(hit, kind="bumper"))
+        for spikes in board.spikes:
+            hit = _swept_polygon_hit(position, chord, spikes)
+            if hit is not None:
+                events.append(replace(hit, kind="spikes"))
+        portal_at = None
+        for portal in board.portals:
+            hit = _swept_polygon_hit(position, chord, portal.entry)
+            if hit is not None and (portal_at is None or hit.time_s < portal_at[0].time_s):
+                portal_at = (replace(hit, kind="portal"), portal.exit)
+        if portal_at is not None:
+            events.append(portal_at[0])
         exit_hit = _playfield_exit(position, chord, board.playfield)
         if exit_hit is not None:
             events.append(exit_hit)
         if not events:
             return running(remaining)
 
-        # A simultaneous goal contact takes priority over a bumper or boundary.
-        priority = {"goal": 0, "exit": 1, "bumper": 2}
+        # A simultaneous goal contact takes priority over everything else; a
+        # loss over a portal, and a portal over a bounce.
+        priority = {"goal": 0, "spikes": 1, "exit": 2, "portal": 3, "bumper": 4}
         hit = min(events, key=lambda candidate: (candidate.time_s, priority[candidate.kind]))
         if hit.time_s > remaining + _EPS:
             return running(remaining)
@@ -391,9 +426,17 @@ def step(board: Board, state: GameState, dt_s: float) -> GameState:
         elapsed += travel
         remaining -= travel
         if hit.kind == "goal":
-            return GameState(position, velocity, elapsed, bounce_count, GameStatus.WON, gravity, state.still_s)
-        if hit.kind == "exit":
-            return GameState(position, velocity, elapsed, bounce_count, GameStatus.LOST, gravity, state.still_s)
+            return GameState(position, velocity, elapsed, bounce_count, GameStatus.WON, gravity, state.still_s, "goal")
+        if hit.kind in ("exit", "spikes"):
+            return GameState(position, velocity, elapsed, bounce_count, GameStatus.LOST, gravity, state.still_s,
+                             hit.kind)
+        if hit.kind == "portal":
+            # Out at the exit with the same velocity; the surfaces it rested on stay behind.
+            position = portal_at[1]
+            supports.clear()
+            if remaining <= _EPS:
+                return running(remaining)
+            continue
         # Every bumper touched at this same instant answers together: a ball
         # dropped into a symmetric V touches both faces at once, and leaving
         # one of them unanswered let it pass through that face.

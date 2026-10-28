@@ -36,6 +36,8 @@ detection always runs with the projector lit (light theme floods the wall).
 | Real-world flips | `live_board_ready/invalid` count per minute in `runs/web-events.jsonl` | trending to 0 on a static wall |
 | Play without the keyboard (3.1) | `attempt_countdown {source}` in `runs/web-events.jsonl`: share of `gesture` and `button`; `evals/handsfree.py` | real covers play >= 97 % (98.5), 0 false plays an hour on an idle wall, walker, moved, removed |
 | Ripple never feeds back (3.1) | Chrome closed loop, room `handsfree`: a post-it stuck mid-game | 8/8 samples with exactly the papers on the wall |
+| Levels can be won by hand (3.2) | `services/levels/evals/solvable.py`: each level's solution replayed with hand error; `attempt_finished {level, ended_by}` and `level_won` in `runs/web-events.jsonl` | every solution wins, every level but 1 needs its bumpers, each wins >= 50 % with bumpers 8 px / 4 degrees off (min 52 %, level 5) |
+| Level light never feeds back (3.2) | Chrome closed loop, room `levels`: boxes, title, banner and spikes projected | 8/8 samples with exactly the papers, a start out of its box refused, level 1 won and level 2 next, spikes end the drop |
 
 ## Coordinate systems
 
@@ -1058,6 +1060,106 @@ attempt or plays (`remoteCommand`).
   ended and the camera reads again; `Sacá la mano: ¡la pelota sale!` when
   armed.
 
+### 2.6 Mark colors (2026-10-27)
+
+Tobias: "quiero que debajo de eso, haya para elegir el color que se marca
+cuando se Detecta el color/post it". Each role has a mark color apart from
+its detection color: the projector fills a detected paper with it (2.1, still
+strictly inside the paper), the panel's halo, the countdown and the hit
+sparks use it. `palette.roles[role]` gains `mark` (the mark color, else the
+detection `hex`) and `mark_custom`; `palette.custom` counts marks too.
+
+- Action `mark_set {role, hex}`: `hex` `#rrggbb` sets it, `null` (or
+  missing) goes back to the detection color; an unknown role or a bad hex is
+  400. Saved with the palette (`runs/palette.json` key `marks`; the browser
+  backend's `postit-wall:palette`); a file without `marks` still loads.
+  `palette_reset` clears marks too. Log `mark_changed {role, hex}`.
+- A new mark puts the overlay check (2.3) back to `unchecked`: the check
+  measured the old color on the wall, and a mark that pushes a paper's look
+  toward another role's hue is exactly what it exists to catch. Run A again
+  to verify the new color.
+
+## 3.2 Levels (2026-10-27)
+
+Tobias: "Haya un area definida para poner el bloque de inicio, el juego solo
+puede comenzar si se coloca el post it sobre ese AREA. Lo mismo que para la
+llegada. Ademas que sea por niveles, ejemplo cantidad de post it limitados de
+rebotes, paredes, pinchos, trampas". `services/levels` (Python) and
+`services/browser/levels.mjs` (port, same operations).
+
+**Data.** `services/levels/levels.json`, one level per line, in shares of
+the playfield (x of its width, y of its height), so a level fits any
+projector or camera. A level: `id`, `name`, `hint`, `start_zone` and
+`goal_zone` (`[x0, y0, x1, y1]`, both or neither), `bumpers_max` (int or
+null), `walls`, `spikes` (shapes: `{"rect": [...]}` or `{"points": [[x, y],
+...]}` convex; spikes add `facing` for drawing), `portals` (`{entry: shape,
+exit: [x, y]}`) and `solution` (bumpers `{center, angle}` that win it, for
+the eval). `libre` (no boxes, no limit, nothing projected) is always there
+and is the old game exactly.
+
+**Physics** (`services/physics`, both backends). `Board` gains `walls`,
+`spikes` and `portals` (default empty: a board without them moves bit for
+bit as before). Walls bounce like bumpers and count as a bounce; touching
+spikes loses; touching a portal's entry moves the ball to its exit with the
+same velocity (a diagonal entry flies on diagonally). Simultaneous contacts:
+goal, then spikes, playfield edge, portal, bounce. `GameState.ended_by`:
+`goal`, `exit`, `spikes`, `stall`, `timeout` (`""` before the end); the
+snapshot carries it as `game.ended_by`. The drop point may not touch a
+wall, spikes or a portal entry (`La pelota sale encima de ...`).
+
+**Gating.** In the game's space (projector px aligned, camera px not), for
+the live notes: `check.start` / `check.goal` (exactly one such note with its
+vertex mean inside its box), `check.bumpers` against `bumpers_max`,
+`check.covered` (a note over a wall, spikes or a portal entry, or within
+ball radius + 4 px of a portal exit: covering them would be cheating). The
+first failure, in this order, is the board's reason and `level.problem`:
+`Poné el post-it de inicio dentro de su recuadro.`, `... de llegada ...`,
+`Este nivel deja usar N rebote(s): sacá K.` (`se juega sin rebotes` for 0),
+`Un post-it tapa {una pared|los pinchos|un portal}: movelo.` With a
+problem there is no board: nothing can be played.
+
+**Flow.** `level {id}` picks a level (refused while counting down, in the
+air or paused, or during a dot or touch run; 400 for an unknown id); the live notes
+are read against it again and a finished attempt is cleared. A won level is
+added to `level.done`; `LEVEL_ADVANCE_S = 3.5` s after the win the next
+level is selected by itself (`level.advance_s` counts down; `play` or
+`reset` before that replays the level instead). After the last level:
+`¡Completaste todos los niveles!`. Progress (`level`, `done`) is saved in
+`runs/progress.json` (browser: `postit-wall:progress`); `web.py` starts at
+the saved level, else level 1, `--level` picks one; the static build reads
+`?nivel=`. A new `GameController` without those starts in `libre`. Logs:
+`level_selected {level, source}`, `level_won {level, next}`,
+`attempt_finished {..., ended_by, level}`.
+
+**Snapshot** `level`: `id`, `name`, `hint`, `number`, `count`, `next`,
+`bumpers_max`, `done`, `list` (`{id, name, done}`), `geometry` (`space`,
+`width`, `height`, the boxes, walls, spikes with `facing`, portals; null
+before there is a space), `check`, `problem`, `advance_s`.
+
+**Wall** (`services/web/ui/level-view.mjs`, 2.1 holds): every shape is the
+theme's neutral color, clipped off every detected paper grown by
+`RIM_CLEAR_PX`, never in the overlay check's capture. Boxes dashed with
+their label above (`INICIO`, `LLEGADA`), solid with a check once met; walls
+hatched; spikes as teeth (red only while the camera is paused and the
+attempt not paused); portals as an outline with a ring at the exit (blue
+only in the air). Bottom right: `NIVEL N · NAME` and `Rebotes k / max`.
+Bottom center: `level.problem` instead of the play hint. A level change
+shows a banner (`NIVEL N`, name, hint) for `LEVEL_BANNER_MS = 3500`, not
+for the level the window opened on. Result texts say why: `¡PINCHOS!`,
+`SE QUEDÓ QUIETA`, `SIN TIEMPO`, `FUERA DEL CAMPO`, `¡LLEGASTE!` with
+`Sigue el nivel N: name`, or `¡COMPLETASTE TODOS LOS NIVELES!`.
+
+**Panel.** The `Nivel` picker in the Intento section (a check on won
+levels), enabled by `controlsFor().level` (the state matrix pins it to the
+backend: nothing in the air, not paused, no dot or touch run; it needs neither the
+camera nor the projector), and a status line (`Inicio ✓ · Llegada ✗ ·
+Rebotes 1 de 2. <problem>`).
+
+**Designing a level.** `python -m services.levels.design <id>` drops the
+ball from the zone centers on a 1920 x 1080 wall with 76 mm notes, searches
+bumper placements that win (beam search along the ball's path) and ranks
+them by robustness; paste the best as `solution`. The eval then holds it.
+
 ## 4. Hot path fixes (both backends)
 
 - `frame_quality` no longer runs `detect_board`; it takes `ready` as an
@@ -1132,8 +1234,20 @@ A deterministic camera/projector/wall model for evals and tests:
   the panel says `repetí el punto 7`, the hand retakes it, the run aligns).
   Room `handsfree`: a post-it stuck mid-game ripples and is never doubled,
   then a hand covers the start, is lifted, and the ball counts down and
-  drops with no key pressed (armed after 1.7 s). Every room's attempt goes
-  through `play`, so through the countdown.
+  drops with no key pressed (armed after 1.7 s). Room `levels` (both
+  backends): level 1's boxes refuse a start outside them, the papers moved
+  in play and win, level 2 follows; level 4's spikes end the bare drop; 8/8
+  samples with exactly the papers while boxes, banner and spikes are lit.
+  Every room's attempt goes through `play`, so through the countdown.
+- Levels (3.2): `services/levels/tests/test_levels.py` (file, geometry,
+  checks, every solution wins, the bare drop needs bumpers),
+  `services/physics/tests/test_engine.py` `LevelObstacleTests`,
+  `services/web/tests/test_levels_api.py` (gating, win and advance, replay,
+  spikes, last level, refusals, progress file; marks),
+  `services/web/tests/level-view.test.mjs` (drawing rules, texts, banner,
+  picker, mark color), `services/levels/evals/solvable.py`, the `level`
+  control of the state matrix, parity physics with obstacles and scripts
+  `levels`, `level_replay`, `marks`.
 
 Names: nothing new may match `/calibr/i` (existing regression tests forbid
 the removed manual calibration); use `align*`.

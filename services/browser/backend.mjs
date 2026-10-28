@@ -12,6 +12,7 @@
  */
 
 import { alignKey, GameController, HTTP, RequestError } from "./controller.mjs";
+import { levelById } from "./levels.mjs";
 
 export const OPENCV_URL = "/vendor/opencv-4.12.0.js";
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -277,7 +278,11 @@ export function startBrowserBackend(win = window) {
     storage = null; // private mode: colors and presets last until reload
   }
   const log = eventLog(storage, win.console);
-  const controller = new GameController({ storage, log });
+  // Level 1 until the page's saved progress says otherwise (contract 3.2);
+  // ?nivel=libre (or any level id) picks one.
+  const asked = new URLSearchParams(win.location?.search ?? "").get("nivel");
+  const controller = new GameController({ storage, log, level: "1" });
+  if (asked !== null && levelById(asked) !== null) controller.level = levelById(asked);
   const backend = new BrowserBackend({ controller, cv: loadOpenCv(win.document), log });
   win.postitBackend = backend;
   win.postitEvents = () => {

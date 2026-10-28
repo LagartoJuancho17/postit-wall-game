@@ -31,6 +31,8 @@ from services.calibration import (ALIGNMENT_FRAMES, alignment_layout, decode_ali
 from services.calibration.touch import (TOUCH_GRID, TOUCH_MAX_ROUNDS, note_centers, solve_touch, touch_back,
                                         touch_begin, touch_give_up, touch_progress, touch_retake, touch_step,
                                         touch_update, valid_grid)
+from services.levels import (FREE_LEVEL, LEVELS, Level, LevelProblem, geometry_json, level_by_id, level_check,
+                             level_geometry, level_problem, next_level, with_obstacles)
 from services.physics import GRAVITY_SHARE, GameState, GameStatus, drop, drop_ready_state, step
 from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
@@ -94,6 +96,17 @@ PHYSICS_MESSAGES = {
         "La pelota no entra debajo del inicio. Subilo un poco.",
 }
 PHYSICS_FALLBACK = "Un post-it detectado no tiene una forma válida."
+PHYSICS_MESSAGES.update({
+    "start overlaps a wall": "La pelota sale encima de una pared. Mové el inicio.",
+    "start overlaps spikes": "La pelota sale encima de los pinchos. Mové el inicio.",
+    "start overlaps a portal": "La pelota sale encima de un portal. Mové el inicio.",
+})
+# Why an attempt ended (GameState.ended_by), in the operator's words.
+END_MESSAGES = {"goal": "¡Llegaste!", "exit": "La pelota salió del campo.",
+                "spikes": "La pelota tocó los pinchos.", "stall": "La pelota se quedó quieta.",
+                "timeout": "Se acabó el tiempo del intento."}
+# Contract 3.2: a won level moves on to the next one after its party.
+LEVEL_ADVANCE_S = 3.5
 
 
 class RequestError(ValueError):
@@ -206,7 +219,7 @@ def _camera_board(notes: dict[str, tuple[Polygon, ...]], width: int, height: int
 def _operator_reason(exc: Exception) -> str:
     """The Spanish text an operator reads for an invalid live board."""
     text = str(exc)
-    if text.startswith("Post-its de "):
+    if text.startswith("Post-its de ") or isinstance(exc, LevelProblem):
         return text
     return PHYSICS_MESSAGES.get(text, PHYSICS_FALLBACK)
 
@@ -362,7 +375,8 @@ class GameController:
     def __init__(self, *, log_path: Path | None = None,
                  clock: Any = time.monotonic, palette_path: Path | None = None,
                  camera_presets_path: Path | None = None, uvc: Any = None,
-                 failure_frames_dir: Path | None = None):
+                 failure_frames_dir: Path | None = None, progress_path: Path | None = None,
+                 level: str = FREE_LEVEL):
         self._lock = RLock()
         # Where a failed alignment's 14 frames go for diagnosis (None: nowhere).
         self.failure_frames_dir = failure_frames_dir
@@ -373,6 +387,9 @@ class GameController:
         self.palette_path = palette_path
         self.palette_choices: dict[str, str | None] = {role: None for role in ROLES}
         self.palette = DEFAULT_PALETTE
+        # The color each detected note is marked with (wall fill, panel halo,
+        # effects); None: its detection color (contract 2.6).
+        self.mark_choices: dict[str, str | None] = {role: None for role in ROLES}
         self._load_palette()
         self.camera_presets_path = camera_presets_path
         self.camera_presets: dict[str, dict[str, Any]] = {}
@@ -424,6 +441,14 @@ class GameController:
         self.hands_free = True
         self._cover = cover_begin()
         self._camera_epoch = 0                      # camera_changed count: a late frame of the old camera is dropped
+        # Levels (contract 3.2): the one in play, the ones won, how the last
+        # live notes stand against it, and when a won level moves on.
+        self.progress_path = progress_path
+        self.level: Level = level_by_id(level) or level_by_id(FREE_LEVEL)
+        self.levels_done: list[str] = []
+        self._load_progress()
+        self._level_check: dict[str, Any] | None = None
+        self._advance_at: float | None = None
         self.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J."
         self.revision = 0
 
@@ -445,16 +470,19 @@ class GameController:
         if self.palette_path is None or not self.palette_path.exists():
             return
         try:
-            saved = json.loads(self.palette_path.read_text(encoding="utf-8"))["choices"]
+            data = json.loads(self.palette_path.read_text(encoding="utf-8"))
+            saved, marks = data["choices"], data.get("marks", {})
             choices = {role: (normalize_hex(saved[role]) if saved.get(role) is not None else None)
                        for role in ROLES}
-            if set(saved) - set(ROLES):
+            mark_choices = {role: (normalize_hex(marks[role]) if marks.get(role) is not None else None)
+                            for role in ROLES}
+            if set(saved) - set(ROLES) or set(marks) - set(ROLES):
                 raise ValueError("unknown role")
             palette = build_palette(choices)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             self._log("palette_ignored", path=str(self.palette_path), reason=str(exc))
             return
-        self.palette_choices, self.palette = choices, palette
+        self.palette_choices, self.palette, self.mark_choices = choices, palette, mark_choices
 
     def _save_palette(self) -> None:
         if self.palette_path is None:
@@ -462,7 +490,8 @@ class GameController:
         try:
             self.palette_path.parent.mkdir(parents=True, exist_ok=True)
             partial = self.palette_path.with_suffix(".tmp")
-            partial.write_text(json.dumps({"version": 1, "choices": self.palette_choices},
+            partial.write_text(json.dumps({"version": 1, "choices": self.palette_choices,
+                                           "marks": self.mark_choices},
                                           ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
             partial.replace(self.palette_path)
         except OSError as exc:
@@ -486,11 +515,40 @@ class GameController:
             self._log("camera_presets_not_saved", path=str(self.camera_presets_path),
                       reason=str(exc))
 
+    def _load_progress(self) -> None:
+        if self.progress_path is None or not self.progress_path.exists():
+            return
+        try:
+            data = json.loads(self.progress_path.read_text(encoding="utf-8"))
+            level = level_by_id(data["level"])
+            done = [entry.id for entry in LEVELS if entry.id in set(data["done"])]
+            if level is None:
+                raise ValueError("unknown level")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._log("progress_ignored", path=str(self.progress_path), reason=str(exc))
+            return
+        self.level, self.levels_done = level, done
+
+    def _save_progress(self) -> None:
+        if self.progress_path is None:
+            return
+        try:
+            self.progress_path.parent.mkdir(parents=True, exist_ok=True)
+            partial = self.progress_path.with_suffix(".tmp")
+            partial.write_text(json.dumps({"version": 1, "level": self.level.id, "done": self.levels_done},
+                                          ensure_ascii=False) + "\n", encoding="utf-8")
+            partial.replace(self.progress_path)
+        except OSError as exc:
+            self._log("progress_not_saved", path=str(self.progress_path), reason=str(exc))
+
     def _palette_json(self) -> dict[str, Any]:
         rules = self.palette.to_json()
         return {
-            "custom": any(choice is not None for choice in self.palette_choices.values()),
-            "roles": {role: {**rules[role], "custom": self.palette_choices[role] is not None}
+            "custom": any(choice is not None for choice in (*self.palette_choices.values(),
+                                                            *self.mark_choices.values())),
+            "roles": {role: {**rules[role], "custom": self.palette_choices[role] is not None,
+                             "mark": self.mark_choices[role] or rules[role]["hex"],
+                             "mark_custom": self.mark_choices[role] is not None}
                       for role in ROLES},
         }
 
@@ -506,6 +564,7 @@ class GameController:
     def _snapshot_unlocked(self) -> dict[str, Any]:
         self._expire_detection_unlocked()
         self._advance_countdown_unlocked()
+        self._advance_level_unlocked()
         game = self.game
         return {
             "revision": self.revision,
@@ -536,7 +595,9 @@ class GameController:
                                 if self._countdown_until is not None else 0.0),
                 "countdown_total_s": COUNTDOWN_S,
                 "hands_free": {"enabled": self.hands_free, "armed": bool(self._cover["armed"])},
+                "ended_by": game.ended_by if game else "",
             },
+            "level": self._level_json(),
             "projection": {
                 "open": self.projector_open,
                 "mode": self.projection_mode,
@@ -622,20 +683,55 @@ class GameController:
 
     # ------------------------------------------------------------ game geometry
 
+    def _aligned_unlocked(self) -> bool:
+        return self._align_status == "ready" and self._align_matrix is not None
+
     def _game_board_unlocked(self, camera_board: Board, width: int, height: int) -> tuple[Board, str, int, int]:
-        """The playable board in the game's space (contract 1.5); raises ValueError."""
-        if self._align_status == "ready" and self._align_matrix is not None:
+        """The playable board in the game's space (contract 1.5) with the
+        level's obstacles (3.2); raises ValueError, LevelProblem first."""
+        if self._aligned_unlocked():
             mapped = transform_board(camera_board, self._align_matrix, self._align_lens)
             board = Board(playfield=_rectangle(self.projector_width, self.projector_height),
                           start=mapped.start, goal=mapped.goal,
                           bumpers=mapped.bumpers, markers=mapped.markers)
-            drop_ready_state(board)
-            return board, "projector", self.projector_width, self.projector_height
-        drop_ready_state(camera_board)
-        return camera_board, "camera", width, height
+            space, width, height = "projector", self.projector_width, self.projector_height
+        else:
+            board, space = camera_board, "camera"
+        problem = level_problem(self._level_check) if self._level_check is not None else None
+        if problem is not None:
+            raise LevelProblem(problem)
+        board = with_obstacles(board, level_geometry(self.level, width, height))
+        drop_ready_state(board)
+        return board, space, width, height
+
+    def _level_space_unlocked(self) -> tuple[str, int, int] | None:
+        """The space a board would be played in now, and its size."""
+        if self._aligned_unlocked():
+            return "projector", self.projector_width, self.projector_height
+        if self.frame_width > 0 and self.frame_height > 0:
+            return "camera", self.frame_width, self.frame_height
+        return None
+
+    def _check_level_unlocked(self, notes: dict[str, tuple[Polygon, ...]], width: int,
+                              height: int) -> dict[str, Any] | None:
+        """How the live notes stand against the level, in the game's space."""
+        if self._aligned_unlocked():
+            size = (self.projector_width, self.projector_height)
+            try:
+                notes = {role: tuple(Polygon(tuple(transform_point(undistort(point, self._align_lens),
+                                                                   self._align_matrix)
+                                                   for point in polygon.points))
+                                     for polygon in notes.get(role, ()))
+                         for role in ROLES}
+            except ValueError:
+                return None
+        else:
+            size = (width, height)
+        return level_check(self.level, level_geometry(self.level, *size), notes)
 
     def _candidate_unlocked(self, notes: dict[str, tuple[Polygon, ...]], width: int, height: int):
         """(camera board, game board tuple, operator reason) for one set of live notes."""
+        self._level_check = self._check_level_unlocked(notes, width, height)
         try:
             camera_board = _camera_board(notes, width, height)
             return camera_board, self._game_board_unlocked(camera_board, width, height), None
@@ -712,6 +808,7 @@ class GameController:
         self._last_detection = None
         self._last_notes = None
         self._candidate = None
+        self._level_check = None
         self.camera_board = None
         if self.game is None or self.game.status == GameStatus.READY:
             self._apply_candidate_unlocked()
@@ -996,6 +1093,16 @@ class GameController:
                 if source not in ("panel", "button"):
                     raise RequestError("Origen de jugada desconocido.")
                 self._play_unlocked(source)
+            elif action == "level":
+                level = level_by_id(payload.get("id"))
+                if level is None:
+                    raise RequestError("Nivel desconocido.")
+                self._refuse_while_collecting_unlocked()
+                self._refuse_while_countdown_unlocked()
+                if self.game is not None and self.game.status == GameStatus.RUNNING:
+                    raise RequestError("Terminá o reiniciá el intento antes de cambiar de nivel.",
+                                       HTTPStatus.CONFLICT)
+                self._select_level_unlocked(level, "panel")
             elif action == "hands_free":
                 enabled = payload.get("enabled")
                 if not isinstance(enabled, bool):
@@ -1010,6 +1117,7 @@ class GameController:
                     raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",
                                        HTTPStatus.CONFLICT)
                 self._cancel_countdown_unlocked("reset")
+                self._advance_at = None
                 self._reset_attempt_unlocked()
                 self._changed("Intento reiniciado con los post-its de la vista en vivo.")
                 self._log("attempt_reset")
@@ -1036,8 +1144,26 @@ class GameController:
                 self._changed(f"Color de {ROLE_LABELS[role]} actualizado.")
                 self._log("palette_changed", role=role, hex=rule.hex,
                           hue_low=rule.hue_low, hue_high=rule.hue_high)
+            elif action == "mark_set":
+                role = payload.get("role")
+                if role not in ROLES:
+                    raise RequestError("Rol de post-it desconocido.")
+                hex_value = payload.get("hex")
+                try:
+                    mark = None if hex_value is None else normalize_hex(hex_value)
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                self.mark_choices = {**self.mark_choices, role: mark}
+                self._save_palette()
+                if self._overlay["status"] != "unchecked":
+                    # The fill check measured the old color on the wall (2.3).
+                    self._overlay = self._overlay_state("unchecked", self._overlay["probes"])
+                self._changed(f"Color de marca de {ROLE_LABELS[role]} actualizado." if mark is not None
+                              else f"La marca de {ROLE_LABELS[role]} vuelve a su color de detección.")
+                self._log("mark_changed", role=role, hex=mark)
             elif action == "palette_reset":
                 self.palette_choices = {role: None for role in ROLES}
+                self.mark_choices = {role: None for role in ROLES}
                 self.palette = DEFAULT_PALETTE
                 self._save_palette()
                 self._clear_detection_unlocked()
@@ -1090,6 +1216,77 @@ class GameController:
                 raise RequestError(f"Acción desconocida: {action}")
             return self._snapshot_unlocked()
 
+    # ------------------------------------------------------------ levels (contract 3.2)
+
+    def _level_json(self) -> dict[str, Any]:
+        level, space = self.level, self._level_space_unlocked()
+        upcoming = next_level(level)
+        geometry = None
+        if space is not None:
+            geometry = {"space": space[0], **geometry_json(level_geometry(level, space[1], space[2]))}
+        check = copy.deepcopy(self._level_check)
+        playable = [entry for entry in LEVELS if entry.id != FREE_LEVEL]
+        return {
+            "id": level.id, "name": level.name, "hint": level.hint,
+            "number": playable.index(level) + 1 if level in playable else 0,
+            "count": len(playable),
+            "next": upcoming.id if upcoming is not None else None,
+            "bumpers_max": level.bumpers_max,
+            "done": list(self.levels_done),
+            "list": [{"id": entry.id, "name": entry.name, "done": entry.id in self.levels_done}
+                     for entry in LEVELS],
+            "geometry": geometry,
+            "check": check,
+            "problem": level_problem(check) if check is not None else None,
+            "advance_s": (round(max(0.0, self._advance_at - self._clock()), 3)
+                          if self._advance_at is not None else 0.0),
+        }
+
+    def _select_level_unlocked(self, level: Level, source: str) -> None:
+        """Play `level` from now on: the live notes are read against it again."""
+        self.level = level
+        self._advance_at = None
+        self._save_progress()
+        if self.game is not None and self.game.status in (GameStatus.WON, GameStatus.LOST):
+            self.game = None
+        self._recompute_candidate_unlocked()
+        if self.game is None or self.game.status == GameStatus.READY:
+            self._reset_attempt_unlocked()
+        problem = level_problem(self._level_check) if self._level_check is not None else None
+        title = "Modo libre." if level.id == FREE_LEVEL else f"Nivel {level.id}: {level.name}."
+        self._changed(f"{title} {problem or level.hint}")
+        self._log("level_selected", level=level.id, source=source)
+
+    def _advance_level_unlocked(self) -> None:
+        """A won level moves on once its party is over (LEVEL_ADVANCE_S)."""
+        if self._advance_at is None:
+            return
+        if self.game is None or self.game.status != GameStatus.WON:
+            self._advance_at = None
+            return
+        if self._clock() < self._advance_at:
+            return
+        upcoming = next_level(self.level)
+        self._advance_at = None
+        if upcoming is not None:
+            self._select_level_unlocked(upcoming, "advance")
+
+    def _level_won_unlocked(self) -> None:
+        """The attempt just won: the level counts as done; the next one follows."""
+        if self.level.id == FREE_LEVEL:
+            return
+        if self.level.id not in self.levels_done:
+            self.levels_done = [entry.id for entry in LEVELS
+                                if entry.id in self.levels_done or entry.id == self.level.id]
+            self._save_progress()
+        upcoming = next_level(self.level)
+        if upcoming is None:
+            self._changed("¡Completaste todos los niveles!")
+        else:
+            self._advance_at = self._clock() + LEVEL_ADVANCE_S
+            self._changed(f"¡Nivel {self.level.id} superado! Sigue el nivel {upcoming.id}: {upcoming.name}.")
+        self._log("level_won", level=self.level.id, next=upcoming.id if upcoming else None)
+
     # ------------------------------------------------------------ play (contract 3.1)
 
     def _refuse_while_countdown_unlocked(self) -> None:
@@ -1124,6 +1321,7 @@ class GameController:
             if self.camera_board is None or self._candidate is None:
                 raise RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.",
                                    HTTPStatus.CONFLICT)
+            self._advance_at = None   # playing again replays the won level
             self._reset_attempt_unlocked()
             self._log("attempt_reset", source=source)
         self._require_launchable_unlocked()
@@ -1516,6 +1714,7 @@ class GameController:
 
     def _tick_unlocked(self) -> None:
         self._advance_countdown_unlocked()
+        self._advance_level_unlocked()
         if (self.game is None or self.board is None or
                 self.game.status != GameStatus.RUNNING or self.paused or
                 not self.projector_open):
@@ -1537,11 +1736,12 @@ class GameController:
             self._accumulator -= 1 / 120
         if self.game.status != old_status:
             self._finished_at = now
-            self._changed("¡Llegaste!" if self.game.status == GameStatus.WON else
-                          "La pelota salió del campo.")
+            self._changed(END_MESSAGES.get(self.game.ended_by, "La pelota salió del campo."))
             self._log("attempt_finished", result=self.game.status.value,
                       elapsed_s=round(self.game.elapsed_s, 3),
-                      bounces=self.game.bounce_count)
+                      bounces=self.game.bounce_count, ended_by=self.game.ended_by, level=self.level.id)
+            if self.game.status == GameStatus.WON:
+                self._level_won_unlocked()
 
     def tick(self) -> dict[str, Any]:
         with self._lock:
@@ -1551,16 +1751,24 @@ class GameController:
 
 def create_server(port: int = 0, controller: GameController | None = None,
                   static_dir: Path | None = None, *,
-                  bind: bool = True) -> ThreadingHTTPServer:
-    """Return a loopback HTTP server; ``bind=False`` supports socket-free tests."""
+                  bind: bool = True, level: str | None = None) -> ThreadingHTTPServer:
+    """Return a loopback HTTP server; ``bind=False`` supports socket-free tests.
+
+    A new controller starts at the saved level (runs/progress.json), else at
+    level 1; ``level`` picks one instead."""
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be between 0 and 65535")
+    if level is not None and level_by_id(level) is None:
+        raise ValueError(f"no hay nivel {level}")
     runs = Path(__file__).resolve().parents[3] / "runs"
     controller = controller or GameController(
         log_path=runs / "web-events.jsonl", palette_path=runs / "palette.json",
         failure_frames_dir=runs / "align-failures",
         camera_presets_path=runs / "camera-presets.json",
+        progress_path=runs / "progress.json", level="1",
     )
+    if level is not None:
+        controller.level = level_by_id(level)
     static_dir = static_dir or Path(__file__).resolve().parents[1] / "ui"
 
     class Handler(BaseHTTPRequestHandler):
@@ -1644,7 +1852,7 @@ def create_server(port: int = 0, controller: GameController | None = None,
                     "/projector.js": "projector.js", "/ui-core.mjs": "ui-core.mjs",
                     "/api.mjs": "api.mjs", "/live-view.mjs": "live-view.mjs",
                     "/align-run.mjs": "align-run.mjs", "/effects.mjs": "effects.mjs",
-                    "/sounds.mjs": "sounds.mjs",
+                    "/sounds.mjs": "sounds.mjs", "/level-view.mjs": "level-view.mjs",
                 }
                 if path == "/favicon.ico":
                     self.send_response(HTTPStatus.NO_CONTENT)

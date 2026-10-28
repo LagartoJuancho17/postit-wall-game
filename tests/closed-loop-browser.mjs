@@ -48,12 +48,13 @@ const GSTACK_PLAYWRIGHT = "/Users/tobiasarraiza/gstack/node_modules/playwright/i
 const playwrightModule = process.env.POSTIT_PLAYWRIGHT_MODULE || (existsSync(GSTACK_PLAYWRIGHT) ? GSTACK_PLAYWRIGHT : null);
 const playwright = playwrightModule ? await import(pathToFileURL(resolve(playwrightModule)).href) : await import("playwright");
 const runs = (process.argv.slice(2).length ? process.argv.slice(2)
-  : ["server", "static", "static:bright", "server:touch", "static:touch-slip", "server:handsfree"])
+  : ["server", "static", "static:bright", "server:touch", "static:touch-slip", "server:handsfree", "server:levels",
+    "static:levels"])
   .map((arg) => {
     const remote = arg.match(/^(https?:\/\/[^\s]+?)(?::(normal|bright))?$/);
     if (remote) return { kind: "remote", url: remote[1].replace(/\/$/, ""), room: remote[2] ?? "normal" };
     const [kind, room = "normal"] = arg.split(":");
-    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch", "touch-slip", "handsfree"].includes(room)) throw new Error(`unknown run ${arg}`);
+    if (!["server", "static"].includes(kind) || !["normal", "bright", "touch", "touch-slip", "handsfree", "levels"].includes(room)) throw new Error(`unknown run ${arg}`);
     return { kind, room };
   });
 
@@ -68,7 +69,7 @@ const BLACK_LEVEL = 0.02;                       // light a black projector frame
 /** Room light (projector full white = 1) and the fixed exposure that suits it. */
 const ROOMS = { normal: { ambient: 0.35, gain: 2.0 }, bright: { ambient: 1.0, gain: 0.75 },
   touch: { ambient: 1.0, gain: 0.75 }, "touch-slip": { ambient: 1.0, gain: 0.75 },
-  handsfree: { ambient: 0.35, gain: 2.0 } };
+  handsfree: { ambient: 0.35, gain: 2.0 }, levels: { ambient: 0.35, gain: 2.0 } };
 /** The touch run's camera, far below the projector: the top edge of the projection is shorter. */
 const QUAD_BELOW = [[92, 34], [868, 30], [935, 700], [25, 695]];
 const COLORS = { start: "#e6e617", goal: "#e66a17", bumper: "#17e639", marker: "#e617b6" };
@@ -146,17 +147,27 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
   reflect.width = width;
   reflect.height = height;
   const rctx = reflect.getContext("2d");
-  rctx.fillStyle = `rgb(${wall.join(",")})`;
-  rctx.fillRect(0, 0, width, height);
-  for (const paper of papers) {
-    rctx.fillStyle = colors[paper.role];
-    rctx.beginPath();
-    paper.points.forEach(([x, y], k) => (k ? rctx.lineTo(x, y) : rctx.moveTo(x, y)));
-    rctx.closePath();
-    rctx.fill();
+  function paintPapers() {
+    rctx.fillStyle = `rgb(${wall.join(",")})`;
+    rctx.fillRect(0, 0, width, height);
+    for (const paper of papers) {
+      rctx.fillStyle = colors[paper.role];
+      rctx.beginPath();
+      paper.points.forEach(([x, y], k) => (k ? rctx.lineTo(x, y) : rctx.moveTo(x, y)));
+      rctx.closePath();
+      rctx.fill();
+    }
   }
+  paintPapers();
   let reflectance = Float32Array.from(rctx.getImageData(0, 0, width, height).data, (v) => v / 255);
-  const base = rctx.getImageData(0, 0, width, height);
+  let base = rctx.getImageData(0, 0, width, height);
+  /** The papers on the wall moved somewhere else (the levels room, contract 3.2). */
+  function layout(next) {
+    papers = next;
+    paintPapers();
+    base = rctx.getImageData(0, 0, width, height);
+    reflectance = Float32Array.from(base.data, (v) => v / 255);
+  }
   /** A post-it held on the wall (camera coordinates), or null: the touch run's hand. */
   function hold(points, color) {
     rctx.putImageData(base, 0, 0);
@@ -276,6 +287,7 @@ function installFakeCamera({ camera, projector, gInverse, wall, papers, colors, 
   window.closedLoopCamera = {
     frames: () => frames,
     hold,
+    layout,
     /** Per paper: the mean projector light (r, g, b) well inside it (>= 4 px from the edge). */
     fills() {
       return papers.map((paper) => {
@@ -516,6 +528,94 @@ async function handsFree(report, { state, panel, projector, name }) {
   await until("the end effect is over", async () => (await state())?.game?.camera_paused === false, 6000, 100);
 }
 
+// ------------------------------------------------------------------ levels (contract 3.2)
+
+/** Papers centered on these projector points (the wall's own px), as the camera sees them. */
+function papersAt(G, centers) {
+  const markers = PAPERS.filter((paper) => paper.role === "marker");
+  return [...markers, ...centers.map(({ role, at: [x, y], tilt = 4 }) => {
+    const [cx, cy] = apply(G, [x, y]);
+    return { role, points: rotated(cx, cy, 58, 58, tilt) };
+  })];
+}
+
+/**
+ * Levels on the closed loop: the boxes, walls and spikes the projector draws
+ * are never read as a post-it; a start outside its box is refused and named;
+ * moved into the boxes the level plays, a win moves on to the next level;
+ * spikes end an attempt.
+ */
+async function levels(report, { state, panel, projector, name, G, roles }) {
+  const layout = (papers) => panel.evaluate((p) => window.closedLoopCamera.layout(p), papers);
+  const counts = async () => Object.fromEntries(Object.entries((await state())?.live_detection?.roles ?? {})
+    .map(([role, value]) => [role, value.count]));
+  const steady = async (want, label) => {
+    const seen = [];
+    for (let k = 0; k < 8; k += 1) {
+      seen.push(await counts());
+      await new Promise((done) => setTimeout(done, 250));
+    }
+    assert.ok(seen.every((c) => JSON.stringify(c) === JSON.stringify(want)), `${label}: ${JSON.stringify(seen)}`);
+  };
+  await panel.selectOption("#level-select", "1");
+  const refused = await until("level 1 names the start outside its box", async () => {
+    const s = await state();
+    return s?.level?.id === "1" && s.level.geometry?.space === "projector" && s.level.problem ? s : null;
+  }, 10000, 100);
+  assert.equal(refused.level.problem, "Poné el post-it de inicio dentro de su recuadro.");
+  await new Promise((done) => setTimeout(done, 400));
+  await steady(roles, "the boxes and the title never read as a note");
+  await projector.screenshot({ path: join(output, `${name}-level1-refused-projector.png`) });
+  report.checks.push(`level 1: start outside its box refused ("${refused.level.problem}"), 8/8 samples with exactly the papers`);
+
+  const { width: W, height: H } = PROJECTOR;
+  await layout(papersAt(G, [{ role: "start", at: [0.5 * W, 0.15 * H] }, { role: "goal", at: [0.5 * W, 0.8 * H] }]));
+  const ready = await until("level 1 plays with both papers in their boxes", async () => {
+    const s = await state();
+    return s?.level?.check?.start && s.level.check.goal && s.level.problem === null && s.phase === "ready" ? s : null;
+  }, 15000, 100);
+  await projector.screenshot({ path: join(output, `${name}-level1-ready-projector.png`) });
+  await panel.locator("#launch-button").click();
+  const won = await until("level 1 is won", async () => {
+    const s = await state();
+    return ["won", "lost"].includes(s?.game?.status) ? s : null;
+  }, 30000);
+  assert.equal(won.game.status, "won", `level 1's straight drop wins (ended by ${won.game.ended_by})`);
+  assert.deepEqual(won.level.done, ["1"]);
+  const next = await until("the next level follows", async () => {
+    const s = await state();
+    return s?.level?.id === "2" ? s : null;
+  }, 10000, 100);
+  await new Promise((done) => setTimeout(done, 600));
+  await projector.screenshot({ path: join(output, `${name}-level2-banner-projector.png`) });
+  report.checks.push(`level 1 in its boxes: ready (${ready.level.check.bumpers} bumpers), won, moved on to level 2 ` +
+    `("${next.message}")`);
+
+  // Level 4: a spike strip under the start; no bumper, so the drop meets it.
+  await panel.selectOption("#level-select", "4");
+  await layout(papersAt(G, [{ role: "start", at: [0.46 * W, 0.15 * H] }, { role: "goal", at: [0.78 * W, 0.82 * H] }]));
+  await until("level 4 plays", async () => {
+    const s = await state();
+    return s?.level?.id === "4" && s.level.problem === null && s.phase === "ready" ? s : null;
+  }, 15000, 100);
+  await steady({ start: 1, goal: 1, bumper: 0, marker: 4 }, "the spikes never read as a note");
+  await projector.screenshot({ path: join(output, `${name}-level4-projector.png`) });
+  await panel.locator("#launch-button").click();
+  const spiked = await until("level 4 ends", async () => {
+    const s = await state();
+    return ["won", "lost"].includes(s?.game?.status) ? s : null;
+  }, 30000);
+  assert.deepEqual([spiked.game.status, spiked.game.ended_by], ["lost", "spikes"]);
+  report.checks.push(`level 4: spikes projected, 8/8 samples with exactly the papers, the bare drop ended by "${spiked.game.ended_by}"`);
+  report.levels = { refused: refused.level.problem, won: won.level.done, next: next.level.id, spikes: spiked.game.ended_by };
+
+  // Back to free play with the shared papers, for the run's own attempt.
+  await until("the end effect is over", async () => (await state())?.game?.camera_paused === false, 6000, 100);
+  await panel.selectOption("#level-select", "libre");
+  await layout(PAPERS);
+  await until("the shared papers are back", async () => JSON.stringify(await counts()) === JSON.stringify(roles), 15000, 100);
+}
+
 // ------------------------------------------------------------------ one run
 
 async function run({ kind, room, url }) {
@@ -553,7 +653,8 @@ async function run({ kind, room, url }) {
     panel = await context.newPage();
     await panel.addInitScript(installFakeCamera, { camera: CAMERA, projector: PROJECTOR, gInverse: G_INVERSE, wall: WALL,
       papers: PAPERS, colors: COLORS, ambient: ROOMS[room].ambient, blackLevel: BLACK_LEVEL, gain: ROOMS[room].gain });
-    await panel.goto(backend.url);
+    // The static build starts at level 1 (contract 3.2); the shared checks use free play.
+    await panel.goto(kind === "static" ? `${backend.url}/?nivel=libre` : backend.url);
     const state = kind === "server"
       ? async () => (await context.request.get(`${backend.url}/api/state`)).json()
       : async () => panel.evaluate(() => window.postitBackend?.controller.snapshot() ?? null);
@@ -695,6 +796,7 @@ async function run({ kind, room, url }) {
       `(min spread ${Math.min(...spreads).toFixed(2)})`);
 
     if (room === "handsfree") await handsFree(report, { state, panel, projector, name });
+    if (room === "levels") await levels(report, { state, panel, projector, name, G, roles });
 
     // An attempt in projector px (the button sends `play`: 3, 2, 1, then the drop).
     assert.equal(samples.at(-1).space, "projector");

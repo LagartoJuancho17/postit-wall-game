@@ -29,6 +29,8 @@ import {
   isThemeShortcut,
   isTypingTarget,
   launchLabel,
+  levelOptions,
+  levelStatus,
   REMOTE_KEY,
   remoteCommand,
   remoteKeyAllowed,
@@ -57,7 +59,7 @@ import { createApi } from "./api.mjs";
 import { playSound, readSoundOn, SOUND_KEY } from "./sounds.mjs";
 import { alignTiming, autoAlignKey, runAlignment, runOverlayCheck, shouldAutoAlign, touchCommand, touchGrid }
   from "./align-run.mjs";
-import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS } from "./live-view.mjs";
+import { drawLiveDetection, FALLBACK_COLORS, LIVE_MAX_AGE_MS, markColor } from "./live-view.mjs";
 
 const api = createApi("panel");
 
@@ -1032,6 +1034,14 @@ function renderPalette(cameraReady) {
     $(`pick-${role}`).disabled = !editable || !cameraReady || Boolean(tuning) || scanBusy || pickBusy || aligning;
     $(`pick-${role}`).setAttribute("aria-pressed", String(pickRole === role));
   }
+  for (const role of PALETTE_ROLES) {
+    const swatch = $(`mark-${role}`);
+    const entry = palette?.roles?.[role];
+    swatch.disabled = !editable || aligning;
+    if (document.activeElement !== swatch) swatch.value = markColor(palette, role);
+    swatch.closest(".mark-role").dataset.custom = String(entry?.mark_custom === true);
+    $(`mark-clear-${role}`).disabled = !editable || aligning || entry?.mark_custom !== true;
+  }
   $("palette-reset").disabled = !editable || !palette.custom;
   document.querySelectorAll(".note-dot[data-role]").forEach((dot) => {
     dot.style.background = palette?.roles?.[dot.dataset.role]?.hex || "";
@@ -1052,6 +1062,22 @@ function renderPalette(cameraReady) {
   else delete $("camera-stage").dataset.picking;
 }
 
+// Contract 3.2: the level picker follows the backend's list and level.
+let levelOptionsKey = "";
+function renderLevel() {
+  const select = $("level-select");
+  const level = state?.level;
+  const options = levelOptions(level);
+  const key = JSON.stringify(options);
+  if (key !== levelOptionsKey) {
+    levelOptionsKey = key;
+    select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
+  }
+  if (level && document.activeElement !== select) select.value = level.id;
+  select.disabled = !level || aligning || !controlsFor(state, true, true).level;
+  $("level-status").textContent = levelStatus(level);
+}
+
 function render() {
   const cameraReady = Boolean(stream && video.videoWidth);
   const projectionReady = Boolean(popupReady && state?.projection?.open && popup && !popup.closed);
@@ -1068,6 +1094,7 @@ function render() {
   $("camera-tune").textContent = state?.camera_presets?.[cameraLabel] ? "Buscar otra vez" : "Buscar ajuste fijo";
   $("launch-button").disabled = aligning || !controls.launch;
   $("launch-label").textContent = launchLabel(attemptPhase(state?.game));
+  renderLevel();
   $("hands-free").checked = state?.game?.hands_free?.enabled !== false;
   $("hands-free").disabled = !state;
   $("remote-assign").textContent = assigningRemote ? "Apretá el botón del control…" : remoteCode ? "Cambiar botón" : "Asignar botón";
@@ -1181,6 +1208,7 @@ cameraSelect.addEventListener("change", () => {
 });
 $("scan-button").addEventListener("click", scanBoard);
 $("launch-button").addEventListener("click", () => sendAction("play", { source: "panel" }));
+$("level-select").addEventListener("change", (event) => sendAction("level", { id: event.target.value }));
 $("hands-free").addEventListener("change", (event) => sendAction("hands_free", { enabled: event.target.checked }));
 $("remote-assign").addEventListener("click", () => {
   assigningRemote = !assigningRemote;
@@ -1195,6 +1223,8 @@ $("reset-button").addEventListener("click", () => sendAction("reset"));
 for (const role of PALETTE_ROLES) {
   $(`color-${role}`).addEventListener("change", (event) => setColor(role, event.target.value));
   $(`pick-${role}`).addEventListener("click", () => togglePick(role));
+  $(`mark-${role}`).addEventListener("change", (event) => sendAction("mark_set", { role, hex: event.target.value }));
+  $(`mark-clear-${role}`).addEventListener("click", () => sendAction("mark_set", { role, hex: null }));
 }
 $("camera-tune").addEventListener("click", () => tuneCamera());
 $("touch-align").addEventListener("click", () => startTouch());

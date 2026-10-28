@@ -137,6 +137,29 @@ export function handsFreeLine(game) {
   return null;
 }
 
+/** The level picker's options (contract 3.2): [{value, label}], a check mark on a won level. */
+export function levelOptions(level) {
+  if (!Array.isArray(level?.list)) return [];
+  return level.list.map((entry) => ({
+    value: entry.id,
+    label: entry.id === "libre" ? "Libre (sin recuadros)" : `${entry.id} · ${entry.name}${entry.done ? " ✓" : ""}`,
+  }));
+}
+
+/** One line on how the wall stands against the level, for the panel. */
+export function levelStatus(level) {
+  if (!level) return "";
+  if (level.id === "libre") return "Modo libre: sin recuadros ni límite de rebotes.";
+  const check = level.check;
+  if (!check) return `${level.hint} La cámara todavía no ve la pared.`;
+  const mark = (ok) => (ok ? "✓" : "✗");
+  const parts = [`Inicio ${mark(check.start)}`, `Llegada ${mark(check.goal)}`];
+  if (level.bumpers_max !== null && level.bumpers_max !== undefined) {
+    parts.push(level.bumpers_max === 0 ? `Rebotes ${check.bumpers} (sin rebotes)` : `Rebotes ${check.bumpers} de ${level.bumpers_max}`);
+  }
+  return `${parts.join(" · ")}. ${level.problem ?? "Listo para jugar."}`;
+}
+
 export function attemptView(game) {
   const phase = attemptPhase(game);
   return { phase, ...(ATTEMPT_VIEWS[phase] ?? { label: phase, hint: "" }) };
@@ -167,6 +190,10 @@ export function controlsFor(state, cameraReady, popupReady) {
     // touch_start (contract 1.6) also needs the camera read now: live notes
     // and no attempt or end effect freezing the view.
     touch: live && framed && Boolean(state?.live_detection) && !moving && state?.game?.camera_paused !== true
+      && state?.alignment?.status !== "collecting",
+    // The level picker (contract 3.2): nothing in the air, not even paused,
+    // no dot or touch run (the backend refuses both).
+    level: Boolean(state?.level) && !moving && !counting && phase !== "paused" && !touching
       && state?.alignment?.status !== "collecting",
   };
 }

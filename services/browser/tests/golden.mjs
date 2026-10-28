@@ -70,6 +70,11 @@ export function boardFromGolden(data) {
     goal: points(data.goal),
     bumpers: data.bumpers.map(points),
     markers: data.markers.map(points),
+    // A level's obstacles (contract 3.2), when the case has them.
+    walls: (data.walls ?? []).map(points),
+    spikes: (data.spikes ?? []).map(points),
+    portals: (data.portals ?? []).map((portal) => ({ entry: points(portal.entry),
+      exit: { x: portal.exit[0], y: portal.exit[1] } })),
   };
 }
 

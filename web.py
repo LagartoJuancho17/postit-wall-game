@@ -31,6 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Juego de pared en el navegador")
     parser.add_argument("--port", type=int, default=8765,
                         help="puerto local (predeterminado: 8765)")
+    parser.add_argument("--level", default=None,
+                        help="nivel con el que arranca (libre, 1, 2, …); por defecto el guardado")
     parser.add_argument("--no-browser", action="store_true",
                         help="no abrir el navegador automáticamente")
     args = parser.parse_args(argv)
@@ -38,8 +40,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("el puerto debe estar entre 0 y 65535")
 
     try:
-        server = create_server(port=args.port)
-    except OSError as exc:
+        server = create_server(port=args.port, level=args.level)
+    except (OSError, ValueError) as exc:
         print(f"No se pudo iniciar el servidor local: {exc}", file=sys.stderr)
         return 1
     url = f"http://127.0.0.1:{server.server_address[1]}/"

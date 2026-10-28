@@ -21,30 +21,31 @@ import {
 } from "../ui/ui-core.mjs";
 
 const matrix = JSON.parse(readFileSync(new URL("../contract/state-matrix.json", import.meta.url), "utf8"));
-const CONTROLS = ["scan", "launch", "reset", "resume", "align", "touch"];
+const CONTROLS = ["scan", "launch", "reset", "resume", "align", "touch", "level"];
 
 // Expected panel controls per backend phase, with the camera live and the
 // projector window ready whenever the backend reports it open. Hand-written:
 // the eval derives agreement from the backend, this pins the intended UI.
 const EXPECTED = {
-  projector_closed: [],
-  waiting_camera: ["scan"],
-  partial_live: ["scan", "align", "touch"],
-  no_markers: ["scan", "launch", "reset", "align", "touch"],
-  ready: ["scan", "launch", "reset", "align", "touch"],
+  // The level picker (contract 3.2) works whenever nothing is in the air.
+  projector_closed: ["level"],
+  waiting_camera: ["scan", "level"],
+  partial_live: ["scan", "align", "touch", "level"],
+  no_markers: ["scan", "launch", "reset", "align", "touch", "level"],
+  ready: ["scan", "launch", "reset", "align", "touch", "level"],
   // 3, 2, 1 (contract 3.1): the camera is frozen like a moving attempt; R cancels.
   countdown: ["reset"],
-  aligned_ready: ["scan", "launch", "reset", "align", "touch"],
+  aligned_ready: ["scan", "launch", "reset", "align", "touch", "level"],
   // The touch grid owns the wall: no scan or launch; A switches to the dots, T restarts it.
   touching: ["reset", "align", "touch"],
-  ready_closed: [],
+  ready_closed: ["level"],
   running: ["reset"],
   paused_open: ["scan", "reset", "resume", "align"],
   paused_closed: [],
   // Captured as the attempt ends: the end effect plays, the camera is paused,
   // no scan. "Jugar otra vez" (play) reads the board again and counts down.
-  won: ["launch", "reset", "align"],
-  lost: ["launch", "reset", "align"],
+  won: ["launch", "reset", "align", "level"],
+  lost: ["launch", "reset", "align", "level"],
 };
 
 function enabled(controls) {
@@ -82,9 +83,13 @@ test("without a live camera nothing that needs a frame is enabled", () => {
   }
 });
 
-test("without the projector window every control is disabled", () => {
+// The level picker (contract 3.2) is the one control that needs no window:
+// choosing a level only changes which boxes the projector will draw.
+const withoutLevel = (names) => names.filter((name) => name !== "level");
+
+test("without the projector window every control but the level picker is disabled", () => {
   for (const [name, { state }] of Object.entries(matrix.phases)) {
-    assert.deepEqual(enabled(controlsFor(state, true, false)), [], name);
+    assert.deepEqual(withoutLevel(enabled(controlsFor(state, true, false))), [], name);
   }
 });
 
@@ -128,7 +133,7 @@ test("live camera without the projector window points at J, not at scanning", ()
     ...matrix.phases.projector_closed.state,
     message: "Cambió la cámara. Escaneá y calibrá otra vez.",
   };
-  assert.deepEqual(enabled(controlsFor(state, true, false)), []);
+  assert.deepEqual(enabled(controlsFor(state, true, false)), ["level"]);
   const guide = setupGuide(state, true, false);
   assert.deepEqual([guide.step, guide.stage, guide.blocking], ["projector", "projector", true]);
   assert.match(guide.message, /\bJ\b/);

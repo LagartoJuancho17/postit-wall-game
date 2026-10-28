@@ -20,9 +20,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const OPENCV_VERSION = "4.12.0";
-const UI_FILES = ["index.html", "projector.html", "app.css", "app.js", "projector.js", "ui-core.mjs", "live-view.mjs", "effects.mjs", "sounds.mjs", "api.mjs", "align-run.mjs"];
+const UI_FILES = ["index.html", "projector.html", "app.css", "app.js", "projector.js", "ui-core.mjs", "live-view.mjs", "level-view.mjs", "effects.mjs", "sounds.mjs", "api.mjs", "align-run.mjs"];
 const BROWSER_FILES = ["alignment.mjs", "backend.mjs", "calibration.mjs", "controller.mjs", "lens.mjs", "touch.mjs", "handsfree.mjs", "numbers.mjs",
-  "palette.mjs", "physics.mjs", "vision.mjs"];
+  "palette.mjs", "physics.mjs", "vision.mjs", "levels.mjs"];
 
 function markBrowser(html, name) {
   const tag = /<html\b([^>]*)>/;
@@ -54,6 +54,9 @@ export function build(outDir = join(ROOT, "dist")) {
     else copyFileSync(source, join(outDir, name));
   }
   for (const name of BROWSER_FILES) copyFileSync(join(ROOT, "services/browser", name), join(outDir, "browser", name));
+  // browser/levels.mjs imports ../levels/levels.json, as in the source tree (contract 3.2).
+  mkdirSync(join(outDir, "levels"), { recursive: true });
+  copyFileSync(join(ROOT, "services/levels/levels.json"), join(outDir, "levels", "levels.json"));
   copyFileSync(join(ROOT, "node_modules/@techstark/opencv-js/dist/opencv.js"),
     join(outDir, "vendor", `opencv-${OPENCV_VERSION}.js`));
 

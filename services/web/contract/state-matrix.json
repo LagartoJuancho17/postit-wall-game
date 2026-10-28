@@ -4,6 +4,7 @@
    "accepts": {
     "align": true,
     "launch": true,
+    "level": true,
     "reset": true,
     "resume": false,
     "scan": true,
@@ -495,6 +496,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1280.0,
      "hands_free": {
       "armed": false,
@@ -509,6 +511,72 @@
      "space": "projector",
      "status": "ready",
      "width": 1280
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 800,
+      "portals": [],
+      "space": "projector",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 1280
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -697,6 +765,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -705,6 +775,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -713,6 +785,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -721,6 +795,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -740,6 +816,7 @@
    "accepts": {
     "align": false,
     "launch": false,
+    "level": false,
     "reset": true,
     "resume": false,
     "scan": false,
@@ -1112,6 +1189,7 @@
      "countdown_s": 2.4,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -1126,6 +1204,72 @@
      "space": "camera",
      "status": "ready",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -1314,6 +1458,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -1322,6 +1468,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -1330,6 +1478,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -1338,6 +1488,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -1357,6 +1509,7 @@
    "accepts": {
     "align": true,
     "launch": true,
+    "level": true,
     "reset": true,
     "resume": false,
     "scan": false,
@@ -1729,6 +1882,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.742,
+     "ended_by": "exit",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -1743,6 +1897,72 @@
      "space": "camera",
      "status": "lost",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -1931,6 +2151,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -1939,6 +2161,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -1947,6 +2171,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -1955,6 +2181,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -1974,6 +2202,7 @@
    "accepts": {
     "align": true,
     "launch": true,
+    "level": true,
     "reset": true,
     "resume": false,
     "scan": true,
@@ -2184,6 +2413,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -2198,6 +2428,72 @@
      "space": "camera",
      "status": "ready",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -2305,6 +2601,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -2313,6 +2611,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -2321,6 +2621,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -2329,6 +2631,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -2348,6 +2652,7 @@
    "accepts": {
     "align": true,
     "launch": false,
+    "level": true,
     "reset": false,
     "resume": false,
     "scan": true,
@@ -2390,6 +2695,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 0.0,
      "hands_free": {
       "armed": false,
@@ -2401,6 +2707,72 @@
      "space": "camera",
      "status": "none",
      "width": 0
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -2568,6 +2940,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -2576,6 +2950,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -2584,6 +2960,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -2592,6 +2970,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -2611,6 +2991,7 @@
    "accepts": {
     "align": false,
     "launch": false,
+    "level": false,
     "reset": true,
     "resume": false,
     "scan": true,
@@ -2983,6 +3364,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -2997,6 +3379,72 @@
      "space": "camera",
      "status": "running",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -3185,6 +3633,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3193,6 +3643,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3201,6 +3653,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3209,6 +3663,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -3228,6 +3684,7 @@
    "accepts": {
     "align": true,
     "launch": false,
+    "level": false,
     "reset": true,
     "resume": true,
     "scan": true,
@@ -3600,6 +4057,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -3614,6 +4072,72 @@
      "space": "camera",
      "status": "running",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -3802,6 +4326,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3810,6 +4336,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3818,6 +4346,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3826,6 +4356,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -3845,6 +4377,7 @@
    "accepts": {
     "align": false,
     "launch": false,
+    "level": true,
     "reset": false,
     "resume": false,
     "scan": true,
@@ -3887,6 +4420,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 0.0,
      "hands_free": {
       "armed": false,
@@ -3899,6 +4433,57 @@
      "status": "none",
      "width": 0
     },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": null,
+     "count": 6,
+     "done": [],
+     "geometry": null,
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
+    },
     "live_detection": null,
     "message": "Abrí la cámara en el navegador y luego la ventana del proyector con J.",
     "palette": {
@@ -3909,6 +4494,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3917,6 +4504,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3925,6 +4514,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -3933,6 +4524,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -3952,6 +4545,7 @@
    "accepts": {
     "align": true,
     "launch": true,
+    "level": true,
     "reset": true,
     "resume": false,
     "scan": true,
@@ -4324,6 +4918,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -4338,6 +4933,72 @@
      "space": "camera",
      "status": "ready",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -4526,6 +5187,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -4534,6 +5197,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -4542,6 +5207,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -4550,6 +5217,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -4569,6 +5238,7 @@
    "accepts": {
     "align": false,
     "launch": false,
+    "level": true,
     "reset": true,
     "resume": false,
     "scan": true,
@@ -4941,6 +5611,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -4955,6 +5626,72 @@
      "space": "camera",
      "status": "ready",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -5143,6 +5880,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -5151,6 +5890,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -5159,6 +5900,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -5167,6 +5910,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -5186,6 +5931,7 @@
    "accepts": {
     "align": false,
     "launch": false,
+    "level": false,
     "reset": true,
     "resume": false,
     "scan": false,
@@ -5558,6 +6304,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -5572,6 +6319,72 @@
      "space": "camera",
      "status": "running",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -5760,6 +6573,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -5768,6 +6583,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -5776,6 +6593,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -5784,6 +6603,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -5803,6 +6624,7 @@
    "accepts": {
     "align": true,
     "launch": false,
+    "level": false,
     "reset": true,
     "resume": false,
     "scan": false,
@@ -6255,6 +7077,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -6269,6 +7092,72 @@
      "space": "camera",
      "status": "ready",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -6457,6 +7346,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -6465,6 +7356,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -6473,6 +7366,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -6481,6 +7376,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -6500,6 +7397,7 @@
    "accepts": {
     "align": false,
     "launch": false,
+    "level": true,
     "reset": false,
     "resume": false,
     "scan": true,
@@ -6542,6 +7440,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.0,
+     "ended_by": "",
      "gravity_px_s2": 0.0,
      "hands_free": {
       "armed": false,
@@ -6554,6 +7453,57 @@
      "status": "none",
      "width": 0
     },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": null,
+     "count": 6,
+     "done": [],
+     "geometry": null,
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
+    },
     "live_detection": null,
     "message": "Ventana del proyector abierta. Mostrando detección en vivo.",
     "palette": {
@@ -6564,6 +7514,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -6572,6 +7524,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -6580,6 +7534,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -6588,6 +7544,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }
@@ -6607,6 +7565,7 @@
    "accepts": {
     "align": true,
     "launch": true,
+    "level": true,
     "reset": true,
     "resume": false,
     "scan": false,
@@ -6979,6 +7938,7 @@
      "countdown_s": 0.0,
      "countdown_total_s": 2.4,
      "elapsed_s": 0.469,
+     "ended_by": "goal",
      "gravity_px_s2": 1152.0,
      "hands_free": {
       "armed": false,
@@ -6993,6 +7953,72 @@
      "space": "camera",
      "status": "won",
      "width": 960
+    },
+    "level": {
+     "advance_s": 0.0,
+     "bumpers_max": null,
+     "check": {
+      "bumpers": 1,
+      "bumpers_max": null,
+      "covered": [],
+      "goal": null,
+      "start": null
+     },
+     "count": 6,
+     "done": [],
+     "geometry": {
+      "goal_zone": null,
+      "height": 720,
+      "portals": [],
+      "space": "camera",
+      "spikes": [],
+      "start_zone": null,
+      "walls": [],
+      "width": 960
+     },
+     "hint": "Sin recuadros ni límites: armá tu propio tablero.",
+     "id": "libre",
+     "list": [
+      {
+       "done": false,
+       "id": "libre",
+       "name": "Libre"
+      },
+      {
+       "done": false,
+       "id": "1",
+       "name": "Caída libre"
+      },
+      {
+       "done": false,
+       "id": "2",
+       "name": "Un rebote"
+      },
+      {
+       "done": false,
+       "id": "3",
+       "name": "La pared"
+      },
+      {
+       "done": false,
+       "id": "4",
+       "name": "Pinchos"
+      },
+      {
+       "done": false,
+       "id": "5",
+       "name": "Portal"
+      },
+      {
+       "done": false,
+       "id": "6",
+       "name": "Doble salto"
+      }
+     ],
+     "name": "Libre",
+     "next": null,
+     "number": 0,
+     "problem": null
     },
     "live_detection": {
      "height": 720,
@@ -7181,6 +8207,8 @@
        "hex": "#6cc678",
        "hue_high": 90,
        "hue_low": 40,
+       "mark": "#6cc678",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -7189,6 +8217,8 @@
        "hex": "#ff9b49",
        "hue_high": 19,
        "hue_low": 5,
+       "mark": "#ff9b49",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -7197,6 +8227,8 @@
        "hex": "#d75ab9",
        "hue_high": 179,
        "hue_low": 125,
+       "mark": "#d75ab9",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       },
@@ -7205,6 +8237,8 @@
        "hex": "#f7d84b",
        "hue_high": 39,
        "hue_low": 20,
+       "mark": "#f7d84b",
+       "mark_custom": false,
        "min_saturation": 75,
        "min_value": 55
       }

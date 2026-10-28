@@ -33,10 +33,16 @@ const dot = (a, b) => a.x * b.x + a.y * b.y;
 const sub = (a, b) => point(a.x - b.x, a.y - b.y);
 const addScaled = (a, v, t) => point(a.x + v.x * t, a.y + v.y * t);
 
-function gameState(position, velocity, elapsed, bounces, status, gravity = 0.0, still = 0.0) {
+// ended_by: why an attempt ended ("goal", "exit", "spikes", "stall", "timeout"), "" before.
+function gameState(position, velocity, elapsed, bounces, status, gravity = 0.0, still = 0.0, endedBy = "") {
   return Object.freeze({ position, velocity, elapsed_s: elapsed, bounce_count: bounces, status, gravity_px_s2: gravity,
-    still_s: still });
+    still_s: still, ended_by: endedBy });
 }
+
+// A level's obstacles (contract 3.2); a board without them has none.
+const walls = (board) => board.walls ?? [];
+const spikesOf = (board) => board.spikes ?? [];
+const portals = (board) => board.portals ?? [];
 
 function edges(polygon) {
   return polygon.map((a, i) => [a, polygon[(i + 1) % polygon.length]]);
@@ -70,6 +76,23 @@ function validateBoard(board) {
   validatePolygon(board.start, "start");
   validatePolygon(board.goal, "goal");
   board.bumpers.forEach((polygon, i) => validatePolygon(polygon, `bumper ${i}`));
+  walls(board).forEach((polygon, i) => validatePolygon(polygon, `wall ${i}`));
+  spikesOf(board).forEach((polygon, i) => validatePolygon(polygon, `spikes ${i}`));
+  portals(board).forEach((portal, i) => validatePolygon(portal.entry, `portal ${i}`));
+  portals(board).forEach((portal, i) => {
+    if (!Number.isFinite(portal.exit.x) || !Number.isFinite(portal.exit.y)) {
+      throw new Error(`portal ${i} must have a finite exit`);
+    }
+  });
+}
+
+/** What may not touch the ball at rest, in the order an operator fixes it. */
+function checkStart(position, board) {
+  if (overlapsPolygon(position, board.goal)) throw new Error("start overlaps goal");
+  if (board.bumpers.some((obstacle) => overlapsPolygon(position, obstacle))) throw new Error("start overlaps a bumper");
+  if (walls(board).some((wall) => overlapsPolygon(position, wall))) throw new Error("start overlaps a wall");
+  if (spikesOf(board).some((strip) => overlapsPolygon(position, strip))) throw new Error("start overlaps spikes");
+  if (portals(board).some((portal) => overlapsPolygon(position, portal.entry))) throw new Error("start overlaps a portal");
 }
 
 function centroid(polygon) {
@@ -116,10 +139,7 @@ export function readyState(board) {
   if (!fitsPlayfield(position, board.playfield)) {
     throw new Error("start centroid must fit inside playfield with ball radius");
   }
-  if (overlapsPolygon(position, board.goal)) throw new Error("start overlaps goal");
-  if (board.bumpers.some((obstacle) => overlapsPolygon(position, obstacle))) {
-    throw new Error("start overlaps a bumper");
-  }
+  checkStart(position, board);
   return gameState(position, point(0.0, 0.0), 0.0, 0, GameStatus.READY);
 }
 
@@ -154,10 +174,7 @@ export function dropReadyState(board) {
   if (!fitsPlayfield(position, board.playfield)) {
     throw new Error("the ball must fit inside the playfield under the start note");
   }
-  if (overlapsPolygon(position, board.goal)) throw new Error("start overlaps goal");
-  if (board.bumpers.some((obstacle) => overlapsPolygon(position, obstacle))) {
-    throw new Error("start overlaps a bumper");
-  }
+  checkStart(position, board);
   return gameState(position, point(0.0, 0.0), 0.0, 0, GameStatus.READY);
 }
 
@@ -239,7 +256,9 @@ function playfieldExit(position, velocity, playfield) {
   return best;
 }
 
-const PRIORITY = { goal: 0, exit: 1, bumper: 2 };
+// A simultaneous goal contact takes priority over everything else; a loss
+// over a portal, and a portal over a bounce.
+const PRIORITY = { goal: 0, spikes: 1, exit: 2, portal: 3, bumper: 4 };
 
 /**
  * Advance a fixed board by `dtS`; terminal states remain unchanged. Goal
@@ -256,20 +275,15 @@ function restOn(supports, normal) {
 export function step(board, state, dtS) {
   if (!Number.isFinite(dtS) || dtS < 0) throw new Error("dt_s must be nonnegative and finite");
   if (state.status !== GameStatus.RUNNING || dtS === 0) return state;
-  if (!fitsPlayfield(state.position, board.playfield)) {
-    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.LOST,
-      state.gravity_px_s2 ?? 0.0, state.still_s ?? 0.0);
-  }
-  if (overlapsPolygon(state.position, board.goal)) {
-    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.WON,
-      state.gravity_px_s2 ?? 0.0, state.still_s ?? 0.0);
-  }
+  const ended = (status, why) => gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, status,
+    state.gravity_px_s2 ?? 0.0, state.still_s ?? 0.0, why);
+  if (!fitsPlayfield(state.position, board.playfield)) return ended(GameStatus.LOST, "exit");
+  if (overlapsPolygon(state.position, board.goal)) return ended(GameStatus.WON, "goal");
+  if (spikesOf(board).some((strip) => overlapsPolygon(state.position, strip))) return ended(GameStatus.LOST, "spikes");
   const gravity = state.gravity_px_s2 ?? 0.0;
   const stillBefore = state.still_s ?? 0.0;
-  if (gravity > 0 && (state.elapsed_s >= MAX_ATTEMPT_S || stillBefore >= STALL_S)) {
-    return gameState(state.position, state.velocity, state.elapsed_s, state.bounce_count, GameStatus.LOST, gravity,
-      stillBefore);
-  }
+  if (gravity > 0 && state.elapsed_s >= MAX_ATTEMPT_S) return ended(GameStatus.LOST, "timeout");
+  if (gravity > 0 && stillBefore >= STALL_S) return ended(GameStatus.LOST, "stall");
   let { position, velocity } = state;
   let elapsed = state.elapsed_s;
   let bounces = state.bounce_count;
@@ -306,10 +320,20 @@ export function step(board, state, dtS) {
     const events = [];
     const goal = sweptPolygonHit(position, chord, board.goal);
     if (goal !== null) events.push({ ...goal, kind: "goal" });
-    for (const obstacle of board.bumpers) {
+    for (const obstacle of [...board.bumpers, ...walls(board)]) {   // a wall bounces like a bumper
       const hit = sweptPolygonHit(position, chord, obstacle);
       if (hit !== null) events.push({ ...hit, kind: "bumper" });
     }
+    for (const strip of spikesOf(board)) {
+      const hit = sweptPolygonHit(position, chord, strip);
+      if (hit !== null) events.push({ ...hit, kind: "spikes" });
+    }
+    let portalAt = null;
+    for (const portal of portals(board)) {
+      const hit = sweptPolygonHit(position, chord, portal.entry);
+      if (hit !== null && (portalAt === null || hit.time < portalAt[0].time)) portalAt = [{ ...hit, kind: "portal" }, portal.exit];
+    }
+    if (portalAt !== null) events.push(portalAt[0]);
     const exitHit = playfieldExit(position, chord, board.playfield);
     if (exitHit !== null) events.push(exitHit);
     if (!events.length) return running(remaining);
@@ -326,8 +350,17 @@ export function step(board, state, dtS) {
     velocity = along(point(velocity.x, velocity.y + gravity * travel));
     elapsed += travel;
     remaining -= travel;
-    if (hit.kind === "goal") return gameState(position, velocity, elapsed, bounces, GameStatus.WON, gravity, stillBefore);
-    if (hit.kind === "exit") return gameState(position, velocity, elapsed, bounces, GameStatus.LOST, gravity, stillBefore);
+    if (hit.kind === "goal") return gameState(position, velocity, elapsed, bounces, GameStatus.WON, gravity, stillBefore, "goal");
+    if (hit.kind === "exit" || hit.kind === "spikes") {
+      return gameState(position, velocity, elapsed, bounces, GameStatus.LOST, gravity, stillBefore, hit.kind);
+    }
+    if (hit.kind === "portal") {
+      // Out at the exit with the same velocity; the surfaces it rested on stay behind.
+      position = portalAt[1];
+      supports.length = 0;
+      if (remaining <= EPS) return running(remaining);
+      continue;
+    }
     // Every bumper touched at this same instant answers together: a ball
     // dropped into a symmetric V touches both faces at once.
     const contacts = events.filter((candidate) => candidate.kind === "bumper" && candidate.time <= hit.time + SIMULTANEOUS_S)

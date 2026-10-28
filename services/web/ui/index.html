@@ -125,6 +125,29 @@
               <button class="role-pick" id="pick-marker" type="button" aria-pressed="false" aria-label="Tomar el color de esquinas tocando la imagen" title="Tomar el color tocando la imagen" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5"/><path d="m16.5 2.5 5 5-3 3-5-5z"/><path d="M13.5 6.5 4 16v4h4l9.5-9.5"/></svg></button>
             </div>
           </div>
+          <div class="marks" aria-labelledby="marks-heading">
+            <span class="marks-heading" id="marks-heading">Color al detectar</span>
+            <label class="mark-role" data-role="start" data-custom="false">
+              <span class="mark-name">Inicio</span>
+              <input class="mark-swatch" id="mark-start" type="color" value="#ffffff" aria-label="Color con que se marca inicio al detectarse" disabled>
+              <button class="mark-clear" id="mark-clear-start" type="button" title="Volver al color del post-it" aria-label="Marcar inicio con el color del post-it" disabled>×</button>
+            </label>
+            <label class="mark-role" data-role="goal" data-custom="false">
+              <span class="mark-name">Llegada</span>
+              <input class="mark-swatch" id="mark-goal" type="color" value="#ffffff" aria-label="Color con que se marca llegada al detectarse" disabled>
+              <button class="mark-clear" id="mark-clear-goal" type="button" title="Volver al color del post-it" aria-label="Marcar llegada con el color del post-it" disabled>×</button>
+            </label>
+            <label class="mark-role" data-role="bumper" data-custom="false">
+              <span class="mark-name">Rebotes</span>
+              <input class="mark-swatch" id="mark-bumper" type="color" value="#ffffff" aria-label="Color con que se marca rebotes al detectarse" disabled>
+              <button class="mark-clear" id="mark-clear-bumper" type="button" title="Volver al color del post-it" aria-label="Marcar rebotes con el color del post-it" disabled>×</button>
+            </label>
+            <label class="mark-role" data-role="marker" data-custom="false">
+              <span class="mark-name">Esquinas</span>
+              <input class="mark-swatch" id="mark-marker" type="color" value="#ffffff" aria-label="Color con que se marca esquinas al detectarse" disabled>
+              <button class="mark-clear" id="mark-clear-marker" type="button" title="Volver al color del post-it" aria-label="Marcar esquinas con el color del post-it" disabled>×</button>
+            </label>
+          </div>
           <div class="palette-footer">
             <p id="palette-note">Tocá el gotero y después el post-it en la imagen, o elegí el color en el cuadrado. La luz se enciende cuando la cámara lo detecta.</p>
             <button id="palette-reset" class="link-button" type="button" disabled>Colores originales</button>
@@ -160,6 +183,11 @@
               <span id="game-pill" class="game-pill">Sin tablero</span>
             </div>
             <p class="drop-note">La pelota cae desde abajo del inicio. Mové los post-its para guiarla hasta la llegada.</p>
+            <div class="level-picker">
+              <label class="level-label" for="level-select">Nivel</label>
+              <select id="level-select" disabled></select>
+              <p id="level-status" class="level-status" role="status"></p>
+            </div>
             <div class="play-actions">
               <button id="launch-button" class="button button-dark" type="button" disabled><span id="launch-label">Soltar pelota</span> <kbd>Espacio</kbd></button>
               <button id="resume-button" class="button button-primary" type="button" hidden disabled>Continuar intento <kbd>Espacio</kbd></button>

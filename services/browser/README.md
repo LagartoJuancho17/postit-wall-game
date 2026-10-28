@@ -13,6 +13,7 @@ through `window.opener`.
 | `alignment.mjs` | `services/calibration/coded.py`: layout, codes, pattern frames and the decoder (contract 1.1-1.3). |
 | `vision.mjs` | `services/vision/detector.py` + `quality.py`: color masks, candidates, two-pass sub-pixel refinement (2.4), the joining rim bridge (2.5), boards and frame quality. |
 | `calibration.mjs` | `estimate_homography` (OpenCV's own `findHomography`), point and board mapping, `offset_convex_polygon`. |
+| `levels.mjs` | `services/levels`: level geometry, the zone and bumper checks, obstacles on a board (contract 3.2). It imports `../levels/levels.json`; the static build copies it to `levels/levels.json`. |
 | `physics.mjs`, `palette.mjs`, `numbers.mjs` | The physics engine, the palette rules, and Python's `round` (half to even on the exact binary value) and `%`. |
 
 What the browser cannot do is said where it happens: there is no USB camera
@@ -42,7 +43,7 @@ code and writes `parity/golden/` (gitignored); the tests replay every case:
 - 15 controller scripts (406 steps), including a whole alignment with the
   overlay check, every refusal and every invalidation reason.
 
-2116 of 2116 cases agree. To get the same bits, Python and JS avoid the few
+4630 of 4630 cases agree (levels, marks and obstacle physics included). To get the same bits, Python and JS avoid the few
 operations whose last bit differs between them: Python 3.12's compensated
 `sum()` (both sum left to right), `hypot` (both use `sqrt(dx*dx + dy*dy)`
 where it decides a pixel), and numpy's pairwise reductions (spelled out as

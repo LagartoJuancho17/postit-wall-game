@@ -9,6 +9,8 @@
       "hex": "#6cc678",
       "hue_high": 90,
       "hue_low": 40,
+      "mark": "#6cc678",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -17,6 +19,8 @@
       "hex": "#ff9b49",
       "hue_high": 19,
       "hue_low": 5,
+      "mark": "#ff9b49",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -25,6 +29,8 @@
       "hex": "#d75ab9",
       "hue_high": 179,
       "hue_low": 125,
+      "mark": "#d75ab9",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -33,6 +39,8 @@
       "hex": "#f7d84b",
       "hue_high": 39,
       "hue_low": 20,
+      "mark": "#f7d84b",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      }
@@ -247,6 +255,8 @@
       "hex": "#6cc678",
       "hue_high": 90,
       "hue_low": 40,
+      "mark": "#6cc678",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -255,6 +265,8 @@
       "hex": "#ff9b49",
       "hue_high": 19,
       "hue_low": 5,
+      "mark": "#ff9b49",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -263,6 +275,8 @@
       "hex": "#d75ab9",
       "hue_high": 179,
       "hue_low": 125,
+      "mark": "#d75ab9",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -271,6 +285,8 @@
       "hex": "#f7d84b",
       "hue_high": 39,
       "hue_low": 20,
+      "mark": "#f7d84b",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      }
@@ -465,6 +481,8 @@
       "hex": "#6cc678",
       "hue_high": 90,
       "hue_low": 40,
+      "mark": "#6cc678",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -473,6 +491,8 @@
       "hex": "#ff9b49",
       "hue_high": 19,
       "hue_low": 5,
+      "mark": "#ff9b49",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -481,6 +501,8 @@
       "hex": "#d75ab9",
       "hue_high": 179,
       "hue_low": 125,
+      "mark": "#d75ab9",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -489,6 +511,8 @@
       "hex": "#f7d84b",
       "hue_high": 39,
       "hue_low": 20,
+      "mark": "#f7d84b",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      }
@@ -662,6 +686,8 @@
       "hex": "#6cc678",
       "hue_high": 90,
       "hue_low": 40,
+      "mark": "#6cc678",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -670,6 +696,8 @@
       "hex": "#ff9b49",
       "hue_high": 19,
       "hue_low": 5,
+      "mark": "#ff9b49",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -678,6 +706,8 @@
       "hex": "#d75ab9",
       "hue_high": 179,
       "hue_low": 125,
+      "mark": "#d75ab9",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -686,6 +716,8 @@
       "hex": "#f7d84b",
       "hue_high": 39,
       "hue_low": 20,
+      "mark": "#f7d84b",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      }
@@ -799,6 +831,8 @@
       "hex": "#6cc678",
       "hue_high": 90,
       "hue_low": 40,
+      "mark": "#6cc678",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -807,6 +841,8 @@
       "hex": "#ff9b49",
       "hue_high": 19,
       "hue_low": 5,
+      "mark": "#ff9b49",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -815,6 +851,8 @@
       "hex": "#d75ab9",
       "hue_high": 179,
       "hue_low": 125,
+      "mark": "#d75ab9",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      },
@@ -823,6 +861,8 @@
       "hex": "#f7d84b",
       "hue_high": 39,
       "hue_low": 20,
+      "mark": "#f7d84b",
+      "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
      }
@@ -995,6 +1035,8 @@
       "hex": "#e6d817",
       "hue_high": 38,
       "hue_low": 18,
+      "mark": "#e6d817",
+      "mark_custom": false,
       "min_saturation": 115,
       "min_value": 92
      },
@@ -1003,6 +1045,8 @@
       "hex": "#e61733",
       "hue_high": 6,
       "hue_low": 166,
+      "mark": "#e61733",
+      "mark_custom": false,
       "min_saturation": 115,
       "min_value": 92
      },
@@ -1011,6 +1055,8 @@
       "hex": "#a117e6",
       "hue_high": 150,
       "hue_low": 130,
+      "mark": "#a117e6",
+      "mark_custom": false,
       "min_saturation": 115,
       "min_value": 92
      },
@@ -1019,6 +1065,8 @@
       "hex": "#177ee5",
       "hue_high": 115,
       "hue_low": 95,
+      "mark": "#177ee5",
+      "mark_custom": false,
       "min_saturation": 114,
       "min_value": 92
      }

@@ -26,7 +26,7 @@ from typing import Any, Callable
 import cv2
 import numpy as np
 
-from contracts import Board, Point, Polygon, quadrilateral_center
+from contracts import Board, Point, Polygon, Portal, quadrilateral_center
 from contracts.geometry import offset_convex_polygon
 from services.calibration import (ALIGNMENT_FRAMES, alignment_code, alignment_layout, decode_alignment,
                                   estimate_homography, lens_for, pattern_dots, transform_board, transform_point)
@@ -98,6 +98,26 @@ class Frames:
                 stream.write(np.ascontiguousarray(image).tobytes())
 
 
+def _level_image(start, goal, bumpers=()) -> np.ndarray:
+    """A 960 x 720 wall for a level (contract 3.2): notes at these centers."""
+    image = np.full((720, 960, 3), 220, dtype=np.uint8)
+    for x, y in ((90, 90), (870, 90), (870, 630), (90, 630)):
+        cv2.rectangle(image, (x - 22, y - 22), (x + 22, y + 22), _color(FRAME_HUES["marker"]), -1)
+    for role, (x, y) in (("start", start), ("goal", goal), *(("bumper", b) for b in bumpers)):
+        cv2.rectangle(image, (x - 30, y - 30), (x + 30, y + 30), _color(FRAME_HUES[role]), -1)
+    return image
+
+
+LEVEL_FRAMES = {
+    "level1_clean": ((480, 108), (480, 576), ()),                 # level 1: both in their zones, a won drop
+    "level1_bumper": ((480, 108), (480, 576), ((300, 330),)),     # level 1 allows no bumper
+    "level1_outside": ((180, 350), (480, 576), ()),               # start out of its zone
+    "level1_goal_out": ((480, 108), (780, 350), ()),              # goal out of its zone
+    "level4_spikes": ((441, 108), (749, 590), ()),                # level 4: the bare drop meets the spikes
+    "level5_on_exit": ((134, 108), (768, 590), ((480, 100),)),    # level 5: a bumper on the portal's exit
+}
+
+
 def build_frames() -> Frames:
     frames = Frames()
     frames.add_jpeg("wall_430", _image(430))
@@ -114,6 +134,8 @@ def build_frames() -> Frames:
     moved[320:380, 330:390] = _color(FRAME_HUES["start"])   # the start note stuck elsewhere
     frames.add_jpeg("moved_start_drop", moved)
     frames.add_jpeg("recolored", _image(430, RECOLORED))
+    for name, (start, goal, bumpers) in LEVEL_FRAMES.items():
+        frames.add_jpeg(name, _level_image(start, goal, bumpers))
     no_start = _image(430)
     no_start[315:386, 145:216] = 220
     frames.add_jpeg("missing_start", no_start)
@@ -185,8 +207,12 @@ def _poly(polygon: Polygon) -> list[list[float]]:
 
 
 def _board(board: Board) -> dict[str, Any]:
-    return {"playfield": _poly(board.playfield), "start": _poly(board.start), "goal": _poly(board.goal),
+    data = {"playfield": _poly(board.playfield), "start": _poly(board.start), "goal": _poly(board.goal),
             "bumpers": [_poly(p) for p in board.bumpers], "markers": [_poly(p) for p in board.markers]}
+    if board.walls or board.spikes or board.portals:   # a level's obstacles (contract 3.2)
+        data.update(walls=[_poly(p) for p in board.walls], spikes=[_poly(p) for p in board.spikes],
+                    portals=[{"entry": _poly(p.entry), "exit": _point(p.exit)} for p in board.portals])
+    return data
 
 
 def _from_board(data: dict[str, Any]) -> Board:
@@ -579,6 +605,22 @@ def physics_cases() -> list[dict[str, Any]]:
         board = Board(field, start, goal, bumpers, ())
         cases.append(_physics_case(board, 0, 0, rng.choice([1 / 120, 1 / 60, 0.05]), 900,
                                    rng.uniform(300, 1800), drop_mode=True))
+    # A level's obstacles (contract 3.2): walls bounce, spikes lose, portals move the ball.
+    for index in range(60):
+        start = _rotated(rng.uniform(150, 1100), rng.uniform(60, 200), 60, 60, rng.uniform(-20, 20))
+        goal = _rotated(rng.uniform(150, 1100), rng.uniform(560, 700), 60, 60, rng.uniform(-20, 20))
+        bumpers = tuple(_rotated(rng.uniform(100, 1150), rng.uniform(300, 520), rng.uniform(40, 120),
+                                 rng.uniform(20, 60), rng.uniform(-50, 50)) for _ in range(rng.randrange(0, 3)))
+        walls = tuple(_rotated(rng.uniform(100, 1150), rng.uniform(260, 600), rng.uniform(20, 300),
+                               rng.uniform(15, 40), rng.uniform(-60, 60)) for _ in range(rng.randrange(0, 3)))
+        spikes = tuple(_rect(x, y, x + rng.uniform(60, 300), y + 18)
+                       for x, y in ((rng.uniform(80, 900), rng.uniform(380, 640)) for _ in range(rng.randrange(0, 3))))
+        portals = tuple(Portal(_rect(x, y, x + rng.uniform(60, 200), y + 20),
+                               Point(rng.uniform(100, 1150), rng.uniform(40, 120)))
+                        for x, y in ((rng.uniform(80, 1000), rng.uniform(300, 650)) for _ in range(rng.randrange(0, 2))))
+        board = Board(field, start, goal, bumpers, (), walls, spikes, portals)
+        cases.append(_physics_case(board, 0, 0, rng.choice([1 / 120, 1 / 60]), 900,
+                                   rng.uniform(300, 1800), drop_mode=True))
     v_left = Polygon((Point(560, 360), Point(610, 460), Point(610, 485), Point(560, 385)))
     v_right = Polygon((Point(610, 460), Point(660, 360), Point(660, 385), Point(610, 485)))
     crease = Board(field, _rect(580, 160, 640, 220), _rect(900, 600, 960, 660), (v_left, v_right), ())
@@ -618,7 +660,7 @@ def _physics_case(board: Board, angle: float, speed: float, dt: float, steps: in
             trace.append({"i": index, "x": state.position.x, "y": state.position.y,
                           "vx": state.velocity.x, "vy": state.velocity.y,
                           "t": state.elapsed_s, "bounces": state.bounce_count, "status": state.status.value,
-                          "still": state.still_s})
+                          "still": state.still_s, "ended_by": state.ended_by})
         if state.status != GameStatus.RUNNING:
             break
     ready = drop_ready_state(board) if drop_mode else ready_state(board)
@@ -854,6 +896,38 @@ def handsfree_scripts() -> dict[str, list[dict[str, Any]]]:
     }
 
 
+def level_scripts() -> dict[str, list[dict[str, Any]]]:
+    """Contract 3.2: zones, the bumper limit, obstacles, a won level moving on;
+    contract 2.6: the mark colors."""
+    def act(name, **data):
+        return {"op": "action", "payload": {"action": name, **data}}
+    open_ = act("projection_open", width=1280, height=800)
+    label = "Cámara de iPhone de Tobias"
+
+    def frames(name, n=1):
+        return [step for _ in range(n) for step in ({"op": "tick", "advance": 0.25},
+                                                    {"op": "preview", "frame": name, "camera": label})]
+    wait = [{"op": "tick", "advance": 0.1} for _ in range(30)]
+    return {
+        "levels": [{"op": "state"}, *frames("level1_bumper"), open_, act("level", id="1"), {"op": "state"},
+                   act("level", id="nope"), act("level"), act("launch"), *frames("level1_outside"),
+                   {"op": "state"}, *frames("level1_goal_out"), *frames("level1_clean"), {"op": "state"},
+                   act("play"), act("level", id="2"), *frames("level1_clean", 14), {"op": "state"},
+                   *frames("level1_clean", 16), {"op": "state"}, act("level", id="3"), *frames("level1_clean"), *wait, {"op": "state"},
+                   *[{"op": "tick", "advance": 0.25} for _ in range(16)], {"op": "state"},
+                   act("level", id="libre"), {"op": "state"}, act("level", id="6"), act("level", id="4"),
+                   *frames("level4_spikes"), act("play"), {"op": "tick", "advance": 2.5}, *wait, {"op": "state"},
+                   act("level", id="5"), *frames("level5_on_exit"), {"op": "state"}],
+        "level_replay": [act("level", id="1"), *frames("level1_clean"), open_, act("play"),
+                         *frames("level1_clean", 14), act("play"), {"op": "state"}, *frames("level1_clean", 30),
+                         {"op": "state"}, act("reset"), {"op": "state"}],
+        "marks": [act("mark_set", role="goal", hex="#00FFAA"), act("mark_set", role="sky", hex="#ff0000"),
+                  act("mark_set", role="goal", hex="#zz0000"), act("mark_set", role="start", hex=" #123456 "),
+                  {"op": "state"}, act("mark_set", role="goal"), act("mark_set", role="goal", hex=None),
+                  act("mark_set", role="bumper", hex="#ffffff"), act("palette_reset"), {"op": "state"}],
+    }
+
+
 def controller_scripts() -> dict[str, list[dict[str, Any]]]:
     def act(name, **data):
         return {"op": "action", "payload": {"action": name, **data}}
@@ -997,7 +1071,8 @@ def export() -> dict[str, Any]:
     align_names = _alignment_jpegs(frames)
     _probe_hit_frame(frames, align_names)
     frames.write(GOLDEN / "frames")
-    scripts = {**controller_scripts(), **alignment_scripts(align_names), **touch_scripts(), **handsfree_scripts()}
+    scripts = {**controller_scripts(), **alignment_scripts(align_names), **touch_scripts(), **handsfree_scripts(),
+               **level_scripts()}
     golden = {
         "version": 2,
         "refine": refine,

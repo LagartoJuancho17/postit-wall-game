@@ -1,0 +1,12 @@
+{
+ "version": 1,
+ "levels": [
+  {"id": "libre", "name": "Libre", "hint": "Sin recuadros ni límites: armá tu propio tablero.", "start_zone": null, "goal_zone": null, "bumpers_max": null},
+  {"id": "1", "name": "Caída libre", "hint": "Poné cada post-it en su recuadro y soltá la pelota.", "start_zone": [0.44, 0.06, 0.56, 0.24], "goal_zone": [0.44, 0.7, 0.56, 0.9], "bumpers_max": 0, "solution": []},
+  {"id": "2", "name": "Un rebote", "hint": "Un post-it verde inclinado desvía la pelota.", "start_zone": [0.12, 0.06, 0.24, 0.24], "goal_zone": [0.4, 0.74, 0.52, 0.92], "bumpers_max": 1, "solution": [{"center": [0.18, 0.3948], "angle": 25}]},
+  {"id": "3", "name": "La pared", "hint": "Pasá la pelota por encima de la pared.", "start_zone": [0.1, 0.06, 0.22, 0.24], "goal_zone": [0.58, 0.74, 0.7, 0.92], "bumpers_max": 2, "walls": [{"rect": [0.44, 0.66, 0.465, 1.0]}], "solution": [{"center": [0.16, 0.7062], "angle": 25}]},
+  {"id": "4", "name": "Pinchos", "hint": "Que la pelota no toque los pinchos.", "start_zone": [0.4, 0.06, 0.52, 0.24], "goal_zone": [0.72, 0.72, 0.84, 0.92], "bumpers_max": 1, "spikes": [{"rect": [0.3, 0.56, 0.62, 0.595], "facing": "up"}], "solution": [{"center": [0.46, 0.4773], "angle": 25}]},
+  {"id": "5", "name": "Portal", "hint": "Lo que entra por el portal sale por arriba.", "start_zone": [0.08, 0.06, 0.2, 0.24], "goal_zone": [0.74, 0.72, 0.86, 0.92], "bumpers_max": 1, "spikes": [{"rect": [0.4, 0.62, 0.62, 0.655], "facing": "up"}], "portals": [{"entry": {"rect": [0.06, 0.4, 0.22, 0.44]}, "exit": [0.5, 0.12]}], "solution": [{"center": [0.5, 0.2065], "angle": 15}]},
+  {"id": "6", "name": "Atajo", "hint": "El portal conserva la velocidad: entrá en diagonal.", "start_zone": [0.06, 0.06, 0.18, 0.24], "goal_zone": [0.8, 0.72, 0.92, 0.92], "bumpers_max": 2, "spikes": [{"rect": [0.02, 0.55, 0.26, 0.585], "facing": "up"}, {"rect": [0.52, 0.62, 0.72, 0.655], "facing": "up"}], "portals": [{"entry": {"rect": [0.3, 0.62, 0.48, 0.66]}, "exit": [0.62, 0.1]}], "solution": [{"center": [0.12, 0.4902], "angle": 35}]}
+ ]
+}

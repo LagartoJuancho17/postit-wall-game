@@ -41,6 +41,7 @@ import {
   drawTrail,
   PARTY_COLORS,
 } from "./effects.mjs";
+import { drawLevel, drawLevelProblem, nextLine, resultText } from "./level-view.mjs";
 
 export const LIVE_MAX_AGE_MS = 1500;
 export const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
@@ -103,6 +104,16 @@ const validShape = (shape) => Array.isArray(shape?.points) && shape.points.lengt
 const HEX = /^#[0-9a-f]{6}$/i;
 const TEXT_FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
 
+/**
+ * The color a detected note of `role` is marked with (contract 2.6): the
+ * operator's mark color, else its detection color, else the fallback.
+ */
+export function markColor(palette, role) {
+  const entry = palette?.roles?.[role];
+  for (const color of [entry?.mark, entry?.hex]) if (HEX.test(color ?? "")) return color;
+  return FALLBACK_COLORS[role] ?? "#ffffff";
+}
+
 function fitFrame(frameWidth, frameHeight, width, height) {
   return [frameWidth, frameHeight, width, height].every(positive)
     ? containTransform(width, height, frameWidth, frameHeight) : null;
@@ -115,7 +126,7 @@ export function drawLiveDetection(ctx, preview, palette, width, height, theme = 
   for (const role of PALETTE_ROLES) {
     const notes = preview.roles?.[role]?.notes;
     if (!Array.isArray(notes)) continue;
-    const color = palette?.roles?.[role]?.hex || FALLBACK_COLORS[role];
+    const color = markColor(palette, role);
     for (const shape of notes) {
       if (!validShape(shape)) continue;
       ctx.save();
@@ -359,7 +370,7 @@ function drawEffects(ctx, { state, mapping, width, height, effects, projected, p
   // Paused, the wall may be scanned: no colored light then either.
   if (!effects || game?.camera_paused !== true || game.paused === true) return;
   const place = (point) => point && placeBall({ ...game, position: point }, state.camera, mapping, width, height);
-  const hex = (role) => palette?.roles?.[role]?.hex ?? FALLBACK_COLORS[role];
+  const hex = (role) => markColor(palette, role);
   const paper = (role) => projected.find((note) => note.role === role)?.points ?? null;
   const ball = place(game.position);
   const scale = ball ? ball.radius / BALL_RADIUS_PX : 1;
@@ -397,10 +408,9 @@ function drawCountdownScene(ctx, { state, mapping, width, height, projected, pal
   if (!(countdownS > 0) || game?.camera_paused !== true || game.status !== "ready" || !validPoint(game.position)) return;
   const ball = placeBall(game, state.camera, mapping, width, height);
   if (!ball) return;
-  const hex = palette?.roles?.start?.hex;
   drawCountdown(ctx, { remainingS: countdownS, totalS: game.countdown_total_s, origin: ball.center,
     startPaper: projected.find((note) => note.role === "start")?.points ?? null,
-    color: HEX.test(hex ?? "") ? hex : FALLBACK_COLORS.start, scale: ball.radius / BALL_RADIUS_PX, font: TEXT_FONT });
+    color: markColor(palette, "start"), scale: ball.radius / BALL_RADIUS_PX, font: TEXT_FONT });
 }
 
 function nearestPaper(notes, point) {
@@ -483,6 +493,7 @@ function drawHandsFreeHint(ctx, game, width, height, color) {
 }
 
 function drawGame(ctx, state, mapping, width, height, colors, effects = null) {
+  const level = state?.level ?? null;
   const game = state?.game;
   if (!game) return;
   // The ball appears when it is released (Tobias, 2026-10-26): not while ready.
@@ -497,7 +508,14 @@ function drawGame(ctx, state, mapping, width, height, colors, effects = null) {
     // Won, while the camera is paused: the text cycles through party colors.
     const party = game.status === "won" && game.camera_paused === true && Number.isFinite(effects?.endAgeMs);
     if (party) ctx.fillStyle = PARTY_COLORS[Math.floor(effects.endAgeMs / 120) % PARTY_COLORS.length];
-    ctx.fillText(RESULT_TEXTS[game.status], width / 2, 75);
+    // Why it ended, and the level that follows a won one (contract 3.2).
+    ctx.fillText(resultText(game, level) ?? RESULT_TEXTS[game.status], width / 2, 75);
+    const upcoming = nextLine(game, level);
+    if (upcoming) {
+      ctx.font = `500 24px ${TEXT_FONT}`;
+      ctx.fillStyle = colors.ball;
+      ctx.fillText(upcoming, width / 2, 110);
+    }
   }
 }
 
@@ -520,6 +538,7 @@ function drawHint(ctx, height, color) {
 export function drawProjectorScene(ctx, {
   state = null, preview = state?.live_detection, palette = state?.palette, theme = "dark",
   width, height, fresh = true, forceFill = false, effects = null, appears = null, countdownS = null,
+  levelBannerAgeMs = null,
 } = {}) {
   if (!positive(width) || !positive(height)) return;
   const colors = neutralColors(theme);
@@ -537,19 +556,25 @@ export function drawProjectorScene(ctx, {
   for (const [index, { role, points }] of projected.entries()) {
     if (matrix) {
       // Aligned: the role color strictly inside the paper, nothing outside.
-      const hex = palette?.roles?.[role]?.hex;
-      drawFill(ctx, points, HEX.test(hex ?? "") ? hex : FALLBACK_COLORS[role]);
+      drawFill(ctx, points, markColor(palette, role));
     } else {
       drawRim(ctx, points, colors.rim, clear.filter((region, k) => k !== index && region));
     }
   }
   if (matrix && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
+  // The level (contract 3.2), never in the overlay check's capture (2.3).
+  if (!forceFill) {
+    drawLevel(ctx, { state, width, height, color: colors.rim, keepClear: clear.filter(Boolean),
+      bannerAgeMs: levelBannerAgeMs });
+  }
   if (!forceFill) drawAppearRipples(ctx, appears, projected, colors.rim, notes ?? {});
   drawEffects(ctx, { state, mapping, width, height, effects, projected, palette });
   drawCountdownScene(ctx, { state, mapping, width, height, projected, palette, countdownS });
   drawGame(ctx, state, mapping, width, height, colors, effects);
   if (!matrix) drawHint(ctx, height, colors.rim);
-  if (!forceFill && !(countdownS > 0)) drawHandsFreeHint(ctx, state?.game, width, height, colors.rim);
+  if (!forceFill && !(countdownS > 0) && !drawLevelProblem(ctx, state?.level, width, height, colors.rim)) {
+    drawHandsFreeHint(ctx, state?.game, width, height, colors.rim);
+  }
   ctx.restore();
 }
 
@@ -562,10 +587,9 @@ function drawProbes(ctx, probes, palette) {
   if (!Array.isArray(probes)) return;
   for (const probe of probes) {
     if (!Array.isArray(probe?.points) || probe.points.length !== 4 || !probe.points.every(validPoint)) continue;
-    const hex = palette?.roles?.[probe.role]?.hex;
     tracePolygon(ctx, probe.points);
     ctx.globalAlpha = FILL_ALPHA;
-    ctx.fillStyle = HEX.test(hex ?? "") ? hex : FALLBACK_COLORS[probe.role] ?? "#ffffff";
+    ctx.fillStyle = markColor(palette, probe.role);
     ctx.fill();
     ctx.globalAlpha = 1;
   }

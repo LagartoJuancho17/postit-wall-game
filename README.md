@@ -102,6 +102,41 @@ En la pared también se ve:
 
 `R` cancela la cuenta. Detalle en `docs/alignment-and-color.md`, sección 3.1.
 
+## Niveles
+
+El juego arranca en el nivel 1 (o en el último que jugaste). En la pared se
+proyectan dos recuadros: **INICIO** y **LLEGADA**. La pelota sale solo si el
+post-it de inicio está dentro de su recuadro y el de llegada dentro del suyo.
+Cuando un post-it está en su lugar, el recuadro deja de ser punteado y
+aparece una ✓. Si falta algo, la pared lo dice abajo, por ejemplo "Poné el
+post-it de inicio dentro de su recuadro." o "Este nivel deja usar 1 rebote:
+sacá 1.".
+
+Cada nivel tiene un cupo de post-its verdes y puede proyectar:
+
+- **Paredes** (rayadas): la pelota rebota en ellas.
+- **Pinchos** (dientes): si la pelota los toca, perdés. Se ponen rojos mientras la pelota está en el aire.
+- **Portales**: lo que entra por el rectángulo sale por el anillo, con la
+  misma velocidad. Entrar en diagonal sigue en diagonal.
+
+Ningún post-it puede tapar una pared, unos pinchos o un portal.
+
+Al ganar, a los 3,5 s pasa solo al nivel siguiente, con un cartel grande en
+la pared. Si querés repetirlo, jugá otra vez antes. En el panel, la sección
+**Intento** tiene el selector **Nivel** (con ✓ en los ganados) y una línea
+que dice cómo está la pared. **Libre** es el juego de siempre, sin
+recuadros ni límites. El progreso queda en `runs/progress.json`.
+
+```bash
+./.venv/bin/python web.py --level libre
+```
+
+Para diseñar un nivel nuevo: agregalo a `services/levels/levels.json` y
+corré `./.venv/bin/python -m services.levels.design <id>`. Busca dónde
+pegar los rebotes para ganar; pegá la mejor como `solution`. El eval
+`services.levels.evals.solvable` comprueba que cada nivel se gane también con
+post-its pegados a mano. Detalle en `docs/alignment-and-color.md`, sección 3.2.
+
 ## Alinear cámara y proyector
 
 La cámara y el proyector miran la pared desde lugares distintos. Para que el
@@ -306,7 +341,13 @@ esquinas. Cada una tiene:
   siguiente también avisa si algo empeoró, por ejemplo "Con #d2b996 no veo
   ningún post-it de rebotes", o si el color nuevo se confunde con otro tipo.
 
-Sobre la imagen, cada post-it detectado se ilumina con un halo de su color.
+Debajo de esa fila está **Color al detectar**: el color con que se marca cada
+post-it cuando la cámara lo detecta (el relleno en la pared, el halo del
+panel, la cuenta y las chispas). Por defecto es su color de detección; la ×
+lo devuelve a ese. Cambiarlo pide verificar de nuevo el relleno (A), porque
+proyectar otro color sobre el papel cambia cómo lo ve la cámara.
+
+Sobre la imagen, cada post-it detectado se ilumina con un halo de su color de marca.
 Así se ve qué papel exacto cuenta como cada tipo. **Colores originales**
 vuelve a los colores por defecto. Los colores quedan guardados en
 `runs/palette.json` y se mantienen al reiniciar el servidor.

@@ -66,7 +66,8 @@ export function physicsVerdicts(golden) {
       state = step(board, state, c.dt);
       if (k % 15 === 0 || state.status !== "running") {
         trace.push({ i: k, x: state.position.x, y: state.position.y, vx: state.velocity.x, vy: state.velocity.y,
-          t: state.elapsed_s, bounces: state.bounce_count, status: state.status, still: state.still_s });
+          t: state.elapsed_s, bounces: state.bounce_count, status: state.status, still: state.still_s,
+          ended_by: state.ended_by });
       }
       if (state.status !== "running") break;
     }

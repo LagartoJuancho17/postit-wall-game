@@ -21,6 +21,8 @@ import { noteCenters, solveTouch, touchBack, touchBegin, TOUCH_GRID, touchGiveUp
   touchRetake, touchStep, touchUpdate, validGrid } from "./touch.mjs";
 import { boardFromNotes, findNotes, inspectFrame } from "./vision.mjs";
 import { COUNTDOWN_S, coverBegin, coverUpdate, startNote } from "./handsfree.mjs";
+import { FREE_LEVEL, geometryJson, LevelProblem, LEVELS, levelById, levelCheck, levelGeometry, levelProblem, nextLevel,
+  withObstacles } from "./levels.mjs";
 
 const LIVE_EXPECTED_NOTES = Object.freeze({ start: 1, goal: 1, bumper: null, marker: null });
 const LIVE_DETECTION_MAX_AGE_S = 1.5;
@@ -66,8 +68,18 @@ const PHYSICS_MESSAGES = Object.freeze({
   "start overlaps a bumper": "El inicio toca un rebote. Separalos.",
   "the ball must fit inside the playfield under the start note":
     "La pelota no entra debajo del inicio. Subilo un poco.",
+  "start overlaps a wall": "La pelota sale encima de una pared. Mové el inicio.",
+  "start overlaps spikes": "La pelota sale encima de los pinchos. Mové el inicio.",
+  "start overlaps a portal": "La pelota sale encima de un portal. Mové el inicio.",
 });
 const PHYSICS_FALLBACK = "Un post-it detectado no tiene una forma válida.";
+// Why an attempt ended (state.ended_by), in the operator's words.
+const END_MESSAGES = Object.freeze({ goal: "¡Llegaste!", exit: "La pelota salió del campo.",
+  spikes: "La pelota tocó los pinchos.", stall: "La pelota se quedó quieta.",
+  timeout: "Se acabó el tiempo del intento." });
+// Contract 3.2: a won level moves on to the next one after its party.
+export const LEVEL_ADVANCE_S = 3.5;
+export const PROGRESS_KEY = "postit-wall:progress";
 const CAMERA_MODES = ["whiteBalanceMode", "exposureMode", "focusMode"];
 const CAMERA_VALUES = ["colorTemperature", "exposureTime", "focusDistance",
   "brightness", "contrast", "saturation", "sharpness", "gain"];
@@ -117,7 +129,7 @@ const rectangle = (width, height) => [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: w
 /** The Spanish text an operator reads for an invalid live board. */
 function operatorReason(error) {
   const text = error.message;
-  if (text.startsWith("Post-its de ")) return text;
+  if (text.startsWith("Post-its de ") || error instanceof LevelProblem) return text;
   return PHYSICS_MESSAGES[text] ?? PHYSICS_FALLBACK;
 }
 
@@ -328,7 +340,7 @@ function storageSet(storage, key, value) {
  */
 export class GameController {
   constructor({ clock = () => performance.now() / 1000, storage = null, log = null,
-    wallClock = () => Date.now() } = {}) {
+    wallClock = () => Date.now(), level = FREE_LEVEL } = {}) {
     this.clock = clock;
     this.wallClock = wallClock;
     this.storage = storage;
@@ -336,6 +348,8 @@ export class GameController {
     this.cv = null;
     this.paletteChoices = Object.fromEntries(ROLES.map((role) => [role, null]));
     this.palette = DEFAULT_PALETTE;
+    // The color each detected note is marked with; null: its detection color (2.6).
+    this.markChoices = Object.fromEntries(ROLES.map((role) => [role, null]));
     this.loadPalette();
     this.cameraPresets = {};
     this.loadCameraPresets();
@@ -385,6 +399,13 @@ export class GameController {
     this.handsFree = true;
     this.cover = coverBegin();
     this.cameraEpoch = 0;
+    // Levels (contract 3.2): the one in play, the ones won, how the last
+    // live notes stand against it, and when a won level moves on.
+    this.level = levelById(level) ?? levelById(FREE_LEVEL);
+    this.levelsDone = [];
+    this.loadProgress();
+    this.levelCheck = null;
+    this.advanceAt = null;
     this.message = "Abrí la cámara en el navegador y luego la ventana del proyector con J.";
     this.revision = 0;
   }
@@ -403,20 +424,28 @@ export class GameController {
     const text = storageGet(this.storage, PALETTE_KEY);
     if (text === null) return;
     try {
-      const saved = JSON.parse(text).choices;
-      if (!isPlainObject(saved)) throw new Error("choices must be an object");
+      const data = JSON.parse(text);
+      const saved = data.choices;
+      const marks = data.marks ?? {};
+      if (!isPlainObject(saved) || !isPlainObject(marks)) throw new Error("choices must be an object");
       const choices = Object.fromEntries(ROLES.map((role) => [
         role, saved[role] !== null && saved[role] !== undefined ? normalizeHex(saved[role]) : null]));
-      if (Object.keys(saved).some((role) => !ROLES.includes(role))) throw new Error("unknown role");
+      const markChoices = Object.fromEntries(ROLES.map((role) => [
+        role, marks[role] !== null && marks[role] !== undefined ? normalizeHex(marks[role]) : null]));
+      if ([...Object.keys(saved), ...Object.keys(marks)].some((role) => !ROLES.includes(role))) {
+        throw new Error("unknown role");
+      }
       this.palette = buildPalette(choices);
       this.paletteChoices = choices;
+      this.markChoices = markChoices;
     } catch (error) {
       this.log("palette_ignored", { path: PALETTE_KEY, reason: error.message });
     }
   }
 
   savePalette() {
-    if (!storageSet(this.storage, PALETTE_KEY, JSON.stringify({ version: 1, choices: this.paletteChoices }))) {
+    if (!storageSet(this.storage, PALETTE_KEY, JSON.stringify({ version: 1, choices: this.paletteChoices,
+      marks: this.markChoices }))) {
       this.log("palette_not_saved", { path: PALETTE_KEY, reason: "storage blocked" });
     }
   }
@@ -448,11 +477,35 @@ export class GameController {
     }
   }
 
+  loadProgress() {
+    const text = storageGet(this.storage, PROGRESS_KEY);
+    if (text === null) return;
+    try {
+      const data = JSON.parse(text);
+      const level = levelById(data.level);
+      if (!Array.isArray(data.done)) throw new Error("done must be a list");
+      const done = LEVELS.filter((entry) => data.done.includes(entry.id)).map((entry) => entry.id);
+      if (level === null) throw new Error("unknown level");
+      this.level = level;
+      this.levelsDone = done;
+    } catch (error) {
+      this.log("progress_ignored", { path: PROGRESS_KEY, reason: error.message });
+    }
+  }
+
+  saveProgress() {
+    if (this.storage === null) return;
+    if (!storageSet(this.storage, PROGRESS_KEY, JSON.stringify({ version: 1, level: this.level.id, done: this.levelsDone }))) {
+      this.log("progress_not_saved", { path: PROGRESS_KEY, reason: "storage blocked" });
+    }
+  }
+
   paletteJson() {
     const rules = paletteJson(this.palette);
     return {
-      custom: Object.values(this.paletteChoices).some((choice) => choice !== null),
-      roles: Object.fromEntries(ROLES.map((role) => [role, { ...rules[role], custom: this.paletteChoices[role] !== null }])),
+      custom: [...Object.values(this.paletteChoices), ...Object.values(this.markChoices)].some((choice) => choice !== null),
+      roles: Object.fromEntries(ROLES.map((role) => [role, { ...rules[role], custom: this.paletteChoices[role] !== null,
+        mark: this.markChoices[role] ?? rules[role].hex, mark_custom: this.markChoices[role] !== null }])),
     };
   }
 
@@ -468,6 +521,7 @@ export class GameController {
   snapshot() {
     this.expireDetection();
     this.advanceCountdown();
+    this.advanceLevel();
     const { game } = this;
     return {
       revision: this.revision,
@@ -496,7 +550,9 @@ export class GameController {
         countdown_s: this.countdownUntil !== null ? pyRound(Math.max(0.0, this.countdownUntil - this.clock()), 3) : 0.0,
         countdown_total_s: COUNTDOWN_S,
         hands_free: { enabled: this.handsFree, armed: Boolean(this.cover.armed) },
+        ended_by: game ? game.ended_by : "",
       },
+      level: this.levelJson(),
       projection: {
         open: this.projectorOpen,
         mode: this.projectionMode,
@@ -550,6 +606,76 @@ export class GameController {
     this.liveMode();
   }
 
+  // ---- levels (contract 3.2)
+
+  levelJson() {
+    const { level } = this;
+    const space = this.levelSpace();
+    const upcoming = nextLevel(level);
+    const playable = LEVELS.filter((entry) => entry.id !== FREE_LEVEL);
+    const check = this.levelCheck === null ? null : JSON.parse(JSON.stringify(this.levelCheck));
+    return {
+      id: level.id, name: level.name, hint: level.hint,
+      number: playable.includes(level) ? playable.indexOf(level) + 1 : 0,
+      count: playable.length,
+      next: upcoming !== null ? upcoming.id : null,
+      bumpers_max: level.bumpers_max,
+      done: [...this.levelsDone],
+      list: LEVELS.map((entry) => ({ id: entry.id, name: entry.name, done: this.levelsDone.includes(entry.id) })),
+      geometry: space === null ? null : { space: space[0], ...geometryJson(levelGeometry(level, space[1], space[2])) },
+      check,
+      problem: check !== null ? levelProblem(check) : null,
+      advance_s: this.advanceAt !== null ? pyRound(Math.max(0.0, this.advanceAt - this.clock()), 3) : 0.0,
+    };
+  }
+
+  /** Play `level` from now on: the live notes are read against it again. */
+  selectLevel(level, source) {
+    this.level = level;
+    this.advanceAt = null;
+    this.saveProgress();
+    if (this.game !== null && (this.game.status === GameStatus.WON || this.game.status === GameStatus.LOST)) {
+      this.game = null;
+    }
+    this.recomputeCandidate();
+    if (this.game === null || this.game.status === GameStatus.READY) this.resetAttempt();
+    const problem = this.levelCheck !== null ? levelProblem(this.levelCheck) : null;
+    const title = level.id === FREE_LEVEL ? "Modo libre." : `Nivel ${level.id}: ${level.name}.`;
+    this.changed(`${title} ${problem ?? level.hint}`);
+    this.log("level_selected", { level: level.id, source });
+  }
+
+  /** A won level moves on once its party is over (LEVEL_ADVANCE_S). */
+  advanceLevel() {
+    if (this.advanceAt === null) return;
+    if (this.game === null || this.game.status !== GameStatus.WON) {
+      this.advanceAt = null;
+      return;
+    }
+    if (this.clock() < this.advanceAt) return;
+    const upcoming = nextLevel(this.level);
+    this.advanceAt = null;
+    if (upcoming !== null) this.selectLevel(upcoming, "advance");
+  }
+
+  /** The attempt just won: the level counts as done; the next one follows. */
+  levelWon() {
+    if (this.level.id === FREE_LEVEL) return;
+    if (!this.levelsDone.includes(this.level.id)) {
+      this.levelsDone = LEVELS.filter((entry) => this.levelsDone.includes(entry.id) || entry.id === this.level.id)
+        .map((entry) => entry.id);
+      this.saveProgress();
+    }
+    const upcoming = nextLevel(this.level);
+    if (upcoming === null) {
+      this.changed("¡Completaste todos los niveles!");
+    } else {
+      this.advanceAt = this.clock() + LEVEL_ADVANCE_S;
+      this.changed(`¡Nivel ${this.level.id} superado! Sigue el nivel ${upcoming.id}: ${upcoming.name}.`);
+    }
+    this.log("level_won", { level: this.level.id, next: upcoming ? upcoming.id : null });
+  }
+
   /** What comes next for whoever plays (server.py _play_unlocked). */
   play(source) {
     this.refuseWhileCollecting();
@@ -561,6 +687,7 @@ export class GameController {
       if (this.cameraBoard === null || this.candidate === null) {
         throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);
       }
+      this.advanceAt = null; // playing again replays the won level
       this.resetAttempt();
       this.log("attempt_reset", { source });
     }
@@ -673,6 +800,7 @@ export class GameController {
     this.liveDetectionAt = null;
     this.lastNotes = null;
     this.candidate = null;
+    this.levelCheck = null;
     this.cameraBoard = null;
     if (this.game === null || this.game.status === GameStatus.READY) this.applyCandidate();
   }
@@ -743,21 +871,55 @@ export class GameController {
 
   // ---- game geometry
 
-  /** The playable board in the game's space (contract 1.5); throws. */
+  aligned() {
+    return this.alignStatus === "ready" && this.alignMatrix !== null;
+  }
+
+  /** The playable board in the game's space (contract 1.5) with the level's obstacles (3.2); throws. */
   gameBoard(cameraBoard, width, height) {
-    if (this.alignStatus === "ready" && this.alignMatrix !== null) {
+    let board;
+    let space;
+    if (this.aligned()) {
       const mapped = transformBoard(cameraBoard, this.alignMatrix, this.alignLens);
-      const board = { playfield: rectangle(this.projectorWidth, this.projectorHeight), start: mapped.start,
+      board = { playfield: rectangle(this.projectorWidth, this.projectorHeight), start: mapped.start,
         goal: mapped.goal, bumpers: mapped.bumpers, markers: mapped.markers };
-      dropReadyState(board);
-      return [board, "projector", this.projectorWidth, this.projectorHeight];
+      [space, width, height] = ["projector", this.projectorWidth, this.projectorHeight];
+    } else {
+      [board, space] = [cameraBoard, "camera"];
     }
-    dropReadyState(cameraBoard);
-    return [cameraBoard, "camera", width, height];
+    const problem = this.levelCheck !== null ? levelProblem(this.levelCheck) : null;
+    if (problem !== null) throw new LevelProblem(problem);
+    board = withObstacles(board, levelGeometry(this.level, width, height));
+    dropReadyState(board);
+    return [board, space, width, height];
+  }
+
+  /** The space a board would be played in now, and its size. */
+  levelSpace() {
+    if (this.aligned()) return ["projector", this.projectorWidth, this.projectorHeight];
+    if (this.frameWidth > 0 && this.frameHeight > 0) return ["camera", this.frameWidth, this.frameHeight];
+    return null;
+  }
+
+  /** How the live notes stand against the level, in the game's space. */
+  checkLevel(notes, width, height) {
+    let size = [width, height];
+    if (this.aligned()) {
+      size = [this.projectorWidth, this.projectorHeight];
+      try {
+        notes = Object.fromEntries(ROLES.map((role) => [role, (notes[role] ?? []).map((polygon) =>
+          polygon.map((point) => transformPoint(undistort(point, this.alignLens), this.alignMatrix)))]));
+      } catch (error) {
+        if (!(error instanceof Error) || error instanceof TypeError) throw error;
+        return null;
+      }
+    }
+    return levelCheck(this.level, levelGeometry(this.level, size[0], size[1]), notes);
   }
 
   /** [camera board, game board tuple, operator reason] for one set of live notes. */
   candidateFor(notes, width, height) {
+    this.levelCheck = this.checkLevel(notes, width, height);
     try {
       const cameraBoard = boardFromNotes(notes, width, height);
       return [cameraBoard, this.gameBoard(cameraBoard, width, height), null];
@@ -953,6 +1115,15 @@ export class GameController {
       const source = "source" in payload ? payload.source : "panel";
       if (source !== "panel" && source !== "button") throw new RequestError("Origen de jugada desconocido.");
       this.play(source);
+    } else if (name === "level") {
+      const level = levelById(payload.id);
+      if (level === null) throw new RequestError("Nivel desconocido.");
+      this.refuseWhileCollecting();
+      this.refuseWhileCountdown();
+      if (this.game !== null && this.game.status === GameStatus.RUNNING) {
+        throw new RequestError("Terminá o reiniciá el intento antes de cambiar de nivel.", HTTP.CONFLICT);
+      }
+      this.selectLevel(level, "panel");
     } else if (name === "hands_free") {
       if (typeof payload.enabled !== "boolean") throw new RequestError("hands_free necesita enabled: true o false.");
       this.handsFree = payload.enabled;
@@ -964,6 +1135,7 @@ export class GameController {
         throw new RequestError("La cámara debe detectar un inicio y una llegada para reiniciar.", HTTP.CONFLICT);
       }
       this.cancelCountdown("reset");
+      this.advanceAt = null;
       this.resetAttempt();
       this.changed("Intento reiniciado con los post-its de la vista en vivo.");
       this.log("attempt_reset");
@@ -993,8 +1165,28 @@ export class GameController {
       this.clearDetection();
       this.changed(`Color de ${ROLE_LABELS[role]} actualizado.`);
       this.log("palette_changed", { role, hex: rule.hex, hue_low: rule.hue_low, hue_high: rule.hue_high });
+    } else if (name === "mark_set") {
+      const { role } = payload;
+      if (!ROLES.includes(role)) throw new RequestError("Rol de post-it desconocido.");
+      const value = payload.hex ?? null;
+      let mark;
+      try {
+        mark = value === null ? null : normalizeHex(value);
+      } catch (error) {
+        throw new RequestError(error.message);
+      }
+      this.markChoices = { ...this.markChoices, [role]: mark };
+      this.savePalette();
+      if (this.overlay.status !== "unchecked") {
+        // The fill check measured the old color on the wall (2.3).
+        this.overlay = overlayState("unchecked", this.overlay.probes);
+      }
+      this.changed(mark !== null ? `Color de marca de ${ROLE_LABELS[role]} actualizado.`
+        : `La marca de ${ROLE_LABELS[role]} vuelve a su color de detección.`);
+      this.log("mark_changed", { role, hex: mark });
     } else if (name === "palette_reset") {
       this.paletteChoices = Object.fromEntries(ROLES.map((r) => [r, null]));
+      this.markChoices = Object.fromEntries(ROLES.map((r) => [r, null]));
       this.palette = DEFAULT_PALETTE;
       this.savePalette();
       this.clearDetection();
@@ -1492,6 +1684,7 @@ export class GameController {
 
   tickUnlocked() {
     this.advanceCountdown();
+    this.advanceLevel();
     if (this.game === null || this.board === null || this.game.status !== GameStatus.RUNNING ||
         this.paused || !this.projectorOpen) return;
     const now = this.clock();
@@ -1514,9 +1707,10 @@ export class GameController {
     }
     if (this.game.status !== oldStatus) {
       this.finishedAt = now;
-      this.changed(this.game.status === GameStatus.WON ? "¡Llegaste!" : "La pelota salió del campo.");
+      this.changed(END_MESSAGES[this.game.ended_by] ?? "La pelota salió del campo.");
       this.log("attempt_finished", { result: this.game.status, elapsed_s: pyRound(this.game.elapsed_s, 3),
-        bounces: this.game.bounce_count });
+        bounces: this.game.bounce_count, ended_by: this.game.ended_by, level: this.level.id });
+      if (this.game.status === GameStatus.WON) this.levelWon();
     }
   }
 

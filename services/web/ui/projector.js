@@ -12,6 +12,7 @@ import { createApi } from "./api.mjs";
 import { drawAlignmentPattern, drawProjectorScene, drawTouchGrid, LIVE_MAX_AGE_MS, projectorScene } from "./live-view.mjs";
 import { appearAges, effectAges, trackAppearances, trackEffects } from "./effects.mjs";
 import { countdownBeatOf, soundEvents } from "./sounds.mjs";
+import { trackLevel } from "./level-view.mjs";
 
 const api = createApi("projector");
 
@@ -38,6 +39,7 @@ let backdrop = readBackdrop(window.localStorage);   // the operator's own backgr
 let tracked = null;   // effects.mjs trackEffects: timing of the attempt's effects
 let lastGame = null;  // the previous state's game, for sounds.mjs soundEvents
 let appearances = null;   // effects.mjs trackAppearances: post-its just stuck on the wall (3.1)
+let levelSeen = null;     // level-view.mjs trackLevel: when the level in play changed (3.2)
 
 function storedTheme() {
   try {
@@ -123,6 +125,7 @@ function applyState(next) {
       intensity: hit && reference ? Math.min(1, hit.speed / reference) : 1 });
   }
   lastGame = next?.game ?? null;
+  levelSeen = trackLevel(levelSeen, next?.level, stateReceivedAt);
   // A backend that forgot this window (web.py restarted, or the panel
   // reloaded and started a new in-browser backend) learns it again.
   if (next?.projection?.open === false && performance.now() - lastRegister > 1000) {
@@ -203,6 +206,7 @@ function draw() {
     theme, width: viewport.width, height: viewport.height, fresh, forceFill: scene.forceFill,
     effects: effectAges(tracked, now), appears: appearAges(appearances, now),
     countdownS: Number(state?.game?.countdown_s) > 0 ? Math.max(0.001, left) : null,
+    levelBannerAgeMs: levelSeen ? now - levelSeen.at : null,
   });
 }
 

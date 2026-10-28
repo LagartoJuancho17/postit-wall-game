@@ -37,7 +37,7 @@ PREVIEWS_PATH = Path(__file__).with_name("preview-samples.json")
 RECOLORED = {"start": 105, "goal": 176, "bumper": 28, "marker": 140}
 PROJECTOR = (1280, 800)
 # Each UI control, expressed as the backend calls the browser makes for it.
-CONTROLS = ("scan", "launch", "reset", "resume", "align", "touch")
+CONTROLS = ("scan", "launch", "reset", "resume", "align", "touch", "level")
 # Where the projector's corners land in the 960x720 synthetic camera frame.
 ALIGN_QUAD = ((30, 25), (930, 20), (935, 700), (25, 695))
 
@@ -190,6 +190,7 @@ _PROBES: dict[str, Callable[[_Wall], None]] = {
     "resume": lambda w: w.act("resume"),
     "align": lambda w: w.act("align_start"),
     "touch": lambda w: w.act("touch_start"),
+    "level": lambda w: w.act("level", id="libre"),   # the level picker (contract 3.2)
 }
 
 

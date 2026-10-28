@@ -8,6 +8,7 @@ import { drawAlignmentPattern, drawProjectorScene, LIVE_MAX_AGE_MS, projectorSce
 import { projectorBackground } from "../ui/ui-core.mjs";
 import { appearAges, effectAges, trackAppearances, trackEffects } from "../ui/effects.mjs";
 import { countdownBeatOf, soundEvents } from "../ui/sounds.mjs";
+import { trackLevel } from "../ui/level-view.mjs";
 
 const operator = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8");
 const projector = readFileSync(new URL("../ui/projector.js", import.meta.url), "utf8");
@@ -187,7 +188,7 @@ function projectorView() {
     responseJSON: (answer) => answer.json(),
     withTimeout: (promise) => promise,
     projectorBackground, projectorScene, drawAlignmentPattern, drawProjectorScene, effectAges, trackEffects, soundEvents,
-    appearAges, trackAppearances, countdownBeatOf,
+    appearAges, trackAppearances, countdownBeatOf, trackLevel,
     document: { body },
     ctx, stateLabel, toast: {}, showError: () => {},
     setTimeout: () => 1, clearTimeout: () => {},
@@ -197,7 +198,7 @@ function projectorView() {
   vm.runInContext(`
     let state = null, stateReceivedAt = 0, blackoutForced = false, tickBusy = false, localScene = null, lastRegister = 0;
     let viewport = { width: 1280, height: 720 }, theme = "dark", backdrop = null, tracked = null, lastGame = null;
-    let appearances = null;
+    let appearances = null, levelSeen = null;
     ${segment(projector, "function applyState(", "async function syncProjectionSize()")}
     ${segment(projector, "async function tick()", "\nresizeCanvas();")}
     globalThis.controls = {

@@ -21,12 +21,24 @@ class Polygon:
 
 
 @dataclass(frozen=True)
+class Portal:
+    """A level's portal (contract 3.2): a ball touching `entry` comes out at `exit`."""
+    entry: Polygon
+    exit: Point
+
+
+@dataclass(frozen=True)
 class Board:
     playfield: Polygon
     start: Polygon
     goal: Polygon
     bumpers: tuple[Polygon, ...]
     markers: tuple[Polygon, ...]  # top-left, top-right, bottom-right, bottom-left
+    # A level's projected obstacles (contract 3.2), in the board's space: walls
+    # bounce like bumpers, spikes lose, portals move the ball. None in "libre".
+    walls: tuple[Polygon, ...] = ()
+    spikes: tuple[Polygon, ...] = ()
+    portals: tuple[Portal, ...] = ()
 
 
 Matrix3: TypeAlias = tuple[tuple[float, float, float], ...]
