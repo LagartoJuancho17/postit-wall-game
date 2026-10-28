@@ -37,7 +37,7 @@ from services.physics import GRAVITY_SHARE, GameState, GameStatus, drop, drop_re
 from services.vision import (DEFAULT_PALETTE, build_palette,
                              find_notes, frame_quality)
 from services.uvc import UvcBridge, UvcError
-from services.vision.palette import normalize_hex
+from services.vision.palette import hsv_from_hex, hue_distance, normalize_hex
 
 from . import camera
 from .camera import camera_label as _camera_label
@@ -107,6 +107,27 @@ END_MESSAGES = {"goal": "¡Llegaste!", "exit": "La pelota salió del campo.",
                 "timeout": "Se acabó el tiempo del intento."}
 # Contract 3.2: a won level moves on to the next one after its party.
 LEVEL_ADVANCE_S = 3.5
+# Contract 2.7: the level's own colors on the wall (the start and goal boxes,
+# portals). Light outside a paper in a role's hue is read as a post-it (2.1),
+# so a color is refused when its hue lies within ZONE_HUE_MARGIN of a role's
+# hues with that role's saturation and brightness. The defaults sit in the
+# free band between the bumpers' green and the corners' pink.
+ZONE_PARTS = ("start", "goal", "portal")
+ZONE_DEFAULTS = {"start": "#22d3ee", "goal": "#818cf8", "portal": "#3b82f6"}
+ZONE_LABELS = {"start": "Inicio", "goal": "Llegada", "portal": "Portal"}
+ZONE_HUE_MARGIN = 3
+
+
+def zone_conflict(hex_value: str, palette) -> str | None:
+    """The role whose post-its a wall color would be read as, or None."""
+    hue, saturation, value = hsv_from_hex(hex_value)
+    for role in ROLES:
+        rule = palette.rule(role)
+        if saturation < rule.min_saturation or value < rule.min_value:
+            continue
+        if any(hue_distance(hue, h) <= ZONE_HUE_MARGIN for h in rule.hues()):
+            return role
+    return None
 
 
 class RequestError(ValueError):
@@ -390,6 +411,8 @@ class GameController:
         # The color each detected note is marked with (wall fill, panel halo,
         # effects); None: its detection color (contract 2.6).
         self.mark_choices: dict[str, str | None] = {role: None for role in ROLES}
+        # The level's box and portal colors (contract 2.7); None: the default.
+        self.zone_choices: dict[str, str | None] = {part: None for part in ZONE_PARTS}
         self._load_palette()
         self.camera_presets_path = camera_presets_path
         self.camera_presets: dict[str, dict[str, Any]] = {}
@@ -471,18 +494,21 @@ class GameController:
             return
         try:
             data = json.loads(self.palette_path.read_text(encoding="utf-8"))
-            saved, marks = data["choices"], data.get("marks", {})
+            saved, marks, zones = data["choices"], data.get("marks", {}), data.get("zones", {})
             choices = {role: (normalize_hex(saved[role]) if saved.get(role) is not None else None)
                        for role in ROLES}
             mark_choices = {role: (normalize_hex(marks[role]) if marks.get(role) is not None else None)
                             for role in ROLES}
-            if set(saved) - set(ROLES) or set(marks) - set(ROLES):
+            zone_choices = {part: (normalize_hex(zones[part]) if zones.get(part) is not None else None)
+                            for part in ZONE_PARTS}
+            if set(saved) - set(ROLES) or set(marks) - set(ROLES) or set(zones) - set(ZONE_PARTS):
                 raise ValueError("unknown role")
             palette = build_palette(choices)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             self._log("palette_ignored", path=str(self.palette_path), reason=str(exc))
             return
         self.palette_choices, self.palette, self.mark_choices = choices, palette, mark_choices
+        self.zone_choices = zone_choices
 
     def _save_palette(self) -> None:
         if self.palette_path is None:
@@ -491,7 +517,7 @@ class GameController:
             self.palette_path.parent.mkdir(parents=True, exist_ok=True)
             partial = self.palette_path.with_suffix(".tmp")
             partial.write_text(json.dumps({"version": 1, "choices": self.palette_choices,
-                                           "marks": self.mark_choices},
+                                           "marks": self.mark_choices, "zones": self.zone_choices},
                                           ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
             partial.replace(self.palette_path)
         except OSError as exc:
@@ -545,11 +571,18 @@ class GameController:
         rules = self.palette.to_json()
         return {
             "custom": any(choice is not None for choice in (*self.palette_choices.values(),
-                                                            *self.mark_choices.values())),
+                                                            *self.mark_choices.values(),
+                                                            *self.zone_choices.values())),
             "roles": {role: {**rules[role], "custom": self.palette_choices[role] is not None,
                              "mark": self.mark_choices[role] or rules[role]["hex"],
                              "mark_custom": self.mark_choices[role] is not None}
                       for role in ROLES},
+            # A stored color that a later palette change made unsafe is kept
+            # but not drawn: the wall falls back to neutral light (2.7).
+            "zones": {part: {"hex": self.zone_choices[part] or ZONE_DEFAULTS[part],
+                             "custom": self.zone_choices[part] is not None,
+                             "conflict": zone_conflict(self.zone_choices[part] or ZONE_DEFAULTS[part], self.palette)}
+                      for part in ZONE_PARTS},
         }
 
     def _phase(self) -> str:
@@ -1161,9 +1194,28 @@ class GameController:
                 self._changed(f"Color de marca de {ROLE_LABELS[role]} actualizado." if mark is not None
                               else f"La marca de {ROLE_LABELS[role]} vuelve a su color de detección.")
                 self._log("mark_changed", role=role, hex=mark)
+            elif action == "zone_color_set":
+                part = payload.get("part")
+                if part not in ZONE_PARTS:
+                    raise RequestError("Parte del nivel desconocida.")
+                hex_value = payload.get("hex")
+                try:
+                    color = None if hex_value is None else normalize_hex(hex_value)
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                role = zone_conflict(color, self.palette) if color is not None else None
+                if role is not None:
+                    raise RequestError(f"Ese color se confunde con los post-its de {ROLE_LABELS[role]}: la cámara "
+                                       "leería el recuadro como un papel. Probá un celeste, un azul o un índigo.")
+                self.zone_choices = {**self.zone_choices, part: color}
+                self._save_palette()
+                self._changed(f"Color de {ZONE_LABELS[part]} actualizado." if color is not None
+                              else f"{ZONE_LABELS[part]} vuelve a su color original.")
+                self._log("zone_color_changed", part=part, hex=color)
             elif action == "palette_reset":
                 self.palette_choices = {role: None for role in ROLES}
                 self.mark_choices = {role: None for role in ROLES}
+                self.zone_choices = {part: None for part in ZONE_PARTS}
                 self.palette = DEFAULT_PALETTE
                 self._save_palette()
                 self._clear_detection_unlocked()

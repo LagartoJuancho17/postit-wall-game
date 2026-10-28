@@ -15,7 +15,8 @@ import { ALIGNMENT_FRAMES, alignmentLayout, decodeAlignment, frameKey } from "./
 import { offsetConvexPolygon, transformBoard, transformPoint } from "./calibration.mjs";
 import { distort, undistort } from "./lens.mjs";
 import { isPlainObject, pyJsonLength, pyLength, pyRound, pyStrip, pyTruthy } from "./numbers.mjs";
-import { buildPalette, DEFAULT_PALETTE, normalizeHex, paletteJson, ROLE_LABELS, ROLES } from "./palette.mjs";
+import { buildPalette, DEFAULT_PALETTE, hsvFromHex, hueDistance, normalizeHex, paletteJson, ROLE_LABELS, ROLES,
+  ruleHues } from "./palette.mjs";
 import { drop, dropReadyState, GameStatus, GRAVITY_SHARE, step } from "./physics.mjs";
 import { noteCenters, solveTouch, touchBack, touchBegin, TOUCH_GRID, touchGiveUp, TOUCH_MAX_ROUNDS, touchProgress,
   touchRetake, touchStep, touchUpdate, validGrid } from "./touch.mjs";
@@ -80,6 +81,22 @@ const END_MESSAGES = Object.freeze({ goal: "¡Llegaste!", exit: "La pelota sali�
 // Contract 3.2: a won level moves on to the next one after its party.
 export const LEVEL_ADVANCE_S = 3.5;
 export const PROGRESS_KEY = "postit-wall:progress";
+// Contract 2.7: the level's own colors on the wall, kept off every role's hues.
+export const ZONE_PARTS = ["start", "goal", "portal"];
+export const ZONE_DEFAULTS = Object.freeze({ start: "#22d3ee", goal: "#818cf8", portal: "#3b82f6" });
+const ZONE_LABELS = Object.freeze({ start: "Inicio", goal: "Llegada", portal: "Portal" });
+const ZONE_HUE_MARGIN = 3;
+
+/** server.py `zone_conflict`: the role whose post-its a wall color would be read as, or null. */
+export function zoneConflict(hex, palette) {
+  const [hue, saturation, value] = hsvFromHex(hex);
+  for (const role of ROLES) {
+    const rule = palette[role];
+    if (saturation < rule.min_saturation || value < rule.min_value) continue;
+    if (ruleHues(rule).some((h) => hueDistance(hue, h) <= ZONE_HUE_MARGIN)) return role;
+  }
+  return null;
+}
 const CAMERA_MODES = ["whiteBalanceMode", "exposureMode", "focusMode"];
 const CAMERA_VALUES = ["colorTemperature", "exposureTime", "focusDistance",
   "brightness", "contrast", "saturation", "sharpness", "gain"];
@@ -350,6 +367,8 @@ export class GameController {
     this.palette = DEFAULT_PALETTE;
     // The color each detected note is marked with; null: its detection color (2.6).
     this.markChoices = Object.fromEntries(ROLES.map((role) => [role, null]));
+    // The level's box and portal colors (contract 2.7); null: the default.
+    this.zoneChoices = Object.fromEntries(ZONE_PARTS.map((part) => [part, null]));
     this.loadPalette();
     this.cameraPresets = {};
     this.loadCameraPresets();
@@ -427,17 +446,22 @@ export class GameController {
       const data = JSON.parse(text);
       const saved = data.choices;
       const marks = data.marks ?? {};
-      if (!isPlainObject(saved) || !isPlainObject(marks)) throw new Error("choices must be an object");
+      const zones = data.zones ?? {};
+      if (!isPlainObject(saved) || !isPlainObject(marks) || !isPlainObject(zones)) throw new Error("choices must be an object");
       const choices = Object.fromEntries(ROLES.map((role) => [
         role, saved[role] !== null && saved[role] !== undefined ? normalizeHex(saved[role]) : null]));
       const markChoices = Object.fromEntries(ROLES.map((role) => [
         role, marks[role] !== null && marks[role] !== undefined ? normalizeHex(marks[role]) : null]));
-      if ([...Object.keys(saved), ...Object.keys(marks)].some((role) => !ROLES.includes(role))) {
+      const zoneChoices = Object.fromEntries(ZONE_PARTS.map((part) => [
+        part, zones[part] !== null && zones[part] !== undefined ? normalizeHex(zones[part]) : null]));
+      if ([...Object.keys(saved), ...Object.keys(marks)].some((role) => !ROLES.includes(role))
+          || Object.keys(zones).some((part) => !ZONE_PARTS.includes(part))) {
         throw new Error("unknown role");
       }
       this.palette = buildPalette(choices);
       this.paletteChoices = choices;
       this.markChoices = markChoices;
+      this.zoneChoices = zoneChoices;
     } catch (error) {
       this.log("palette_ignored", { path: PALETTE_KEY, reason: error.message });
     }
@@ -445,7 +469,7 @@ export class GameController {
 
   savePalette() {
     if (!storageSet(this.storage, PALETTE_KEY, JSON.stringify({ version: 1, choices: this.paletteChoices,
-      marks: this.markChoices }))) {
+      marks: this.markChoices, zones: this.zoneChoices }))) {
       this.log("palette_not_saved", { path: PALETTE_KEY, reason: "storage blocked" });
     }
   }
@@ -503,9 +527,15 @@ export class GameController {
   paletteJson() {
     const rules = paletteJson(this.palette);
     return {
-      custom: [...Object.values(this.paletteChoices), ...Object.values(this.markChoices)].some((choice) => choice !== null),
+      custom: [...Object.values(this.paletteChoices), ...Object.values(this.markChoices), ...Object.values(this.zoneChoices)]
+        .some((choice) => choice !== null),
       roles: Object.fromEntries(ROLES.map((role) => [role, { ...rules[role], custom: this.paletteChoices[role] !== null,
         mark: this.markChoices[role] ?? rules[role].hex, mark_custom: this.markChoices[role] !== null }])),
+      // A stored color a later palette change made unsafe is kept but not drawn (2.7).
+      zones: Object.fromEntries(ZONE_PARTS.map((part) => {
+        const hex = this.zoneChoices[part] ?? ZONE_DEFAULTS[part];
+        return [part, { hex, custom: this.zoneChoices[part] !== null, conflict: zoneConflict(hex, this.palette) }];
+      })),
     };
   }
 
@@ -1184,9 +1214,29 @@ export class GameController {
       this.changed(mark !== null ? `Color de marca de ${ROLE_LABELS[role]} actualizado.`
         : `La marca de ${ROLE_LABELS[role]} vuelve a su color de detección.`);
       this.log("mark_changed", { role, hex: mark });
+    } else if (name === "zone_color_set") {
+      const { part } = payload;
+      if (!ZONE_PARTS.includes(part)) throw new RequestError("Parte del nivel desconocida.");
+      const value = payload.hex ?? null;
+      let color;
+      try {
+        color = value === null ? null : normalizeHex(value);
+      } catch (error) {
+        throw new RequestError(error.message);
+      }
+      const role = color !== null ? zoneConflict(color, this.palette) : null;
+      if (role !== null) {
+        throw new RequestError(`Ese color se confunde con los post-its de ${ROLE_LABELS[role]}: la cámara `
+          + "leería el recuadro como un papel. Probá un celeste, un azul o un índigo.");
+      }
+      this.zoneChoices = { ...this.zoneChoices, [part]: color };
+      this.savePalette();
+      this.changed(color !== null ? `Color de ${ZONE_LABELS[part]} actualizado.` : `${ZONE_LABELS[part]} vuelve a su color original.`);
+      this.log("zone_color_changed", { part, hex: color });
     } else if (name === "palette_reset") {
       this.paletteChoices = Object.fromEntries(ROLES.map((r) => [r, null]));
       this.markChoices = Object.fromEntries(ROLES.map((r) => [r, null]));
+      this.zoneChoices = Object.fromEntries(ZONE_PARTS.map((part) => [part, null]));
       this.palette = DEFAULT_PALETTE;
       this.savePalette();
       this.clearDetection();

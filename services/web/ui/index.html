@@ -187,6 +187,23 @@
               <label class="level-label" for="level-select">Nivel</label>
               <select id="level-select" disabled></select>
               <p id="level-status" class="level-status" role="status"></p>
+              <div class="zone-colors" aria-label="Colores del nivel en la pared">
+                <label class="zone-color" data-part="start" data-custom="false">
+                  <input class="mark-swatch" id="zone-start" type="color" value="#22d3ee" aria-label="Color de el recuadro de inicio" disabled>
+                  <span>Inicio</span>
+                  <button class="mark-clear" id="zone-clear-start" type="button" title="Volver al color original" aria-label="Color original de el recuadro de inicio" disabled>×</button>
+                </label>
+                <label class="zone-color" data-part="goal" data-custom="false">
+                  <input class="mark-swatch" id="zone-goal" type="color" value="#22d3ee" aria-label="Color de el recuadro de llegada" disabled>
+                  <span>Llegada</span>
+                  <button class="mark-clear" id="zone-clear-goal" type="button" title="Volver al color original" aria-label="Color original de el recuadro de llegada" disabled>×</button>
+                </label>
+                <label class="zone-color" data-part="portal" data-custom="false">
+                  <input class="mark-swatch" id="zone-portal" type="color" value="#22d3ee" aria-label="Color de los portales" disabled>
+                  <span>Portal</span>
+                  <button class="mark-clear" id="zone-clear-portal" type="button" title="Volver al color original" aria-label="Color original de los portales" disabled>×</button>
+                </label>
+              </div>
             </div>
             <div class="play-actions">
               <button id="launch-button" class="button button-dark" type="button" disabled><span id="launch-label">Soltar pelota</span> <kbd>Espacio</kbd></button>

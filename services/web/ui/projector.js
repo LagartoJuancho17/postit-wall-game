@@ -207,6 +207,7 @@ function draw() {
     effects: effectAges(tracked, now), appears: appearAges(appearances, now),
     countdownS: Number(state?.game?.countdown_s) > 0 ? Math.max(0.001, left) : null,
     levelBannerAgeMs: levelSeen ? now - levelSeen.at : null,
+    nowMs: now,
   });
 }
 

@@ -121,6 +121,13 @@ Cada nivel tiene un cupo de post-its verdes y puede proyectar:
 
 Ningún post-it puede tapar una pared, unos pinchos o un portal.
 
+Los recuadros y el portal tienen color. En el panel, debajo del selector de
+**Nivel**, elegís el color de **Inicio**, **Llegada** y **Portal**; la ×
+vuelve al original. El panel rechaza un color que la cámara confundiría con
+un tipo de post-it, porque un recuadro amarillo alrededor del inicio se leería
+como un papel amarillo enorme. Quedan los celestes, azules, índigos y los
+tonos muy pálidos.
+
 Al ganar, a los 3,5 s pasa solo al nivel siguiente, con un cartel grande en
 la pared. Si querés repetirlo, jugá otra vez antes. En el panel, la sección
 **Intento** tiene el selector **Nivel** (con ✓ en los ganados) y una línea

@@ -4,10 +4,10 @@ import test from "node:test";
 
 import {
   bannerAlpha, bumperLine, drawLevel, drawLevelProblem, LEVEL_BANNER_MS, levelMapper, levelTitle, nextLine,
-  PORTAL_COLOR, resultText, SPIKES_COLOR, spikeTeeth, trackLevel,
+  inkOn, LEVEL_CLEAR_PX, PILL_INK, resultText, SPIKES_COLOR, spikeTeeth, trackLevel, ZONE_DASH, zoneColors,
 } from "../ui/level-view.mjs";
 import { drawProjectorScene, FALLBACK_COLORS, markColor, NEUTRAL } from "../ui/live-view.mjs";
-import { levelOptions, levelStatus } from "../ui/ui-core.mjs";
+import { levelOptions, levelStatus, zoneWarning } from "../ui/ui-core.mjs";
 
 function canvas() {
   const draws = [];
@@ -18,7 +18,11 @@ function canvas() {
   const snap = (ctx) => Object.fromEntries(keys.map((key) => [key, ctx[key]]));
   return {
     draws, clips, fillStyle: "#000000", strokeStyle: "#000000", globalAlpha: 1, lineWidth: 1, font: "", textAlign: "left",
-    dash: [],
+    dash: [], dashOffset: 0, lineCap: "butt",
+    set lineDashOffset(value) { this.dashOffset = value; },
+    get lineDashOffset() { return this.dashOffset; },
+    roundRect(x, y, w, h) { path.push([x, y], [x + w, y + h]); },
+    measureText(text) { return { width: 9 * text.length }; },
     save() { stack.push(snap(this)); },
     restore() { Object.assign(this, stack.pop()); },
     beginPath() { path = []; },
@@ -31,7 +35,7 @@ function canvas() {
     clip(rule) { clips.push(rule); },
     setLineDash(dash) { this.dash = dash; },
     fill() { draws.push({ kind: "fill", path, ...snap(this) }); },
-    stroke() { draws.push({ kind: "stroke", path, dash: this.dash, ...snap(this) }); },
+    stroke() { draws.push({ kind: "stroke", path, dash: this.dash, dashOffset: this.dashOffset, ...snap(this) }); },
     fillText(text, x, y) { draws.push({ kind: "text", text, x, y, ...snap(this) }); },
     fillRect() {}, createRadialGradient() { return { addColorStop() {} }; },
   };
@@ -110,34 +114,67 @@ test("spike teeth fill their strip and point where the strip faces", () => {
   assert.deepEqual(spikeTeeth(rect(0, 0, 0, 10).points), []);
 });
 
-test("while the camera reads the wall, the level is neutral light clipped off every paper", () => {
+const ZONES = { start: { hex: "#22d3ee", custom: false, conflict: null }, goal: { hex: "#818cf8", custom: true, conflict: null },
+  portal: { hex: "#3b82f6", custom: false, conflict: null } };
+
+test("while the camera reads the wall, boxes and portals take the level colors, the rest stays neutral, all clipped off every paper", () => {
   for (const theme of ["dark", "light"]) {
     const color = NEUTRAL[theme].rim;
     const ctx = canvas();
     const papers = [rect(120, 80, 180, 140).points, rect(1050, 620, 1110, 680).points];
-    const shapes = drawLevel(ctx, { state: { level: level(), game: { camera_paused: false } }, width: 1280, height: 800,
-      color, keepClear: papers });
+    const shapes = drawLevel(ctx, { state: { level: level(), game: { camera_paused: false }, palette: { zones: ZONES } },
+      width: 1280, height: 800, color, keepClear: papers, timeMs: 1000 });
     assert.equal(shapes, 5, "two boxes, a wall, a spike strip, a portal");
     assert.equal(ctx.clips.filter((rule) => rule === "evenodd").length, 2, "one even-odd clip per paper");
-    for (const draw of ctx.draws) {
-      const used = draw.kind === "stroke" ? draw.strokeStyle : draw.fillStyle;
-      assert.equal(used, color, `${draw.kind} ${draw.text ?? ""} is neutral`);
-    }
+    const used = new Set(ctx.draws.map((d) => (d.kind === "stroke" ? d.strokeStyle : d.fillStyle)));
+    assert.deepEqual(used, new Set([color, "#22d3ee", "#818cf8", "#3b82f6", PILL_INK]), "level colors and neutral, nothing else");
     const texts = ctx.draws.filter((d) => d.kind === "text").map((d) => d.text);
     assert.deepEqual(texts, ["INICIO ✓", "LLEGADA", "NIVEL 5 · PORTAL", "Rebotes 2 / 1"]);
-    const [start, goal] = ctx.draws.filter((d) => d.kind === "stroke").slice(0, 2);
-    assert.deepEqual([start.dash, goal.dash.length > 0], [[], true], "a met box is solid, an unmet one dashed");
+    const outlines = ctx.draws.filter((d) => d.kind === "stroke" && d.lineWidth >= 4 && d.lineWidth <= 5);
+    const start = outlines.find((d) => d.strokeStyle === "#22d3ee");
+    const goal = outlines.find((d) => d.strokeStyle === "#818cf8");
+    assert.deepEqual(start.dash, [], "a met box is solid");
+    assert.deepEqual(goal.dash, [...ZONE_DASH], "a waiting box is dashed");
+    assert.equal(goal.dashOffset, -28, "and its dashes march (28 px a second)");
   }
 });
 
-test("in the air, spikes and portals take their own color; paused, they go neutral again", () => {
+test("a level color the backend flags draws neutral; unknown or missing colors too", () => {
+  assert.deepEqual(zoneColors({ zones: ZONES }), { start: "#22d3ee", goal: "#818cf8", portal: "#3b82f6" });
+  const flagged = { ...ZONES, goal: { hex: "#ffd166", custom: true, conflict: "start" } };
+  assert.deepEqual(zoneColors({ zones: flagged }), { start: "#22d3ee", goal: null, portal: "#3b82f6" });
+  assert.deepEqual(zoneColors(null), { start: null, goal: null, portal: null });
+  const ctx = canvas();
+  drawLevel(ctx, { state: { level: level(), palette: { zones: flagged } }, width: 1280, height: 800, color: "#ffffff" });
+  assert.ok(!ctx.draws.some((d) => d.strokeStyle === "#ffd166" || d.fillStyle === "#ffd166"));
+  assert.equal(zoneWarning({ zones: flagged }),
+    "El color de Llegada se parece a los post-its de inicio: se proyecta en blanco hasta que elijas otro.");
+  assert.equal(zoneWarning({ zones: ZONES }), null);
+  assert.equal(inkOn("#22d3ee"), PILL_INK);
+  assert.equal(inkOn("#2b2f2e"), "#ffffff", "a neutral dark pill (light theme) gets white ink");
+  assert.equal(LEVEL_CLEAR_PX, 10);
+});
+
+test("the portal turns: two moments draw it differently, the same moment identically", () => {
+  const draw = (timeMs) => {
+    const ctx = canvas();
+    drawLevel(ctx, { state: { level: level({ geometry: { ...level().geometry, walls: [], spikes: [], start_zone: null,
+      goal_zone: null } }), palette: { zones: ZONES } }, width: 1280, height: 800, color: "#ffffff", timeMs });
+    return JSON.stringify(ctx.draws);
+  };
+  assert.equal(draw(500), draw(500));
+  assert.notEqual(draw(500), draw(900));
+});
+
+test("in the air, spikes turn red; paused, they go neutral again", () => {
   const colors = (game) => {
     const ctx = canvas();
-    drawLevel(ctx, { state: { level: level(), game }, width: 1280, height: 800, color: "#ffffff" });
+    drawLevel(ctx, { state: { level: level({ geometry: { ...level().geometry, portals: [] } }), game }, width: 1280,
+      height: 800, color: "#ffffff" });
     return new Set(ctx.draws.map((d) => (d.kind === "stroke" ? d.strokeStyle : d.fillStyle)));
   };
-  assert.deepEqual(colors({ camera_paused: true, paused: false }), new Set(["#ffffff", SPIKES_COLOR, PORTAL_COLOR]));
-  assert.deepEqual(colors({ camera_paused: true, paused: true }), new Set(["#ffffff"]));
+  assert.ok(colors({ camera_paused: true, paused: false }).has(SPIKES_COLOR));
+  assert.ok(!colors({ camera_paused: true, paused: true }).has(SPIKES_COLOR));
 });
 
 test("the banner names the new level in the middle of the wall", () => {

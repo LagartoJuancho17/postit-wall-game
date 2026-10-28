@@ -1079,6 +1079,41 @@ detection `hex`) and `mark_custom`; `palette.custom` counts marks too.
   toward another role's hue is exactly what it exists to catch. Run A again
   to verify the new color.
 
+### 2.7 Level colors (2026-10-28)
+
+Tobias: "me gusta que tenga borde PUNTEADO, pero hazlo un poco mas atractivo,
+quizas con color los bordes punteados de Inicio y llegada (que el color lo
+pueda modificar desde el panel). Lo mismo que el Portal". The one exception
+to 2.1's neutral-only rule: the start and goal boxes and the portals light
+bare wall in their own colors while the camera reads it.
+
+- Why it is safe: light in a role's hue on bare wall is read as a post-it
+  (a closed dashed box merges into one big paper). A level color is refused
+  when its OpenCV hue lies within `ZONE_HUE_MARGIN = 3` of any role's hues
+  and its saturation and value reach that role's minimums
+  (`zone_conflict`, both backends). The defaults sit in the free band
+  between the bumpers' green (to 90) and the corners' pink (from 125):
+  start `#22d3ee` (hue 94), goal `#818cf8` (117), portal `#3b82f6` (109).
+  Pale colors pass for any hue. Colored light keeps `LEVEL_CLEAR_PX = 10`
+  off every detected paper (a neutral rim keeps 3), so blur never tints a
+  note's edge.
+- Action `zone_color_set {part: start|goal|portal, hex}`; `null` goes back
+  to the default; a conflict is 400 `Ese color se confunde con los post-its
+  de <rol>: ...`. Saved with the palette (key `zones`), cleared by
+  `palette_reset`, log `zone_color_changed`. `palette.zones[part]` =
+  `{hex, custom, conflict}`: a stored color a later palette change made
+  unsafe keeps its value, `conflict` names the role, the wall draws it
+  neutral and the panel says so.
+- Drawing (`level-view.mjs`): a waiting box is a rounded dashed outline whose
+  dashes march (`ZONE_MARCH_PX_S = 28`) and breathe, with a faint fill, solid
+  corner brackets and its label in a pill of its color; a met box is solid
+  with a stronger fill and `✓`. A portal's entry is a funnel of rings turning
+  against each other with sparks on its rim; its exit a spinning ring
+  flinging sparks; dots stream from one to the other. All of it is a pure
+  function of the time (`nowMs`).
+- Chrome closed loop, room `levels`, level 5: colored boxes and the turning
+  portal on bare wall, 8/8 samples with exactly the papers.
+
 ## 3.2 Levels (2026-10-27)
 
 Tobias: "Haya un area definida para poner el bloque de inicio, el juego solo
@@ -1136,13 +1171,11 @@ the saved level, else level 1, `--level` picks one; the static build reads
 `width`, `height`, the boxes, walls, spikes with `facing`, portals; null
 before there is a space), `check`, `problem`, `advance_s`.
 
-**Wall** (`services/web/ui/level-view.mjs`, 2.1 holds): every shape is the
-theme's neutral color, clipped off every detected paper grown by
-`RIM_CLEAR_PX`, never in the overlay check's capture. Boxes dashed with
-their label above (`INICIO`, `LLEGADA`), solid with a check once met; walls
-hatched; spikes as teeth (red only while the camera is paused and the
-attempt not paused); portals as an outline with a ring at the exit (blue
-only in the air). Bottom right: `NIVEL N · NAME` and `Rebotes k / max`.
+**Wall** (`services/web/ui/level-view.mjs`): walls and spikes are the
+theme's neutral color (2.1); boxes and portals take the level colors (2.7).
+Everything is clipped off every detected paper and never drawn in the
+overlay check's capture. Walls hatched; spikes as teeth (red only while the
+camera is paused and the attempt not paused). Bottom right: `NIVEL N · NAME` and `Rebotes k / max`.
 Bottom center: `level.problem` instead of the play hint. A level change
 shows a banner (`NIVEL N`, name, hint) for `LEVEL_BANNER_MS = 3500`, not
 for the level the window opened on. Result texts say why: `¡PINCHOS!`,

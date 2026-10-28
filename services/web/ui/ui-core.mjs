@@ -146,8 +146,25 @@ export function levelOptions(level) {
   }));
 }
 
+const ZONE_NAMES = Object.freeze({ start: "Inicio", goal: "Llegada", portal: "Portal" });
+const ROLE_NAMES = Object.freeze({ start: "inicio", goal: "llegada", bumper: "rebotes", marker: "esquinas" });
+
+/** A level color the palette made unsafe (contract 2.7), in words; null when none. */
+export function zoneWarning(palette) {
+  const part = ["start", "goal", "portal"].find((name) => palette?.zones?.[name]?.conflict);
+  if (!part) return null;
+  return `El color de ${ZONE_NAMES[part]} se parece a los post-its de ${ROLE_NAMES[palette.zones[part].conflict]}: `
+    + "se proyecta en blanco hasta que elijas otro.";
+}
+
 /** One line on how the wall stands against the level, for the panel. */
-export function levelStatus(level) {
+export function levelStatus(level, palette = null) {
+  const warning = zoneWarning(palette);
+  const line = levelLine(level);
+  return warning ? `${line} ${warning}`.trim() : line;
+}
+
+function levelLine(level) {
   if (!level) return "";
   if (level.id === "libre") return "Modo libre: sin recuadros ni límite de rebotes.";
   const check = level.check;

@@ -3,6 +3,11 @@
  * spikes, portals, the level's title and bumper count, what to fix, and a
  * banner when the level changes.
  *
+ * Contract 2.7: the boxes and portals take the level's own colors
+ * (palette.zones), which the backend keeps off every role's hue, so they may
+ * light bare wall even while the camera reads it; they keep LEVEL_CLEAR_PX
+ * off every paper. A color the backend flags as a conflict draws neutral.
+ *
  * Section 2.1 rules here as everywhere on the projector: while the camera
  * reads the wall only neutral light lands outside a paper, so every shape is
  * drawn in the theme's neutral color and clipped off every detected paper
@@ -11,10 +16,42 @@
  */
 
 export const LEVEL_BANNER_MS = 3500;
-export const ZONE_DASH = Object.freeze([14, 10]);
+export const ZONE_DASH = Object.freeze([16, 12]);
+/** How fast the dashes of a waiting box march, px a second. */
+export const ZONE_MARCH_PX_S = 28;
+export const ZONE_FILL = 0.07;
+export const ZONE_FILL_MET = 0.14;
+/** The label's ink on its pill: dark on a light color, white on a dark one. */
+export const PILL_INK = "#07121f";
+export function inkOn(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(String(hex).slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? PILL_INK : "#ffffff";
+}
+export const PORTAL_TURNS_S = 0.35;
+export const PORTAL_EXIT_PX = 28;
+/** How far down the funnel's inner rings sink, in shares of the mouth's half height. */
+export const PORTAL_DEPTH = 0.9;
+const PORTAL_SPARKS = 8;
+const PORTAL_STREAM = 14;
+/**
+ * The level's own colors (contract 2.7), from the palette's `zones`; null
+ * when the backend says one would read as a post-it: neutral light then.
+ */
+export function zoneColors(palette) {
+  const pick = (part) => {
+    const zone = palette?.zones?.[part];
+    return zone && !zone.conflict && /^#[0-9a-f]{6}$/i.test(zone.hex ?? "") ? zone.hex : null;
+  };
+  return { start: pick("start"), goal: pick("goal"), portal: pick("portal") };
+}
 export const ZONE_LABELS = Object.freeze({ start: "INICIO", goal: "LLEGADA" });
 export const SPIKES_COLOR = "#ff4d4d";
-export const PORTAL_COLOR = "#46c8ff";
+/**
+ * Colored level light keeps this far off every detected paper (projector
+ * px): farther than a neutral rim's RIM_CLEAR_PX, so camera blur never
+ * mixes a box's color into a note's edge.
+ */
+export const LEVEL_CLEAR_PX = 10;
 export const LEVEL_FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
 const MARGIN_PX = 16;
 
@@ -111,21 +148,64 @@ export function spikeTeeth(points, facing = "up") {
   return teeth;
 }
 
-function drawZone(ctx, points, met, label, color) {
-  trace(ctx, points);
+/** A box: a rounded dashed outline that marches while it waits, solid once met. */
+function drawZone(ctx, points, met, label, color, timeMs) {
+  const box = bounds(points);
+  const w = box.right - box.left;
+  const h = box.bottom - box.top;
+  if (!(w > 0 && h > 0)) return;
+  const radius = Math.min(14, w / 4, h / 4);
+  const path = () => {
+    ctx.beginPath();
+    ctx.roundRect(box.left, box.top, w, h, radius);
+  };
+  // Waiting: a slow breath; met: steady.
+  const breath = met ? 1 : 0.78 + 0.22 * Math.sin((timeMs / 1000) * Math.PI * 1.4);
+  path();
+  ctx.globalAlpha = met ? ZONE_FILL_MET : ZONE_FILL;
+  ctx.fillStyle = color;
+  ctx.fill();
+  path();
+  ctx.globalAlpha = breath;
+  ctx.lineWidth = met ? 5 : 4;
+  ctx.lineCap = "round";
   ctx.setLineDash(met ? [] : ZONE_DASH);
-  ctx.lineWidth = met ? 4 : 3;
-  ctx.globalAlpha = met ? 0.95 : 0.7;
+  ctx.lineDashOffset = met ? 0 : -(timeMs * ZONE_MARCH_PX_S) / 1000;
   ctx.strokeStyle = color;
   ctx.stroke();
   ctx.setLineDash([]);
-  const box = bounds(points);
-  ctx.font = `700 18px ${LEVEL_FONT}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.fillStyle = color;
-  ctx.fillText(met ? `${label} ✓` : label, (box.left + box.right) / 2, box.top - 6);
+  ctx.lineDashOffset = 0;
+  // Corner brackets, solid: the box reads from across the room.
+  const arm = Math.min(28, w / 3, h / 3);
   ctx.globalAlpha = 1;
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  for (const [x, y, dx, dy] of [[box.left, box.top, 1, 1], [box.right, box.top, -1, 1],
+    [box.right, box.bottom, -1, -1], [box.left, box.bottom, 1, -1]]) {
+    ctx.moveTo(x, y + dy * arm);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + dx * arm, y);
+  }
+  ctx.stroke();
+  ctx.lineCap = "butt";
+  // The label in a pill of the box's color, above it.
+  const text = met ? `${label} ✓` : label;
+  ctx.font = `800 17px ${LEVEL_FONT}`;
+  const pillW = ctx.measureText(text).width + 22;
+  const pillH = 26;
+  const cx = (box.left + box.right) / 2;
+  const top = box.top - pillH - 8;
+  ctx.globalAlpha = met ? 1 : breath;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(cx - pillW / 2, top, pillW, pillH, pillH / 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = inkOn(color);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, cx, top + pillH / 2 + 1);
+  ctx.textBaseline = "alphabetic";
 }
 
 function drawWall(ctx, points, color) {
@@ -166,33 +246,95 @@ function drawSpikes(ctx, points, facing, color) {
   ctx.globalAlpha = 1;
 }
 
-function drawPortal(ctx, entry, exit, scale, color) {
-  trace(ctx, entry);
-  ctx.lineWidth = 3;
-  ctx.globalAlpha = 0.95;
-  ctx.strokeStyle = color;
-  ctx.stroke();
+/**
+ * A portal: the entry is a vortex (rings turning against each other, sparks
+ * circling its rim), the exit a ring that spins the same way with sparks
+ * flying out, and a stream of dots runs from one to the other.
+ */
+function drawPortal(ctx, entry, exit, scale, color, timeMs, live) {
   const box = bounds(entry);
   const cx = (box.left + box.right) / 2;
   const cy = (box.top + box.bottom) / 2;
-  ctx.globalAlpha = 0.45;
+  const rx = Math.max(12, (box.right - box.left) / 2);
+  const ry = Math.max(10, (box.bottom - box.top) / 2);
+  const turn = (timeMs / 1000) * PORTAL_TURNS_S * Math.PI * 2;
+  const glow = live ? 1 : 0.85;
+  // The mouth: a faint disc, then rings, each a few arcs turning.
+  ctx.globalAlpha = 0.16 * glow;
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.ellipse(cx, cy, Math.max(2, (box.right - box.left) / 2 - 8), Math.max(1, (box.bottom - box.top) / 2 - 4), 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  ctx.globalAlpha = glow;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.stroke();
-  for (const [radius, alpha] of [[16, 0.9], [26, 0.45]]) {
-    ctx.globalAlpha = alpha;
+  // A funnel: each inner ring a little lower, so the mouth reads as a hole.
+  for (const [k, share, arcs] of [[0, 0.8, 3], [1, 0.6, 3], [2, 0.42, 2], [3, 0.24, 2]]) {
+    const spin = (k % 2 ? -1 : 1) * turn * (1 + 0.5 * k);
+    const depth = ry * PORTAL_DEPTH * (1 - share);
+    ctx.globalAlpha = glow * (0.95 - 0.17 * k);
+    ctx.lineWidth = 3.2 - 0.5 * k;
+    for (let a = 0; a < arcs; a += 1) {
+      const start = spin + (a * Math.PI * 2) / arcs;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + depth, rx * share, ry * share, 0, start, start + (Math.PI * 2) / arcs * 0.6);
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = color;
+  for (let k = 0; k < PORTAL_SPARKS; k += 1) {
+    const a = turn * 0.8 + (k * Math.PI * 2) / PORTAL_SPARKS;
+    ctx.globalAlpha = glow * (0.55 + 0.45 * Math.sin(turn * 2 + k));
     ctx.beginPath();
-    ctx.arc(exit.x, exit.y, radius * scale, 0, Math.PI * 2);
+    ctx.arc(cx + Math.cos(a) * (rx + 6), cy + Math.sin(a) * (ry + 6), 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // The exit: a spinning ring, an inner glow, sparks flung outward.
+  const r = PORTAL_EXIT_PX * scale;
+  ctx.globalAlpha = 0.18 * glow;
+  ctx.beginPath();
+  ctx.arc(exit.x, exit.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = glow;
+  ctx.lineWidth = 4;
+  for (let a = 0; a < 3; a += 1) {
+    const start = -turn * 1.2 + (a * Math.PI * 2) / 3;
+    ctx.beginPath();
+    ctx.arc(exit.x, exit.y, r, start, start + Math.PI * 0.45);
     ctx.stroke();
   }
-  // From the entry to the exit, faint: where the ball comes out.
-  ctx.globalAlpha = 0.25;
-  ctx.setLineDash([6, 10]);
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = glow * 0.6;
   ctx.beginPath();
-  ctx.moveTo(cx, box.top);
-  ctx.lineTo(exit.x, exit.y + 26 * scale);
+  ctx.arc(exit.x, exit.y, r * 0.55, turn, turn + Math.PI * 1.2);
   ctx.stroke();
-  ctx.setLineDash([]);
+  for (let k = 0; k < PORTAL_SPARKS; k += 1) {
+    const phase = ((timeMs / 1000) * 0.9 + k / PORTAL_SPARKS) % 1;
+    const a = (k * Math.PI * 2) / PORTAL_SPARKS + turn * 0.3;
+    const out = r * (1.05 + 0.9 * phase);
+    ctx.globalAlpha = glow * (1 - phase);
+    ctx.beginPath();
+    ctx.arc(exit.x + Math.cos(a) * out, exit.y + Math.sin(a) * out, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // The link: dots flowing along a curve from the mouth to the exit.
+  const from = { x: cx, y: box.top - 4 };
+  const to = { x: exit.x, y: exit.y + r + 4 };
+  const bend = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 0.25 * Math.abs(to.x - from.x) };
+  for (let k = 0; k < PORTAL_STREAM; k += 1) {
+    const t = ((timeMs / 1000) * 0.35 + k / PORTAL_STREAM) % 1;
+    const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * bend.x + t * t * to.x;
+    const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * bend.y + t * t * to.y;
+    ctx.globalAlpha = glow * 0.5 * Math.sin(Math.PI * t);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.lineCap = "butt";
   ctx.globalAlpha = 1;
 }
 
@@ -212,12 +354,13 @@ function clipPapers(ctx, keepClear) {
  * The level's shapes and texts. keepClear: every detected paper in
  * projector px, already grown by RIM_CLEAR_PX. Returns how many shapes it drew.
  */
-export function drawLevel(ctx, { state, width, height, color, keepClear = [], bannerAgeMs = null }) {
+export function drawLevel(ctx, { state, width, height, color, keepClear = [], bannerAgeMs = null, timeMs = 0 }) {
   const level = state?.level;
   const geometry = level?.geometry;
   const map = levelMapper(geometry, width, height);
   const game = state?.game;
   const running = game?.camera_paused === true && game?.paused !== true;
+  const colors = zoneColors(state?.palette);
   let drawn = 0;
   ctx.save();
   if (map) {
@@ -227,7 +370,7 @@ export function drawLevel(ctx, { state, width, height, color, keepClear = [], ba
     for (const [role, key] of [["start", "start_zone"], ["goal", "goal_zone"]]) {
       const points = shape(geometry[key]);
       if (!points) continue;
-      drawZone(ctx, points, check[role] === true, ZONE_LABELS[role], color);
+      drawZone(ctx, points, check[role] === true, ZONE_LABELS[role], colors[role] ?? color, timeMs);
       drawn += 1;
     }
     for (const wall of geometry.walls ?? []) {
@@ -247,7 +390,7 @@ export function drawLevel(ctx, { state, width, height, color, keepClear = [], ba
     for (const portal of geometry.portals ?? []) {
       const entry = shape(portal.entry);
       if (entry && validPoint(portal.exit)) {
-        drawPortal(ctx, entry, map.point(portal.exit), map.scale, running ? PORTAL_COLOR : color);
+        drawPortal(ctx, entry, map.point(portal.exit), map.scale, colors.portal ?? color, timeMs, running);
         drawn += 1;
       }
     }

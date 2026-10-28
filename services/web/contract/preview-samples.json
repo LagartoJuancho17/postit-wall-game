@@ -44,6 +44,23 @@
       "min_saturation": 75,
       "min_value": 55
      }
+    },
+    "zones": {
+     "goal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#818cf8"
+     },
+     "portal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#3b82f6"
+     },
+     "start": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#22d3ee"
+     }
     }
    },
    "preview": {
@@ -290,6 +307,23 @@
       "min_saturation": 75,
       "min_value": 55
      }
+    },
+    "zones": {
+     "goal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#818cf8"
+     },
+     "portal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#3b82f6"
+     },
+     "start": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#22d3ee"
+     }
     }
    },
    "preview": {
@@ -516,6 +550,23 @@
       "min_saturation": 75,
       "min_value": 55
      }
+    },
+    "zones": {
+     "goal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#818cf8"
+     },
+     "portal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#3b82f6"
+     },
+     "start": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#22d3ee"
+     }
     }
    },
    "preview": {
@@ -721,6 +772,23 @@
       "min_saturation": 75,
       "min_value": 55
      }
+    },
+    "zones": {
+     "goal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#818cf8"
+     },
+     "portal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#3b82f6"
+     },
+     "start": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#22d3ee"
+     }
     }
    },
    "preview": {
@@ -865,6 +933,23 @@
       "mark_custom": false,
       "min_saturation": 75,
       "min_value": 55
+     }
+    },
+    "zones": {
+     "goal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#818cf8"
+     },
+     "portal": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#3b82f6"
+     },
+     "start": {
+      "conflict": null,
+      "custom": false,
+      "hex": "#22d3ee"
      }
     }
    },
@@ -1069,6 +1154,23 @@
       "mark_custom": false,
       "min_saturation": 114,
       "min_value": 92
+     }
+    },
+    "zones": {
+     "goal": {
+      "conflict": "start",
+      "custom": false,
+      "hex": "#818cf8"
+     },
+     "portal": {
+      "conflict": "start",
+      "custom": false,
+      "hex": "#3b82f6"
+     },
+     "start": {
+      "conflict": "start",
+      "custom": false,
+      "hex": "#22d3ee"
      }
     }
    },

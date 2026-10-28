@@ -213,6 +213,10 @@ kbd { font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; p
 .level-picker { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; margin: 0 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .level-label { color: #36584f; font-size: 13px; font-weight: 700; }
 #level-select { min-height: 34px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; }
+.zone-colors { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.zone-color { display: flex; align-items: center; gap: 7px; padding: 3px 4px 3px 5px; border: 1px dashed var(--line); border-radius: 8px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 650; }
+.zone-color[data-custom="true"] { border-style: solid; }
+.zone-color[data-conflict="true"] { border-color: #e8a33a; color: #94571a; }
 .level-status { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .hands-free { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .hands-free-toggle { display: flex; align-items: center; gap: 8px; color: #36584f; font-size: 13px; font-weight: 600; cursor: pointer; }

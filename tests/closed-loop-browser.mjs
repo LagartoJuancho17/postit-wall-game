@@ -461,6 +461,7 @@ async function touchHand(state, panel, G, shoot = null, slipAt = null) {
 // ------------------------------------------------------------------ hands-free play (contract 3.1)
 
 const HAND_COLOR = "#c8aa96";
+const LEVEL_BANNER_WAIT_MS = 3800;   // past the level banner (level-view.mjs LEVEL_BANNER_MS)
 
 /**
  * Package 1 on the closed loop: a post-it stuck mid-game ripples and is
@@ -608,6 +609,20 @@ async function levels(report, { state, panel, projector, name, G, roles }) {
   assert.deepEqual([spiked.game.status, spiked.game.ended_by], ["lost", "spikes"]);
   report.checks.push(`level 4: spikes projected, 8/8 samples with exactly the papers, the bare drop ended by "${spiked.game.ended_by}"`);
   report.levels = { refused: refused.level.problem, won: won.level.done, next: next.level.id, spikes: spiked.game.ended_by };
+
+  // Level 5 (contract 2.7): the colored boxes and the turning portal light
+  // bare wall while the camera reads it; never a note.
+  await until("the end effect is over", async () => (await state())?.game?.camera_paused === false, 6000, 100);
+  await panel.selectOption("#level-select", "5");
+  await layout(papersAt(G, [{ role: "start", at: [0.14 * W, 0.15 * H] }, { role: "goal", at: [0.86 * W, 0.82 * H] }]));
+  await until("level 5 plays", async () => {
+    const s = await state();
+    return s?.level?.id === "5" && s.level.problem === null && s.phase === "ready" ? s : null;
+  }, 15000, 100);
+  await new Promise((done) => setTimeout(done, LEVEL_BANNER_WAIT_MS));
+  await steady({ start: 1, goal: 1, bumper: 0, marker: 4 }, "the colored boxes and the portal never read as a note");
+  await projector.screenshot({ path: join(output, `${name}-level5-portal-projector.png`) });
+  report.checks.push("level 5: colored boxes and the turning portal on bare wall, 8/8 samples with exactly the papers");
 
   // Back to free play with the shared papers, for the run's own attempt.
   await until("the end effect is over", async () => (await state())?.game?.camera_paused === false, 6000, 100);

@@ -41,7 +41,7 @@ import {
   drawTrail,
   PARTY_COLORS,
 } from "./effects.mjs";
-import { drawLevel, drawLevelProblem, nextLine, resultText } from "./level-view.mjs";
+import { drawLevel, drawLevelProblem, LEVEL_CLEAR_PX, nextLine, resultText } from "./level-view.mjs";
 
 export const LIVE_MAX_AGE_MS = 1500;
 export const FALLBACK_COLORS = { start: "#ffdf53", goal: "#ffa659", bumper: "#77ec8f", marker: "#ff77d3" };
@@ -538,7 +538,7 @@ function drawHint(ctx, height, color) {
 export function drawProjectorScene(ctx, {
   state = null, preview = state?.live_detection, palette = state?.palette, theme = "dark",
   width, height, fresh = true, forceFill = false, effects = null, appears = null, countdownS = null,
-  levelBannerAgeMs = null,
+  levelBannerAgeMs = null, nowMs = 0,
 } = {}) {
   if (!positive(width) || !positive(height)) return;
   const colors = neutralColors(theme);
@@ -564,8 +564,8 @@ export function drawProjectorScene(ctx, {
   if (matrix && forceFill) drawProbes(ctx, state.alignment.overlay?.probes, palette);
   // The level (contract 3.2), never in the overlay check's capture (2.3).
   if (!forceFill) {
-    drawLevel(ctx, { state, width, height, color: colors.rim, keepClear: clear.filter(Boolean),
-      bannerAgeMs: levelBannerAgeMs });
+    drawLevel(ctx, { state, width, height, color: colors.rim, bannerAgeMs: levelBannerAgeMs, timeMs: nowMs,
+      keepClear: projected.map(({ points }) => offsetConvexPolygon(points, LEVEL_CLEAR_PX)).filter(Boolean) });
   }
   if (!forceFill) drawAppearRipples(ctx, appears, projected, colors.rim, notes ?? {});
   drawEffects(ctx, { state, mapping, width, height, effects, projected, palette });

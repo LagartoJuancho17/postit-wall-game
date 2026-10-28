@@ -924,7 +924,13 @@ def level_scripts() -> dict[str, list[dict[str, Any]]]:
         "marks": [act("mark_set", role="goal", hex="#00FFAA"), act("mark_set", role="sky", hex="#ff0000"),
                   act("mark_set", role="goal", hex="#zz0000"), act("mark_set", role="start", hex=" #123456 "),
                   {"op": "state"}, act("mark_set", role="goal"), act("mark_set", role="goal", hex=None),
-                  act("mark_set", role="bumper", hex="#ffffff"), act("palette_reset"), {"op": "state"}],
+                  act("mark_set", role="bumper", hex="#ffffff"),
+                  # Contract 2.7: the level's colors, never in a role's hue.
+                  act("zone_color_set", part="start", hex="#38BDF8"), act("zone_color_set", part="goal", hex="#ffd166"),
+                  act("zone_color_set", part="portal", hex="#00ffff"), act("zone_color_set", part="door", hex="#38bdf8"),
+                  act("zone_color_set", part="portal", hex="azul"), act("zone_color_set", part="goal", hex="#e8e2c0"),
+                  {"op": "state"}, act("palette_set", role="bumper", hex="#2dd4bf"), {"op": "state"},
+                  act("zone_color_set", part="start"), act("palette_reset"), {"op": "state"}],
     }
 
 

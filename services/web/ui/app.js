@@ -1075,7 +1075,18 @@ function renderLevel() {
   }
   if (level && document.activeElement !== select) select.value = level.id;
   select.disabled = !level || aligning || !controlsFor(state, true, true).level;
-  $("level-status").textContent = levelStatus(level);
+  $("level-status").textContent = levelStatus(level, state?.palette);
+  // Contract 2.7: the boxes' and portals' colors, never in a role's hue.
+  for (const part of ["start", "goal", "portal"]) {
+    const zone = state?.palette?.zones?.[part];
+    const swatch = $(`zone-${part}`);
+    swatch.disabled = !zone || aligning;
+    if (zone && document.activeElement !== swatch) swatch.value = zone.hex;
+    const item = swatch.closest(".zone-color");
+    item.dataset.custom = String(zone?.custom === true);
+    item.dataset.conflict = String(Boolean(zone?.conflict));
+    $(`zone-clear-${part}`).disabled = !zone?.custom || aligning;
+  }
 }
 
 function render() {
@@ -1209,6 +1220,10 @@ cameraSelect.addEventListener("change", () => {
 $("scan-button").addEventListener("click", scanBoard);
 $("launch-button").addEventListener("click", () => sendAction("play", { source: "panel" }));
 $("level-select").addEventListener("change", (event) => sendAction("level", { id: event.target.value }));
+for (const part of ["start", "goal", "portal"]) {
+  $(`zone-${part}`).addEventListener("change", (event) => sendAction("zone_color_set", { part, hex: event.target.value }));
+  $(`zone-clear-${part}`).addEventListener("click", () => sendAction("zone_color_set", { part, hex: null }));
+}
 $("hands-free").addEventListener("change", (event) => sendAction("hands_free", { enabled: event.target.checked }));
 $("remote-assign").addEventListener("click", () => {
   assigningRemote = !assigningRemote;

@@ -12,7 +12,8 @@ import numpy as np
 
 from services.levels import LEVELS
 from services.web.backend.eval import FRAME_HUES, _color
-from services.web.backend.server import LEVEL_ADVANCE_S, GameController, RequestError, create_server
+from services.web.backend.server import (LEVEL_ADVANCE_S, ZONE_DEFAULTS, GameController, RequestError,
+                                         create_server, zone_conflict)
 
 LABEL = "Cámara de iPhone de Tobias"
 
@@ -203,6 +204,41 @@ class MarkColorTests(unittest.TestCase):
                                                                   "marker": None}}))
             state = GameController(log_path=None, palette_path=path).snapshot()
             self.assertFalse(state["palette"]["roles"]["goal"]["mark_custom"])
+
+
+class ZoneColorTests(unittest.TestCase):
+    """Contract 2.7: the boxes' and portals' colors, never in a role's hue."""
+
+    def test_defaults_sit_off_every_role_and_a_choice_is_saved(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "palette.json"
+            game = GameController(log_path=None, palette_path=path)
+            zones = game.snapshot()["palette"]["zones"]
+            self.assertEqual({part: (z["hex"], z["conflict"]) for part, z in zones.items()},
+                             {part: (ZONE_DEFAULTS[part], None) for part in ZONE_DEFAULTS})
+            state = game.action({"action": "zone_color_set", "part": "goal", "hex": "#A5B4FC"})
+            self.assertEqual(state["palette"]["zones"]["goal"], {"hex": "#a5b4fc", "custom": True, "conflict": None})
+            self.assertEqual(json.loads(path.read_text())["zones"]["goal"], "#a5b4fc")
+            again = GameController(log_path=None, palette_path=path).snapshot()["palette"]["zones"]["goal"]
+            self.assertEqual(again["hex"], "#a5b4fc")
+            state = game.action({"action": "zone_color_set", "part": "goal", "hex": None})
+            self.assertEqual(state["palette"]["zones"]["goal"]["hex"], ZONE_DEFAULTS["goal"])
+
+    def test_a_color_the_camera_would_read_as_a_post_it_is_refused(self):
+        game = GameController(log_path=None)
+        for hex_value, role in (("#ffd166", "inicio"), ("#00ffff", "rebotes"), ("#ff77d3", "esquinas")):
+            with self.subTest(hex=hex_value), self.assertRaisesRegex(RequestError, f"post-its de {role}"):
+                game.action({"action": "zone_color_set", "part": "start", "hex": hex_value})
+        self.assertIsNone(zone_conflict("#e8e2c0", game.palette), "too pale for any role: allowed")
+        with self.assertRaisesRegex(RequestError, "Parte del nivel"):
+            game.action({"action": "zone_color_set", "part": "door", "hex": "#38bdf8"})
+
+    def test_a_palette_change_that_makes_a_box_unsafe_flags_it(self):
+        game = GameController(log_path=None)
+        state = game.action({"action": "palette_set", "role": "bumper", "hex": "#2dd4bf"})
+        self.assertEqual(state["palette"]["zones"]["start"]["conflict"], "bumper")
+        state = game.action({"action": "palette_reset"})
+        self.assertIsNone(state["palette"]["zones"]["start"]["conflict"])
 
 
 if __name__ == "__main__":
